@@ -2,6 +2,7 @@
 
 #include "RenderToPng.h"
 
+#include "ConsoleLog.h"
 #include "PointZoomBBConverter.h"
 #include "RenderThreadPool.h"
 
@@ -22,7 +23,7 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::o
         if (err) {
             *err = message;
         } else {
-            std::cerr << message << "\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << message;
         }
         return code;
     };

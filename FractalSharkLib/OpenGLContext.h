@@ -10,9 +10,6 @@
 // GL types needed in the header (avoids including GL/gl.h which needs windows.h on Win32)
 using GLint = int;
 
-// Append a diagnostic line to FractalShark_gl.log.
-void GlLog(const char *msg);
-
 struct OpenGlContext {
     void *m_NativeWindow{};
     std::unique_ptr<Environment::NativeOpenGLContext> m_NativeContext;

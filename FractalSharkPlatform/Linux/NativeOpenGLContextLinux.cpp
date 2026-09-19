@@ -1,5 +1,7 @@
 #include "NativeOpenGLContext.h"
 
+#include "ConsoleLog.h"
+
 // clang-format off
 #include "GlIncludes.h"
 // clang-format on
@@ -12,18 +14,11 @@
 #include <array>
 #include <cctype>
 #include <cstdio>
-#include <iostream>
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
 
 namespace {
-
-void
-GlLog(const char *msg)
-{
-    std::cerr << msg << std::endl;
-}
 
 Display *g_display = nullptr;
 
@@ -125,13 +120,13 @@ namespace Environment {
 NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(nativeWindow)
 {
     if (!m_NativeWindow) {
-        GlLog("OpenGlContext: null Window");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: null Window";
         return;
     }
 
     Display *dpy = GetX11Display();
     if (!dpy) {
-        GlLog("OpenGlContext: failed to open X11 display");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: failed to open X11 display";
         return;
     }
 
@@ -139,7 +134,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
     XVisualInfo *vi = GetWindowVisualInfo(dpy, win);
     if (!vi) {
-        GlLog("OpenGlContext: failed to query window visual");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: failed to query window visual";
         return;
     }
 
@@ -149,7 +144,8 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     if (glXGetConfig(dpy, vi, GLX_USE_GL, &supportsGl) != 0 || supportsGl != True ||
         glXGetConfig(dpy, vi, GLX_RGBA, &rgba) != 0 || rgba != True ||
         glXGetConfig(dpy, vi, GLX_DOUBLEBUFFER, &doubleBuffered) != 0) {
-        GlLog("OpenGlContext: window visual is not a usable GLX RGBA visual");
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "OpenGlContext: window visual is not a usable GLX RGBA visual";
         XFree(vi);
         return;
     }
@@ -159,7 +155,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     XFree(vi);
 
     if (!ctx) {
-        GlLog("OpenGlContext: glXCreateContext failed");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: glXCreateContext failed";
         return;
     }
 
@@ -167,7 +163,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     RegisterWindowGlState(win, ctx, doubleBuffered == True);
 
     if (!MakeCurrent()) {
-        GlLog("OpenGlContext: MakeCurrent failed");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: MakeCurrent failed";
         return;
     }
 
@@ -188,7 +184,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
              isDirect ? 1 : 0,
              m_IsSoftwareRenderer ? 1 : 0,
              doubleBuffered == True ? 1 : 0);
-    GlLog(buf);
+    FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
 
     m_Valid = true;
 }

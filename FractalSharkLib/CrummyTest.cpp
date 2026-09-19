@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include "CrummyTest.h"
 
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
@@ -37,7 +38,7 @@ CrummyTest::TestPreReq(const wchar_t *dirName)
     if (Environment::DirectoryExists(dirName)) {
         auto shRet = Environment::DirectoryRemoveRecursive(dirName);
         if (!shRet) {
-            std::wcerr << L"Error deleting directory!" << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Error deleting directory!";
             return;
         }
     }
@@ -47,7 +48,7 @@ CrummyTest::TestPreReq(const wchar_t *dirName)
     if (!ret) {
         auto lastError = Environment::GetLastOSError();
         std::wstring msg = L"Error creating directory! Last error: " + std::to_wstring(lastError);
-        std::wcerr << msg.c_str() << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << msg;
         return;
     }
 }
@@ -185,7 +186,8 @@ CrummyTest::BasicOneTest(auto algToTest,
         const auto viewIndex = static_cast<size_t>(algToTest.TestInclude.Lookup(testEnumIndex));
 
         if (!m_Fractal.SetRenderAlgorithm(algToTest)) {
-            std::cerr << "Error setting RenderAlgorithm in BasicOneTest!" << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Error setting RenderAlgorithm in BasicOneTest!";
         }
 
         m_Fractal.View(viewIndex);
@@ -260,7 +262,8 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     fractal.SetIterType(iterType);
     if (!fractal.SetRenderAlgorithm(origAlgToTest)) {
-        std::cerr << "Error setting RenderAlgorithm in ReferenceSaveLoad!" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Error setting RenderAlgorithm in ReferenceSaveLoad!";
     }
 
     fractal.View(viewIndex);
@@ -347,7 +350,8 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
         const bool success = fractal.SetRenderAlgorithm(
             RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
         if (!success) {
-            std::cerr << "Error setting RenderAlgorithm to AUTO in ReferenceSaveLoad!" << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Error setting RenderAlgorithm to AUTO in ReferenceSaveLoad!";
         }
     }
 
@@ -495,7 +499,8 @@ CrummyTest::TestImaginaLoad()
         const bool success = m_Fractal.SetRenderAlgorithm(
             RenderAlgorithm{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>{}});
         if (!success) {
-            std::cerr << "Error setting RenderAlgorithm to AUTO in TestImaginaLoad!" << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Error setting RenderAlgorithm to AUTO in TestImaginaLoad!";
         }
     };
 
@@ -825,7 +830,8 @@ CrummyTest::TestPerturbedPerturb()
             m_Fractal.SetIterType(iterType);
             const bool success = m_Fractal.SetRenderAlgorithm(algToTestRT);
             if (!success) {
-                std::cerr << "Error setting RenderAlgorithm in TestPerturbedPerturb!" << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "Error setting RenderAlgorithm in TestPerturbedPerturb!";
             }
 
             m_Fractal.SetPerturbationAlg(
@@ -1006,7 +1012,8 @@ CrummyTest::TestReallyHardView27()
                 m_Fractal.SetIterType(iterType);
                 const bool success = m_Fractal.SetRenderAlgorithm(algToTest);
                 if (!success) {
-                    std::cerr << "Error setting RenderAlgorithm in TestReallyHardView27!" << std::endl;
+                    FractalSharkLog::LogLine(__FILE__, __LINE__)
+                        << "Error setting RenderAlgorithm in TestReallyHardView27!";
                 }
 
                 m_Fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);

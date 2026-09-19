@@ -1,6 +1,7 @@
 #include "StdAfx.h"
 
 #include "CommandDispatcher.h"
+#include "ConsoleLog.h"
 #include "ConsoleWindow.h"
 #include "CrashHandler.h"
 #include "DynamicPopupMenu.h"
@@ -517,11 +518,11 @@ MainWindow::StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             const std::string msg =
                 std::string{"Message copied to clipboard.  CTRL-V to paste.\n"} + e.what();
             copyToClipboard(msg);
-            std::cerr << msg.c_str() << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << msg;
             return 0;
         } catch (const std::exception &e) {
             copyToClipboard(e.what());
-            std::cerr << e.what() << std::endl;
+            FractalSharkLog::WriteException("MainWindow message handler", e, __FILE__, __LINE__);
             return 0;
         }
     }
@@ -700,7 +701,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                        wmEvent,
                        wmEvent);
 
-            std::wcerr << buf << L" Unknown menu item" << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << buf << L" Unknown menu item";
 
             return 0;
         }
@@ -1030,14 +1031,15 @@ MainWindow::MenuGetCurPos()
     gFractal->GetRenderDetails(shortStr, longStr);
 
     if (!Environment::SetClipboardText(longStr)) {
-        std::wcerr << L"Copying the current position to the clipboard failed." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << L"Copying the current position to the clipboard failed.";
         return;
     }
 
     if (shortStr.length() < 5000) {
         ::MessageBoxA(hWnd, shortStr.c_str(), "Current Position", MB_OK | MB_APPLMODAL);
     } else {
-        std::wcerr << L"Location copied to clipboard." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Location copied to clipboard.";
     }
 }
 

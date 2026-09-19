@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
@@ -479,7 +480,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     std::ofstream metafile(Environment::ToFsPath(GenFilename(GrowableVectorTypes::Metadata)),
                            std::ios::binary);
     if (!metafile.is_open()) {
-        std::wcerr << L"Failed to open file for writing 2" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to open file for writing 2";
         return;
     }
 
@@ -493,7 +494,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     } else if constexpr (std::is_same<IterType, uint64_t>::value) {
         metafile << "uint64_t" << std::endl;
     } else {
-        std::wcerr << L"Invalid size." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Invalid size.";
         return;
     }
 
@@ -510,7 +511,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
         metafile << "HDRFloat<double>" << std::endl;
     } else {
-        std::wcerr << L"Invalid type." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Invalid type.";
         return;
     }
 
@@ -521,7 +522,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
     } else if constexpr (PExtras == PerturbExtras::Disable) {
         metafile << "PerturbExtras::Disable" << std::endl;
     } else {
-        std::wcerr << L"Invalid bad." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Invalid bad.";
         return;
     }
 
@@ -547,7 +548,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
         if (m_LaReference != nullptr && m_LaReference->IsValid()) {
             bool ret = m_LaReference->WriteMetadata(metafile);
             if (!ret) {
-                std::wcerr << L"Failed to write LA metadata." << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to write LA metadata.";
                 return;
             }
         }
@@ -580,7 +581,7 @@ requires Introspection::TestPExtras<PExtras>::value
     std::ifstream metafile(Environment::ToFsPath(GenFilename(GrowableVectorTypes::Metadata)),
                            std::ios::binary);
     if (!metafile.is_open()) {
-        std::wcerr << L"Failed to open file for reading 1" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to open file for reading 1";
         metafile.close();
         return false;
     }
@@ -612,7 +613,7 @@ requires Introspection::TestPExtras<PExtras>::value
                 typematch1 = true;
             }
         } else {
-            std::wcerr << L"Invalid size." << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Invalid size.";
             metafile.close();
             return false;
         }
@@ -647,7 +648,7 @@ requires Introspection::TestPExtras<PExtras>::value
                 typematch2 = true;
             }
         } else {
-            std::wcerr << L"Invalid type." << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Invalid type.";
             metafile.close();
             return false;
         }
@@ -670,7 +671,7 @@ requires Introspection::TestPExtras<PExtras>::value
                 typematch3 = true;
             }
         } else {
-            std::wcerr << L"Invalid bad 2." << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Invalid bad 2.";
             metafile.close();
             return false;
         }
@@ -1126,7 +1127,7 @@ template <typename IterType, class T, PerturbExtras PExtras>
 void
 PerturbationResults<IterType, T, PExtras>::SetPeriodMaybeZero(IterType period)
 {
-    std::cout << "Setting period maybe zero to period " << period << std::endl;
+    FractalSharkLog::LogLine(__FILE__, __LINE__) << "Setting period maybe zero to period " << period;
     m_PeriodMaybeZero = period;
 }
 
@@ -1947,7 +1948,7 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
 
     std::ofstream out{Environment::ToFsPath(outFile)};
     if (!out.is_open()) {
-        std::wcerr << L"Failed to open file for writing 3" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to open file for writing 3";
         return;
     }
 
@@ -1990,7 +1991,7 @@ InstantiateDecompressMax(float, PerturbExtras::MaxCompression, PerturbExtras::Di
     out << "m_ReuseYSize: " << m_ReuseY.size() << std::endl;
     out << "m_ReuseIndicesSize: " << m_ReuseIndices.size() << std::endl;
     if (m_ReuseX.size() != m_ReuseY.size() || m_ReuseX.size() != m_ReuseIndices.size()) {
-        std::wcerr << L"m_ReuseX and m_ReuseY are different sizes." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"m_ReuseX and m_ReuseY are different sizes.";
         out.close();
         return;
     }
@@ -2234,7 +2235,7 @@ requires(!Introspection::IsTDblFlt<T>())
     }
 
     if (m_FullOrbit.GetSize() != other.m_FullOrbit.GetSize()) {
-        std::wcerr << L"Orbit sizes are different." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Orbit sizes are different.";
         return;
     }
 

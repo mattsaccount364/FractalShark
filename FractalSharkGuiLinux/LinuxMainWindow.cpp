@@ -2,6 +2,7 @@
 
 #include "LinuxMainWindow.h"
 #include "CommandCatalog.h"
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "Exceptions.h"
 #include "FeatureFinderMode.h"
@@ -781,7 +782,8 @@ LinuxMainWindow::PresentRenderTick()
         }
         std::chrono::steady_clock::time_point overlayStart;
         if (diagnoseFreshFrame) {
-            GlLog("LinuxMainWindow: first completed-frame ImGui draw begin");
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "LinuxMainWindow: first completed-frame ImGui draw begin";
             overlayStart = std::chrono::steady_clock::now();
         }
 
@@ -793,12 +795,13 @@ LinuxMainWindow::PresentRenderTick()
                      sizeof(buf),
                      "LinuxMainWindow: first completed-frame ImGui draw end, elapsedMs=%lld",
                      ElapsedMilliseconds(overlayStart));
-            GlLog(buf);
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
         }
 
         std::chrono::steady_clock::time_point swapStart;
         if (diagnoseFreshFrame) {
-            GlLog("LinuxMainWindow: first completed-frame glXSwapBuffers begin");
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "LinuxMainWindow: first completed-frame glXSwapBuffers begin";
             swapStart = std::chrono::steady_clock::now();
         }
 
@@ -810,7 +813,7 @@ LinuxMainWindow::PresentRenderTick()
                      sizeof(buf),
                      "LinuxMainWindow: first completed-frame glXSwapBuffers end, elapsedMs=%lld",
                      ElapsedMilliseconds(swapStart));
-            GlLog(buf);
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
         }
 
         everPresented = true;

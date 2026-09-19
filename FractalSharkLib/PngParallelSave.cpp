@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "Fractal.h"
 #include "PngParallelSave.h"
@@ -30,9 +31,10 @@ WidenForLog(std::string_view str)
 }
 
 void
-ReportSaveError(const std::wstring &filename, const std::wstring &message)
+ReportSaveError(const std::wstring &filename, const std::wstring &message, const char *file, int line)
 {
-    std::wcerr << L"Failed to save " << filename << L": " << message << std::endl;
+    auto log = FractalSharkLog::LogLine(file, line);
+    log << L"Failed to save " << filename << L": " << message;
 }
 
 std::wstring
@@ -149,7 +151,7 @@ PngParallelSave::Run()
                 final_filename += ext;
             }
             if (Utilities::FileExists(final_filename.c_str())) {
-                std::wcerr << L"Not saving, file exists" << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Not saving, file exists";
                 return;
             }
         } else {
@@ -164,7 +166,7 @@ PngParallelSave::Run()
 
         if (m_Type == Type::PngImg) {
             if (m_NumPaletteColors == 0) {
-                ReportSaveError(final_filename, L"selected palette has no colors");
+                ReportSaveError(final_filename, L"selected palette has no colors", __FILE__, __LINE__);
                 return;
             }
 
@@ -224,18 +226,18 @@ PngParallelSave::Run()
                     message += L": ";
                     message += WidenForLog(status.pngLibErrorMsg);
                 }
-                ReportSaveError(final_filename, message);
+                ReportSaveError(final_filename, message, __FILE__, __LINE__);
                 return;
             }
 
             if (!WriteBinaryFile(finalPath, pngBytes)) {
-                ReportSaveError(final_filename, L"could not write PNG file");
+                ReportSaveError(final_filename, L"could not write PNG file", __FILE__, __LINE__);
                 return;
             }
         } else {
             std::ofstream out(finalPath);
             if (!out) {
-                ReportSaveError(final_filename, L"could not open text file");
+                ReportSaveError(final_filename, L"could not open text file", __FILE__, __LINE__);
                 return;
             }
 
@@ -251,13 +253,14 @@ PngParallelSave::Run()
             }
 
             if (!out) {
-                ReportSaveError(final_filename, L"could not write text file");
+                ReportSaveError(final_filename, L"could not write text file", __FILE__, __LINE__);
                 return;
             }
         }
     } catch (const std::exception &ex) {
-        std::cerr << "PngParallelSave failed: " << ex.what() << std::endl;
+        FractalSharkLog::WriteException("PngParallelSave failed", ex, __FILE__, __LINE__);
     } catch (...) {
-        std::cerr << "PngParallelSave failed with an unknown exception" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "PngParallelSave failed with an unknown exception";
     }
 }

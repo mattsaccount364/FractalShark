@@ -1,5 +1,6 @@
 #include "stdafx.h"
 
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "LAParameters.h"
 #include "LAReference.h"
@@ -228,7 +229,8 @@ requires(PExtras != PerturbExtras::MaxCompression)
     // This is not supported.
     if (m_AddPointOptions == AddPointOptions::OpenExistingWithSave) {
         assert(false);
-        std::wcerr << L"AddPointOptions::OpenExistingWithSave is not supported" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << L"AddPointOptions::OpenExistingWithSave is not supported";
         return false;
     }
 
@@ -670,7 +672,7 @@ requires(PExtras != PerturbExtras::MaxCompression)
 
             if (j > End) {
                 if (ThreadID == LastThread) {
-                    std::wcerr << L"Thread finished unexpected" << std::endl;
+                    FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Thread finished unexpected";
                     Environment::DebugBreakpoint();
                 }
 
@@ -802,11 +804,11 @@ LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
         std::make_unique<RuntimeDecompressor<IterType, Float, PExtras>>(PerturbationResults)};
 
     if (PrevStage > MaxLAStages) {
-        std::wcerr << L"Too many stages :(" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Too many stages :(";
     }
 
     if (CurrentStage >= MaxLAStages) {
-        std::wcerr << L"Too many stages 2 :(" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Too many stages 2 :(";
     }
 
     m_LAStages[CurrentStage].LAIndex = LAsize();
@@ -860,7 +862,7 @@ LAReference<IterType, Float, SubType, PExtras>::CreateNewLAStage(
     }
     m_LAStageCount++;
     if (m_LAStageCount > MaxLAStages) {
-        std::wcerr << L"Too many stages (3) :(" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Too many stages (3) :(";
     }
 
     PeriodBegin = Period;

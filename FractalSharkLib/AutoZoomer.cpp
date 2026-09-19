@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "AutoZoomer.h"
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "FeatureSummary.h"
 #include "PerturbationResults.h"
@@ -104,7 +105,7 @@ AutoZoomer::Run()
                     if (numAtLimit == m_Fractal.GetScrnWidth() * m_Fractal.GetScrnHeight() *
                                           m_Fractal.GetGpuAntialiasing() *
                                           m_Fractal.GetGpuAntialiasing()) {
-                        std::wcerr << L"Flat screen! :(" << std::endl;
+                        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Flat screen! :(";
                         shouldBreak = true;
                         return;
                     }
@@ -264,18 +265,20 @@ AutoZoomer::Run()
                     }
 
                     if (bestScore < 0) {
-                        std::wcerr << L"FilamentTip: no tip found. " << L"candidates=" << dbgCandidates
-                                   << L" highHist=[";
+                        auto log = FractalSharkLog::LogLine(__FILE__, __LINE__);
+                        log << L"FilamentTip: no tip found. " << L"candidates=" << dbgCandidates
+                            << L" highHist=[";
                         for (int i = 0; i <= 8; i++)
-                            std::wcerr << dbgHighCountHist[i] << (i < 8 ? L"," : L"");
-                        std::wcerr << L"] runReject=" << dbgRunReject << L" avgIters=" << avgIters
-                                   << L" threshold=" << candidateThreshold << std::endl;
+                            log << dbgHighCountHist[i] << (i < 8 ? L"," : L"");
+                        log << L"] runReject=" << dbgRunReject << L" avgIters=" << avgIters
+                            << L" threshold=" << candidateThreshold;
                         shouldBreak = true;
                         return;
                     }
 
-                    std::wcerr << L"FilamentTip: target (" << bestX << L"," << bestY << L") score="
-                               << bestScore << L" numAtMax=" << numAtMax << std::endl;
+                    FractalSharkLog::LogLine(__FILE__, __LINE__)
+                        << L"FilamentTip: target (" << bestX << L"," << bestY << L") score=" << bestScore
+                        << L" numAtMax=" << numAtMax;
 
                     guessX = m_Fractal.XFromScreenToCalc<true>(HighPrecision{bestX});
                     guessY = m_Fractal.YFromScreenToCalc<true>(HighPrecision{bestY});
@@ -389,7 +392,8 @@ AutoZoomer::SetupFeatureZoom(Fractal &f,
     [[maybe_unused]] const bool success =
         f.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2));
     if (!success) {
-        std::cerr << "Error: could not set render algorithm for AutoZoom(Feature).\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Error: could not set render algorithm for AutoZoom(Feature).";
         out.Failed = true;
         return;
     }
@@ -514,7 +518,7 @@ AutoZoomer::SetupFeatureZoom(Fractal &f,
     for (size_t r = 0; r < NumRenderers; ++r) {
         auto err = f.InitializeGPUMemory(static_cast<RendererIndex>(r), false, f.m_CurIters);
         if (err) {
-            f.MessageBoxCudaError(err);
+            f.MessageBoxCudaError(err, __FILE__, __LINE__);
             out.Failed = true;
             return;
         }

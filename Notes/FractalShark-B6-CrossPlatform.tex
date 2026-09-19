@@ -70,12 +70,13 @@ helpers. Portable geometry and opaque-handle types prevent Win32 types from
 leaking into shared library interfaces.
 
 Dedicated abstractions cover crash handling, process memory limits, wait-cursor
-state, and native OpenGL contexts. Each abstraction has separate Win32 and
-Linux translation units. The OpenGL wrapper uses WGL on Windows and GLX on
-Linux while presenting the same client-rectangle, context, buffer-swap,
-renderer-detection, and texture-limit interface to the rendering code. On
-Windows, the crash handler writes a \code{.dmp} minidump for post-mortem
-analysis.
+state, local IPC transport, and native OpenGL contexts. Each abstraction has
+separate Win32 and Linux translation units. The CLI server uses the local IPC
+interface with named pipes on Windows and Unix-domain sockets on Linux. The
+OpenGL wrapper uses WGL on Windows and GLX on Linux while presenting the same
+client-rectangle, context, buffer-swap, renderer-detection, and texture-limit
+interface to the rendering code. On Windows, the crash handler writes a
+\code{.dmp} minidump for post-mortem analysis.
 
 This separation avoids distributing platform conditionals throughout the
 numeric and rendering libraries. Platform-specific graphical behavior remains

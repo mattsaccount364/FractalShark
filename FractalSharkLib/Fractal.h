@@ -509,7 +509,7 @@ private:
     // Benchmarking
     mutable BenchmarkDataCollection m_BenchmarkData;
 
-    void MessageBoxCudaError(uint32_t err);
+    void MessageBoxCudaError(uint32_t err, const char *file, int line);
 
     LAParameters m_LAParameters;
 

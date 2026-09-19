@@ -2,6 +2,7 @@
 
 // Persistent cache support for prepared reference-NTT tables.
 
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "KernelInvokeReferenceSetup.h"
 
@@ -11,7 +12,6 @@
 #include <cstdint>
 #include <cstring>
 #include <exception>
-#include <iostream>
 #include <iterator>
 #include <memory>
 #include <sstream>
@@ -416,8 +416,8 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
         return LoadHpSharkReferenceTables<SharkFloatParams>(
             launchParams, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Reference cache miss for test " << testNumber << " sequence " << sequence << ": "
-                  << error.what() << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Reference cache miss for test " << testNumber
+                                                     << " sequence " << sequence << ": " << error.what();
     }
 
     auto prepared = PrepareHpSharkReferenceTables<SharkFloatParams>(
@@ -426,8 +426,9 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
         SaveHpSharkReferenceTables<SharkFloatParams>(
             *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence
-                  << ": " << error.what() << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
+            << error.what();
     }
     return prepared;
 }
@@ -467,8 +468,8 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
         return LoadHpSharkReferenceTables<SharkFloatParams>(
             launchParams, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Reference cache miss for test " << testNumber << " sequence " << sequence << ": "
-                  << error.what() << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Reference cache miss for test " << testNumber
+                                                     << " sequence " << sequence << ": " << error.what();
     }
 
     auto prepared = PrepareHpSharkReferenceTables<SharkFloatParams>(
@@ -477,8 +478,9 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
         SaveHpSharkReferenceTables<SharkFloatParams>(
             *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     } catch (const std::exception &error) {
-        std::cout << "Reference cache save failed for test " << testNumber << " sequence " << sequence
-                  << ": " << error.what() << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
+            << error.what();
     }
     return prepared;
 }

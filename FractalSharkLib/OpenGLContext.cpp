@@ -7,10 +7,11 @@
 
 #include "OpenGLContext.h"
 
+#include "ConsoleLog.h"
+
 #include <algorithm>
 #include <array>
 #include <cctype>
-#include <iostream>
 #include <string_view>
 
 bool
@@ -32,12 +33,6 @@ OpenGlContext::IsKnownSoftwareRendererName(std::string_view rendererName)
         });
 }
 
-void
-GlLog(const char *msg)
-{
-    std::cerr << msg << std::endl;
-}
-
 OpenGlContext::OpenGlContext(void *nativeWindow)
     : m_NativeWindow(nativeWindow),
       m_NativeContext(std::make_unique<Environment::NativeOpenGLContext>(nativeWindow))
@@ -46,7 +41,8 @@ OpenGlContext::OpenGlContext(void *nativeWindow)
         return;
 
     if (!MakeCurrent()) {
-        GlLog("OpenGlContext: MakeCurrent failed after native context creation");
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "OpenGlContext: MakeCurrent failed after native context creation";
         return;
     }
 

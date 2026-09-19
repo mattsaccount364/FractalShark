@@ -5,6 +5,7 @@
 #include "GlIncludes.h"
 // clang-format on
 
+#include "ConsoleLog.h"
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "FractalPalette.h"
@@ -14,7 +15,6 @@
 
 #include <algorithm>
 #include <chrono>
-#include <iostream>
 #include <limits>
 #include <string>
 
@@ -495,18 +495,15 @@ RenderThreadPool::RenderThreadPool(Fractal *fractal, void *nativeWindow, bool ho
 RenderThreadPool::~RenderThreadPool() { Shutdown(); }
 
 void
-RenderThreadPool::LogOperationEvent(const RenderWorkItem &item,
-                                    std::string_view event,
-                                    size_t pendingCount)
+RenderThreadPool::LogOperationEvent(
+    const RenderWorkItem &item, std::string_view event, size_t pendingCount, const char *file, int line)
 {
-    std::lock_guard lk(m_OperationLogMutex);
-    std::cout << "[RenderQueue] " << event << " #" << item.OperationId << " "
-              << (item.OperationName.empty() ? "unnamed operation" : item.OperationName);
+    auto log = FractalSharkLog::LogLine(file, line);
+    log << "[RenderQueue] " << event << " #" << item.OperationId << " "
+        << (item.OperationName.empty() ? "unnamed operation" : item.OperationName);
     if (pendingCount != std::numeric_limits<size_t>::max()) {
-        std::cout << " (pending " << pendingCount << ')';
+        log << " (pending " << pendingCount << ')';
     }
-    std::cout << '\n';
-    std::cout.flush();
 }
 
 std::unique_ptr<Color16[]>
@@ -555,7 +552,8 @@ public:
     ~WorkerJobScope() noexcept
     {
         if (!m_CompletionSignaled && !m_Pool.m_ShutdownFlag.load()) {
-            GlLog("WorkerJobScope: job exited without explicit completion");
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "WorkerJobScope: job exited without explicit completion";
             if (Environment::IsDebuggerAttached()) {
                 Environment::DebugBreakpoint();
             }
@@ -585,7 +583,8 @@ public:
     Complete()
     {
         if (m_CompletionSignaled) {
-            GlLog("WorkerJobScope: Complete called more than once");
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "WorkerJobScope: Complete called more than once";
             if (Environment::IsDebuggerAttached()) {
                 Environment::DebugBreakpoint();
             }
@@ -631,7 +630,7 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
         std::lock_guard lk(m_WorkQueueMutex);
         if (m_ShutdownFlag.load()) {
             workItem.CompletionPromise->set_value();
-            LogOperationEvent(workItem, "discarded (shutdown)", 0);
+            LogOperationEvent(workItem, "discarded (shutdown)", 0, __FILE__, __LINE__);
             return RenderJobHandle(std::move(future));
         }
 
@@ -673,13 +672,13 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
         RenderWorkItem supersededItem{};
         supersededItem.OperationId = operationId;
         supersededItem.OperationName = operationName;
-        LogOperationEvent(supersededItem, "superseded", pendingCount);
+        LogOperationEvent(supersededItem, "superseded", pendingCount, __FILE__, __LINE__);
     }
 
     RenderWorkItem queuedItem{};
     queuedItem.OperationId = queuedOperationId;
     queuedItem.OperationName = std::move(queuedOperationName);
-    LogOperationEvent(queuedItem, "queued", pendingCount);
+    LogOperationEvent(queuedItem, "queued", pendingCount, __FILE__, __LINE__);
 
     // Push tombstones for superseded sequences outside the work queue
     // lock to avoid nested locking with the FrameQueue mutex.
@@ -802,7 +801,7 @@ RenderThreadPool::CancelPacedAnimation(uint64_t presentationGroup)
         RenderWorkItem cancelledItem{};
         cancelledItem.OperationId = operationId;
         cancelledItem.OperationName = operationName;
-        LogOperationEvent(cancelledItem, "cancelled", pendingCount);
+        LogOperationEvent(cancelledItem, "cancelled", pendingCount, __FILE__, __LINE__);
     }
 
     {
@@ -892,7 +891,7 @@ RenderThreadPool::Shutdown()
         RenderWorkItem cancelledItem{};
         cancelledItem.OperationId = operationId;
         cancelledItem.OperationName = operationName;
-        LogOperationEvent(cancelledItem, "cancelled (shutdown)", 0);
+        LogOperationEvent(cancelledItem, "cancelled (shutdown)", 0, __FILE__, __LINE__);
     }
 
     // Wake up all workers
@@ -1103,7 +1102,7 @@ RenderThreadPool::WaitForGpuAndProduceProgressiveFrames(Fractal *fractal,
         if (computeDone) {
             uint32_t result = renderer.SyncComputeStream();
             if (result) {
-                fractal->MessageBoxCudaError(result);
+                fractal->MessageBoxCudaError(result, __FILE__, __LINE__);
             }
             break;
         }
@@ -1261,7 +1260,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
         // GL_MAX_TEXTURE_SIZE (1024 on GDI Generic), RGBA8, power-of-two.
         const GLint maxTex = glContext.GetMaxTextureSize();
         if (maxTex <= 0) {
-            GlLog("RenderFrameToGL: maxTex <= 0, skipping");
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << "RenderFrameToGL: maxTex <= 0, skipping";
             return;
         }
 
@@ -1276,7 +1275,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                      frame.OutputWidth,
                      frame.OutputHeight,
                      maxTex);
-            GlLog(buf);
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
         }
 
         constexpr size_t SoftwareTileCap = 1024;
@@ -1297,7 +1296,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                          tileW,
                          tileH,
                          tileW * tileH * 4);
-                GlLog(buf);
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
             }
         }
 
@@ -1346,7 +1345,8 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                 std::chrono::steady_clock::time_point uploadStart;
                 if (diagnoseFirstTile) {
                     checkedError = true;
-                    GlLog("RenderFrameToGL: first software tile glTexImage2D begin");
+                    FractalSharkLog::LogLine(__FILE__, __LINE__)
+                        << "RenderFrameToGL: first software tile glTexImage2D begin";
                     uploadStart = std::chrono::steady_clock::now();
                 }
 
@@ -1372,7 +1372,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                              err,
                              potW,
                              potH);
-                    GlLog(buf);
+                    FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
                 }
 
                 // Tex coords: only the content region of the POT texture.
@@ -1392,7 +1392,8 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
 
                 std::chrono::steady_clock::time_point drawStart;
                 if (diagnoseFirstTile) {
-                    GlLog("RenderFrameToGL: first software tile quad draw begin");
+                    FractalSharkLog::LogLine(__FILE__, __LINE__)
+                        << "RenderFrameToGL: first software tile quad draw begin";
                     drawStart = std::chrono::steady_clock::now();
                 }
 
@@ -1413,7 +1414,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                              sizeof(buf),
                              "RenderFrameToGL: first software tile quad draw end, elapsedMs=%lld",
                              ElapsedMilliseconds(drawStart));
-                    GlLog(buf);
+                    FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
                 }
             }
         }
@@ -1443,7 +1444,8 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
         std::chrono::steady_clock::time_point uploadStart;
         if (diagnoseHardwareFrame) {
             diagnosedFirstHardwareFrame = true;
-            GlLog("RenderFrameToGL: first hardware glTexImage2D begin");
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "RenderFrameToGL: first hardware glTexImage2D begin";
             uploadStart = std::chrono::steady_clock::now();
         }
 
@@ -1466,14 +1468,15 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                      "error(base16)=0x%x",
                      ElapsedMilliseconds(uploadStart),
                      err);
-            GlLog(buf);
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
         }
 
         glColor4f(1.f, 1.f, 1.f, 1.f);
 
         std::chrono::steady_clock::time_point drawStart;
         if (diagnoseHardwareFrame) {
-            GlLog("RenderFrameToGL: first hardware quad draw begin");
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "RenderFrameToGL: first hardware quad draw begin";
             drawStart = std::chrono::steady_clock::now();
         }
 
@@ -1494,7 +1497,7 @@ RenderThreadPool::RenderFrameToGL(OpenGlContext &glContext,
                      sizeof(buf),
                      "RenderFrameToGL: first hardware quad draw end, elapsedMs=%lld",
                      ElapsedMilliseconds(drawStart));
-            GlLog(buf);
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
         }
 
         if (persistTexOut) {
@@ -1676,7 +1679,7 @@ RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
                          item.ScrnWidth,
                          item.ScrnHeight,
                          item.GpuAntialiasing);
-                GlLog(buf);
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
             }
             PushTombstone(item.SequenceNumber);
             result.FinalFramePushed = true;
@@ -1717,7 +1720,7 @@ RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
                          item.SequenceNumber,
                          workerIters.m_OutputWidth,
                          workerIters.m_OutputHeight);
-                GlLog(buf);
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
             }
         } else {
             static bool loggedPushFail = false;
@@ -1729,7 +1732,7 @@ RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
                          "WorkerLoop: ProduceFrame returned false or skipped, "
                          "seq=%zu",
                          item.SequenceNumber);
-                GlLog(buf);
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
             }
             PushTombstone(item.SequenceNumber);
         }
@@ -1752,29 +1755,27 @@ RenderThreadPool::PublishCompletedIters(Fractal &fractal, ItersMemoryContainer &
 }
 
 static void
-LogWorkerException(const std::exception &e)
+LogWorkerException(const std::exception &e, const char *file, int line)
 {
-    const std::string msg = std::string{"RenderThreadPool worker fatal exception: "} + e.what();
-    std::cerr << msg << std::endl;
-    GlLog(msg.c_str());
+    FractalSharkLog::WriteException("RenderThreadPool worker fatal exception", e, file, line);
     if (Environment::IsDebuggerAttached()) {
         Environment::DebugBreakpoint();
     }
 }
 
 void
-RenderThreadPool::AbortAfterWorkerException(const std::exception &e)
+RenderThreadPool::AbortAfterWorkerException(const std::exception &e, const char *file, int line)
 {
     if (m_ShutdownFlag.exchange(true)) {
         return;
     }
 
-    LogWorkerException(e);
+    LogWorkerException(e, file, line);
 
     {
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto &item : m_WorkQueue) {
-            LogOperationEvent(item, "cancelled (worker failure)", 0);
+            LogOperationEvent(item, "cancelled (worker failure)", 0, file, line);
             if (item.CompletionPromise) {
                 item.CompletionPromise->set_value();
             }
@@ -1801,13 +1802,14 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
             break;
         }
 
-        LogOperationEvent(item, "started", std::numeric_limits<size_t>::max());
+        LogOperationEvent(item, "started", std::numeric_limits<size_t>::max(), __FILE__, __LINE__);
         WorkerJobScope jobScope(*this, item);
         try {
             if (item.WorkMode == RenderWorkMode::MutationOnly) {
                 ExecuteMutationOnly(item);
                 jobScope.Complete();
-                LogOperationEvent(item, "completed", std::numeric_limits<size_t>::max());
+                LogOperationEvent(
+                    item, "completed", std::numeric_limits<size_t>::max(), __FILE__, __LINE__);
                 continue;
             }
 
@@ -1818,7 +1820,9 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                 jobScope.Complete();
                 LogOperationEvent(item,
                                   IsPacedAnimationCancelled(item) ? "cancelled" : "superseded",
-                                  std::numeric_limits<size_t>::max());
+                                  std::numeric_limits<size_t>::max(),
+                                  __FILE__,
+                                  __LINE__);
                 continue;
             }
 
@@ -1828,8 +1832,11 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                     jobScope.MarkFinalFramePushed();
                 }
                 jobScope.Complete();
-                LogOperationEvent(
-                    item, framePushed ? "completed" : "failed", std::numeric_limits<size_t>::max());
+                LogOperationEvent(item,
+                                  framePushed ? "completed" : "failed",
+                                  std::numeric_limits<size_t>::max(),
+                                  __FILE__,
+                                  __LINE__);
                 continue;
             }
 
@@ -1857,10 +1864,12 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                               (fractal->GetStopCalculating() || IsPacedAnimationCancelled(item))
                                   ? "cancelled"
                                   : "completed",
-                              std::numeric_limits<size_t>::max());
+                              std::numeric_limits<size_t>::max(),
+                              __FILE__,
+                              __LINE__);
         } catch (const std::exception &e) {
-            LogOperationEvent(item, "failed", std::numeric_limits<size_t>::max());
-            AbortAfterWorkerException(e);
+            LogOperationEvent(item, "failed", std::numeric_limits<size_t>::max(), __FILE__, __LINE__);
+            AbortAfterWorkerException(e, __FILE__, __LINE__);
             break;
         }
     }
@@ -1874,7 +1883,8 @@ RenderThreadPool::GlConsumerLoop()
     // Create OpenGL context for this thread
     auto glContext = std::make_unique<OpenGlContext>(m_NativeWindow);
     if (!glContext->IsValid()) {
-        GlLog("GlConsumerLoop: OpenGL context creation FAILED, no rendering will occur");
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "GlConsumerLoop: OpenGL context creation FAILED, no rendering will occur";
         return;
     }
 
@@ -1885,7 +1895,7 @@ RenderThreadPool::GlConsumerLoop()
                  "GlConsumerLoop: context valid, software(bool)=%d, maxTex=%d",
                  glContext->IsSoftwareRenderer() ? 1 : 0,
                  glContext->GetMaxTextureSize());
-        GlLog(buf);
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
     }
 
     uint64_t nextExpectedSeqNum = 0;
@@ -2057,7 +2067,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
             std::chrono::steady_clock::time_point presentationStart;
             if (diagnoseHostFrame) {
                 diagnosedFirstHostFrame = true;
-                GlLog("TryPresentTick: first host frame begin");
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << "TryPresentTick: first host frame begin";
                 presentationStart = std::chrono::steady_clock::now();
             }
 
@@ -2079,7 +2089,8 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                 std::chrono::steady_clock::time_point perturbationStart;
                 if (diagnosePerturbationOverlay) {
                     diagnosedFirstPerturbationOverlay = true;
-                    GlLog("TryPresentTick: first perturbation overlay begin");
+                    FractalSharkLog::LogLine(__FILE__, __LINE__)
+                        << "TryPresentTick: first perturbation overlay begin";
                     perturbationStart = std::chrono::steady_clock::now();
                 }
 
@@ -2091,7 +2102,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                              sizeof(buf),
                              "TryPresentTick: first perturbation overlay end, elapsedMs=%lld",
                              ElapsedMilliseconds(perturbationStart));
-                    GlLog(buf);
+                    FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
                 }
 
                 ++m_HostExpectedSeqNum;
@@ -2102,7 +2113,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                              sizeof(buf),
                              "TryPresentTick: first host frame end, elapsedMs=%lld",
                              ElapsedMilliseconds(presentationStart));
-                    GlLog(buf);
+                    FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
                 }
                 return true;
             }
@@ -2113,7 +2124,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                          sizeof(buf),
                          "TryPresentTick: first host frame end, elapsedMs=%lld",
                          ElapsedMilliseconds(presentationStart));
-                GlLog(buf);
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
             }
             RecordPresentedFrame(m_HostLastFrame, std::chrono::steady_clock::now());
             return true;
@@ -2163,7 +2174,7 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
     const size_t totalPixels = outputWidth * outputHeight;
 
     if (totalPixels == 0) {
-        GlLog("ProduceFrame: totalPixels == 0");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "ProduceFrame: totalPixels == 0";
         return false;
     }
 
@@ -2200,7 +2211,7 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
                          renderer.GetHeight(),
                          workerIters.m_Width,
                          workerIters.m_Height);
-                GlLog(buf);
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
             }
             return false;
         }
@@ -2226,13 +2237,13 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
         }
 
         if (result) {
-            fractal->MessageBoxCudaError(result);
+            fractal->MessageBoxCudaError(result, __FILE__, __LINE__);
             return false;
         }
 
         result = progressive ? renderer.SyncDisplayStream() : renderer.SyncComputeStream();
         if (result) {
-            fractal->MessageBoxCudaError(result);
+            fractal->MessageBoxCudaError(result, __FILE__, __LINE__);
             return false;
         }
     }

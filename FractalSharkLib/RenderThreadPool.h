@@ -399,7 +399,7 @@ private:
                                         std::mutex &workerMutex,
                                         std::condition_variable &workerCV);
     void PublishCompletedIters(Fractal &fractal, ItersMemoryContainer &workerIters);
-    void AbortAfterWorkerException(const std::exception &e);
+    void AbortAfterWorkerException(const std::exception &e, const char *file, int line);
 
     // Push a tombstone (empty IsFinal) frame so the GL consumer can advance
     // past the given sequence number.
@@ -453,7 +453,11 @@ private:
     // Snapshot current Fractal state into a RenderWorkItem.
     RenderWorkItem SnapshotCurrentState() const;
 
-    void LogOperationEvent(const RenderWorkItem &item, std::string_view event, size_t pendingCount);
+    void LogOperationEvent(const RenderWorkItem &item,
+                           std::string_view event,
+                           size_t pendingCount,
+                           const char *file,
+                           int line);
 
     bool IsPresentationReady(uint64_t expectedSeqNum,
                              const RenderFrameInfo &frameInfo,
@@ -472,8 +476,6 @@ private:
     std::deque<RenderWorkItem> m_WorkQueue;
     std::atomic<uint64_t> m_NextSequenceNumber;
     std::atomic<uint64_t> m_NextOperationId;
-    std::mutex m_OperationLogMutex;
-
     // Renderer pool
     RendererPool m_RendererPool;
 

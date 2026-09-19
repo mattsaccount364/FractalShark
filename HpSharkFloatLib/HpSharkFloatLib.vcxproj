@@ -21,6 +21,7 @@
     <ClInclude Include="LAParameters.h" />
     <ClInclude Include="LAstep.h" />
     <ClInclude Include="LaunchParams.h" />
+    <ClInclude Include="Logging.h" />
     <ClInclude Include="LaunchParamsCalculator.h" />
     <ClInclude Include="Vectors.h" />
     <ClInclude Include="FractalViewPresets.h" />
@@ -82,6 +83,7 @@
     <ClInclude Include="ThreeWayMagnitude.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Logging.cpp" />
     <ClCompile Include="Exceptions.cpp" />
     <ClCompile Include="heap_allocator\HeapCpp.cpp" />
     <ClCompile Include="heap_allocator\HeapPanic.cpp" />

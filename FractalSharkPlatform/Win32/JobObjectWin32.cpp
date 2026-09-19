@@ -1,3 +1,4 @@
+#include "ConsoleLog.h"
 #include "JobObject.h"
 
 #ifndef NOMINMAX
@@ -5,8 +6,6 @@
 #endif
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-
-#include <iostream>
 
 namespace Environment {
 
@@ -30,7 +29,7 @@ JobObject::JobObjectImpl::JobObjectImpl()
     // Use a Win32 job object to limit virtual memory used by this process.
     m_JobHandle = CreateJobObject(nullptr, nullptr);
     if (m_JobHandle == nullptr) {
-        std::wcerr << L"Failed to create job object" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to create job object";
         return;
     }
 
@@ -53,14 +52,14 @@ JobObject::JobObjectImpl::JobObjectImpl()
                                  JobObjectExtendedLimitInformation,
                                  &m_ExtendedLimitInfo,
                                  sizeof(m_ExtendedLimitInfo))) {
-        std::wcerr << L"Failed to set job object information" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to set job object information";
         CloseHandle(m_JobHandle);
         m_JobHandle = nullptr;
         return;
     }
 
     if (!AssignProcessToJobObject(m_JobHandle, GetCurrentProcess())) {
-        std::wcerr << L"Failed to assign process to job object" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to assign process to job object";
         CloseHandle(m_JobHandle);
         m_JobHandle = nullptr;
         return;

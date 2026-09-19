@@ -104,9 +104,11 @@ Its platform boundary and current parity limitations are documented in
 
 \paragraph{\code{FractalSharkCli}.}
 The portable command-line executable provides headless rendering from built-in
-views, saved locations, or explicit coordinates.  It exercises the same core
-and CUDA rendering libraries without a window system; its contract and render
-path are documented in \cref{sec:fractalshark-cli}.
+views, saved locations, or explicit coordinates. It supports single-shot
+renders and a persistent server that accepts requests from other invocations
+of the executable. The server reuses a \code{Fractal} instance and calls the
+same core and CUDA rendering libraries without a window system. Its command
+contract and request flow are documented in \cref{sec:fractalshark-cli}.
 
 \paragraph{\code{FractalTray}.}
 The Windows tray application batch-renders a sequence of coordinates through

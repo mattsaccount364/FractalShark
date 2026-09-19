@@ -31,6 +31,7 @@
     </ClCompile>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Common\ConsoleLog.cpp" />
     <ClCompile Include="Win32\WaitCursorWin32.cpp" />
     <ClCompile Include="Win32\NativeOpenGLContextWin32.cpp" />
     <ClCompile Include="Linux\WaitCursorLinux.cpp">
@@ -63,6 +64,7 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Common\ConsoleLog.h" />
     <ClInclude Include="Common\Environment.h" />
     <ClInclude Include="Common\GlIncludes.h" />
     <ClInclude Include="Common\NativeOpenGLContext.h" />

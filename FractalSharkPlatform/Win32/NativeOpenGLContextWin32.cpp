@@ -1,21 +1,16 @@
 #include "NativeOpenGLContext.h"
 
+#include "ConsoleLog.h"
+
 // clang-format off
 #include "GlIncludes.h"
 // clang-format on
 
 #include <cstdio>
-#include <iostream>
 #include <mutex>
 #include <unordered_map>
 
 namespace {
-
-void
-GlLog(const char *msg)
-{
-    std::cerr << msg << std::endl;
-}
 
 HWND
 AsHWND(void *p)
@@ -136,19 +131,19 @@ namespace Environment {
 NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(nativeWindow)
 {
     if (!m_NativeWindow) {
-        GlLog("OpenGlContext: null HWND");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: null HWND";
         return;
     }
 
     m_DeviceContext = GetDC(AsHWND(m_NativeWindow));
     if (!m_DeviceContext) {
-        GlLog("OpenGlContext: GetDC failed");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: GetDC failed";
         return;
     }
 
     int pixelFormat = 0;
     if (!EnsurePixelFormatSet(AsHWND(m_NativeWindow), AsHDC(m_DeviceContext), pixelFormat)) {
-        GlLog("OpenGlContext: EnsurePixelFormatSet failed");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: EnsurePixelFormatSet failed";
         return;
     }
 
@@ -156,7 +151,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     if (!m_RenderContext) {
         char buf[128];
         snprintf(buf, sizeof(buf), "OpenGlContext: wglCreateContext failed, error=%lu", GetLastError());
-        GlLog(buf);
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
         return;
     }
 
@@ -166,7 +161,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     if (!MakeCurrent()) {
         char buf[128];
         snprintf(buf, sizeof(buf), "OpenGlContext: MakeCurrent failed, error=%lu", GetLastError());
-        GlLog(buf);
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
         return;
     }
 
@@ -191,7 +186,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
              actualPfd.dwFlags,
              m_IsSoftwareRenderer ? 1 : 0,
              GetCurrentThreadId());
-    GlLog(buf);
+    FractalSharkLog::LogLine(__FILE__, __LINE__) << buf;
 
     m_Valid = true;
 }

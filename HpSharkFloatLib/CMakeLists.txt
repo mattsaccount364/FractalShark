@@ -26,6 +26,7 @@ set(HPSHARK_GENERATED_CU_FILES
 add_library(HpSharkFloatLib STATIC)
 
 target_sources(HpSharkFloatLib PRIVATE
+    Logging.cpp
     FractalViewPresets.cpp
     HighPrecision.cpp
     LAParameters.cpp

@@ -85,6 +85,10 @@ implementation belongs in `FractalShark::Win32` or `FractalShark::Linux`. Keep O
 third-party-mandated APIs global. Do not use `using namespace`; use unqualified names inside the owning
 namespace and narrow aliases or using-declarations where needed.
 
+Prefer typed C++ functions, templates, and explicit callsite arguments over preprocessor macros. Do not
+add function-like logging macros or wrappers for `__FILE__`/`__LINE__` when a non-inline function can be
+called directly; retain macros only when required by compiler, platform, or third-party contracts.
+
 When modifying a function, rename legacy `snake_case` identifiers within that function, but do not run
 whole-file naming sweeps. Use forward slashes in include paths. Use `std::unique_ptr` for ownership and
 raw pointers for non-owning references; do not introduce `std::shared_ptr`. Define `NOMINMAX` and

@@ -2,6 +2,7 @@
 
 #include "FeatureFinderOrchestrator.h"
 
+#include "ConsoleLog.h"
 #include "Fractal.h"
 
 #include "BenchmarkData.h"
@@ -449,7 +450,8 @@ FeatureFinderOrchestrator::TryFindPeriodicPointIterType(size_t scrnX,
             break;
 
         default:
-            std::cerr << "Current render algorithm does not support feature finding.\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Current render algorithm does not support feature finding.";
             break;
     }
 }
@@ -682,7 +684,7 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(int clientX,
 
     FeatureSummary *best = ChooseClosestFeatureToScreenPoint(clientX, clientY);
     if (!best) {
-        std::cerr << "No feature found to zoom to.\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "No feature found to zoom to.";
         return false;
     }
 
@@ -697,7 +699,7 @@ FeatureFinderOrchestrator::ResumeFromCheckpoint()
 
     NRCheckpointData ckpt;
     if (!ReadFullNRCheckpoint(ckpt)) {
-        std::cerr << "No valid NR checkpoint found.\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "No valid NR checkpoint found.";
         return false;
     }
 

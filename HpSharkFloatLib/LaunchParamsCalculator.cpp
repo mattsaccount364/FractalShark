@@ -1,8 +1,8 @@
 #include "LaunchParamsCalculator.h"
+#include "ConsoleLog.h"
 #include "Environment.h"
 
 #include <algorithm>
-#include <iostream>
 #include <type_traits>
 
 // ---------------- utility ----------------
@@ -149,9 +149,10 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
     blocks = chosenBlocks;
     status = cudaSuccess;
 
-    std::cout << "CudaLaunchConfig: blocks=" << blocks << " threadsPerBlock=" << threadsPerBlock
-              << " blocksPerSM=" << blocksPerSM << " SMs=" << smCount
-              << " sharedMemBytes=" << dynamicSmemBytes << std::endl;
+    FractalSharkLog::LogLine(__FILE__, __LINE__)
+        << "CudaLaunchConfig: blocks=" << blocks << " threadsPerBlock=" << threadsPerBlock
+        << " blocksPerSM=" << blocksPerSM << " SMs=" << smCount
+        << " sharedMemBytes=" << dynamicSmemBytes;
 
     return status;
 }

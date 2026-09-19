@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "AbortMonitor.h"
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "Fractal.h"
 #include "PerturbationResults.h"
@@ -32,7 +33,6 @@
 
 #include <filesystem>
 #include <immintrin.h>
-#include <iostream>
 #include <string>
 #include <tuple>
 
@@ -164,7 +164,8 @@ RefOrbitCalc::OptimizeMemory()
 
     commitCharge = Environment::ProcessCommitChargeBytes();
     if (commitCharge > OMGAlotOfMemory) {
-        std::wcerr << L"Watch the memory use... this is just a warning" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << L"Watch the memory use... this is just a warning";
         assert(false);
     }
 }
@@ -679,7 +680,8 @@ RefOrbitCalc::GetReuseResults(
     // about 2^AuthoritativeReuseExtraPrecisionInBits. The problem naturally is the original
     // reference orbit is calculated only to so many digits.
     if (deltaPrecision >= extraPrecision) {
-        std::wcerr << L"Regenerating authoritative orbit is required 1" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << L"Regenerating authoritative orbit is required 1";
         return false;
     }
 
@@ -697,8 +699,6 @@ RefOrbitCalc::GetReuseResults(
         //     cx.str() + ", " + cy.str() + ", " +
         //     existingResultsHiX.str() + ", " + existingResultsHiY.str() + ", " +
         //     deltaX.str() + ", " + deltaY.str();
-        // const std::string outputStr = "Regenerating authoritative orbit is required 2: " + deltaStr;
-        // std::cerr << outputStr << std::endl;
         return false;
     }
 
@@ -2151,7 +2151,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT5(const PointZoomBBConverter &ptz,
                                                HighPrecision cx,
                                                HighPrecision cy)
 {
-    std::wcerr << L"AddPerturbationReferencePointMT5 disabled, using MT3" << std::endl;
+    FractalSharkLog::LogLine(__FILE__, __LINE__)
+        << L"AddPerturbationReferencePointMT5 disabled, using MT3";
     AddPerturbationReferencePointMT3<IterType, T, SubType, Periodicity, BenchmarkState, PExtras, Reuse>(
         ptz, cx, cy);
 }
@@ -2396,7 +2397,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
                         ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
                     break;
                 default:
-                    std::wcerr << L"Some stupid bug #2343 :(" << std::endl;
+                    FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Some stupid bug #2343 :(";
                     assert(false);
                     break;
             }
@@ -2407,7 +2408,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
         GetUsefulPerturbationResultsMutable<IterType, T, false, PExtras>();
     if (results == nullptr) {
         if (added) {
-            std::wcerr << L"Why didn't this work! :(" << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Why didn't this work! :(";
         }
 
         if constexpr (UsingDblflt) {
@@ -3007,7 +3008,7 @@ RefOrbitCalc::DiffOrbit(CompressToDisk compression,
         std::visit(lambda, results1, results2);
     } catch (const std::exception &e) {
         const auto outstr = std::string("Error diffing orbits: ") + e.what();
-        std::cerr << outstr << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << outstr;
     }
 }
 
@@ -3280,7 +3281,7 @@ RefOrbitCalc::LoadOrbit(ImaginaSettings imaginaSettings,
                 return helperT.template operator()<float>();
 
             default:
-                std::wcerr << L"Unknown render algorithm" << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Unknown render algorithm";
                 return helperT.template operator()<HDRFloat<double>>();
         }
     }

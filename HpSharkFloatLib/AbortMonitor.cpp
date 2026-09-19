@@ -1,7 +1,6 @@
 #include "AbortMonitor.h"
+#include "ConsoleLog.h"
 #include "Environment.h"
-
-#include <iostream>
 
 AbortMonitor *AbortMonitor::s_Instance = nullptr;
 
@@ -84,7 +83,8 @@ AbortMonitor::Run()
         // Escape: cancels/resets the abort flag
         if (Environment::IsKeyDown(Environment::Key::Escape)) {
             if (m_StopCalculating.load(std::memory_order_relaxed)) {
-                std::wcerr << L"AbortMonitor: abort cancelled (Escape pressed)" << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "AbortMonitor: abort cancelled (Escape pressed)";
                 m_StopCalculating.store(false, std::memory_order_relaxed);
             }
         }
@@ -93,7 +93,8 @@ AbortMonitor::Run()
         if (IsDownControlAlt()) {
             ctrlHeldCount++;
             if (ctrlHeldCount >= CtrlHoldThreshold) {
-                std::wcerr << L"AbortMonitor: stop signal set (Ctrl+Alt held 3s)" << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "AbortMonitor: stop signal set (Ctrl+Alt held 3s)";
                 m_StopCalculating.store(true, std::memory_order_relaxed);
             }
         } else {

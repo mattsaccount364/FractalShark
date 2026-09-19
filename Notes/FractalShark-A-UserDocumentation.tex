@@ -945,18 +945,23 @@ the token at the start of each frame.
 \subsection{FractalSharkCli: Headless Renderer}
 \label{sec:fractalshark-cli}
 
-\code{FractalSharkCli} is a command-line tool that renders a single
-Mandelbrot view without a graphical interface. It can write a PNG file,
-print monochrome ASCII art, print ANSI 256-color output, or combine image and
-console output. It is useful for scripting, CI golden-image tests, batch
-rendering on headless servers, and terminal inspection. The tool builds on
-both Windows (MSVC) and Linux (CMake + Clang).
+\code{FractalSharkCli} renders Mandelbrot views without a graphical interface.
+It can render once in a single process or accept repeated requests through a
+persistent server. Each render can write a PNG file, print monochrome ASCII
+art, print ANSI 256-color output, or combine image and console output. The
+tool supports scripting, CI golden-image tests, batch rendering on headless
+servers, and terminal inspection on Windows and Linux.
 
 \subsubsection*{Usage synopsis}
 
 \begin{lstlisting}
 FractalSharkCli --render-algorithm NAME [--out FILE.png] [--console] [--color]
                 [options] {view-source}
+FractalSharkCli --server [--endpoint NAME] [--width W --height H]
+                [--commit-cap-bytes N]
+FractalSharkCli --connect [--endpoint NAME] --render-algorithm NAME
+                [--out FILE.png] [--console] [--color] [options] {view-source}
+FractalSharkCli --connect [--endpoint NAME] --shutdown
 FractalSharkCli --list-render-algorithms
 FractalSharkCli --help
 \end{lstlisting}
@@ -1012,7 +1017,8 @@ At least one output mode is required. \code{-{}-out} may be omitted when
     \code{Auto}, among others.
 
   \item[\code{-{}-commit-cap-bytes N}]
-    Memory cap for growable vectors (default unlimited).
+    Memory cap for growable vectors (default unlimited). Set it when starting
+    a server; clients cannot change the cap for individual requests.
 
   \item[\code{-{}-out FILE.png}]
     Write the rendered image as a PNG. This option can be combined with either
@@ -1030,14 +1036,48 @@ At least one output mode is required. \code{-{}-out} may be omitted when
     Suppress progress output.
 \end{description}
 
+\subsubsection*{Persistent server}
+
+Start the server in one terminal, then submit renders and stop it from another:
+
+\begin{lstlisting}
+FractalSharkCli --server --endpoint batch --width 1280 --height 720
+FractalSharkCli --connect --endpoint batch --builtin-view 0 --render-algorithm Cpu64 --out frame.png
+FractalSharkCli --connect --endpoint batch --shutdown
+\end{lstlisting}
+
+The server stays in the foreground and handles requests in arrival order.
+Without \code{-{}-endpoint}, both processes use a per-user local endpoint:
+a named pipe on Windows or a Unix-domain socket on Linux. Server width and
+height supply defaults that a render request may override. The server reads
+locations files and writes PNG files, so relative paths in client arguments
+are resolved from the server's working directory.
+
+The client prints the server's output and returns its status as an exit code.
+It also prints a frame time covering the request and response. For server
+renders, PNG encoding can continue after the client returns; a successful
+response does not guarantee that the PNG is complete. The shutdown command
+waits for outstanding PNG
+encoders before the server exits. The full PowerShell batch example is
+\code{tools/run\_cli\_server\_example.ps1}.
+
 \subsubsection*{Implementation}
 
-Internally, \code{FractalSharkCli} delegates to the shared
-\code{RenderToPng} function in \code{FractalSharkLib}.  This function
-constructs a \code{Fractal} instance, configures the view and
-algorithm, then uses the direct rendering path
+The executable parses and validates render options in single-shot and client
+modes. A client forwards the render arguments or a shutdown request over a
+versioned local IPC protocol. The server validates render arguments again,
+processes one connection at a time, and returns a status plus captured standard
+output and error. It owns one \code{Fractal} instance across requests, retaining
+initialized renderer state. In single-shot mode, the executable creates a new
+\code{Fractal} for the render.
+
+Both render modes call the shared \code{RenderToPng} function in
+\code{FractalSharkLib} with the caller-owned \code{Fractal}. The helper configures
+the view and algorithm, then uses the direct rendering path
 (\cref{subsec:two-render-paths}): \code{Drain()} followed by
-\code{CalcFractal(true)} and \code{SaveCurrentFractal}.
+\code{CalcFractal(true)} and, when PNG output is requested,
+\code{SaveCurrentFractal}. Single-shot mode waits for PNG completion; server
+mode starts encoding in the background so it can overlap a later render.
 
 The same \code{RenderToPng} helper is used by
 \code{TestRenderGoldens} (\cref{subsec:crummy-test}) to produce

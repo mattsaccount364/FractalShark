@@ -1,6 +1,7 @@
 // Linux (POSIX) implementation of the Environment namespace.
 // This file is only compiled on Linux builds.
 
+#include "ConsoleLog.h"
 #include "Environment.h"
 
 #include <X11/Xlib.h>
@@ -13,7 +14,6 @@
 #include <cstring>
 #include <ctime>
 #include <cwchar>
-#include <iostream>
 #include <string>
 
 #include <dirent.h>
@@ -881,7 +881,7 @@ Environment::DirectoryRemoveRecursive(const wchar_t *path)
 void
 Environment::ShowWarning(const wchar_t *message)
 {
-    std::wcerr << L"Warning: " << message << std::endl;
+    FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Warning: " << message;
 }
 
 void

@@ -4,6 +4,7 @@
 #include "GlIncludes.h"
 // clang-format on
 
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "Fractal.h"
 
@@ -11,7 +12,6 @@
 #include "FeatureFinderOrchestrator.h"
 
 #include <fstream>
-#include <iostream>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -30,6 +30,7 @@
 #include "Exceptions.h"
 #include "FeatureFinder.h"
 #include "FractalViewPresets.h"
+#include "Logging.h"
 #include "PerturbationResults.h"
 #include "PrecisionCalculator.h"
 #include "RecommendedSettings.h"
@@ -83,8 +84,9 @@ Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCurs
         auto res = GPURenderer::TestCudaIsWorking();
 
         if (!res) {
-            std::cerr << "CUDA initialization failed.  GPU rendering will be disabled.\n";
-            MessageBoxCudaError(res);
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "CUDA initialization failed.  GPU rendering will be disabled.";
+            MessageBoxCudaError(res, __FILE__, __LINE__);
             m_BypassGpu = true;
             return;
         }
@@ -262,7 +264,8 @@ Fractal::ResetDimensions(size_t width, size_t height, uint32_t gpu_antialiasing)
     }
 
     if (gpu_antialiasing > 4) {
-        std::wcerr << L"You're doing it wrong.  4x is max == 16 samples per pixel" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << L"You're doing it wrong.  4x is max == 16 samples per pixel";
         gpu_antialiasing = 4;
     }
 
@@ -519,7 +522,7 @@ Fractal::InitialDefaultViewAndSettings(int width, int height)
     // commandDispatcher.Dispatch(IDM_ALG_AUTO); call
     const bool success = SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
     if (!success) {
-        std::cerr << "Error: could not set default render algorithm." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Error: could not set default render algorithm.";
     }
 
     SetIterationPrecision(1);
@@ -857,7 +860,7 @@ Fractal::GetNumIterations(void) const
 {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if (m_NumIterations > GetMaxIterations<IterType>()) {
-            std::wcerr << L"Iteration limit exceeded somehow." << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Iteration limit exceeded somehow.";
             m_NumIterations = GetMaxIterations<IterType>();
             return GetMaxIterations<IterType>();
         }
@@ -992,9 +995,11 @@ Fractal::SetRenderAlgorithm(RenderAlgorithm alg)
 {
     bool ret = true;
     if (m_BypassGpu) {
-        std::cerr << "Bypassing GPU in effect: CPU-only render algorithms enforced." << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Bypassing GPU in effect: CPU-only render algorithms enforced.";
         if (alg.Gpu == RequiresGpu::Yes) {
-            std::cerr << "Bypassing GPU: Forcing CPU64 render algorithm." << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Bypassing GPU: Forcing CPU64 render algorithm.";
             alg = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
             ret = false;
         }
@@ -1585,7 +1590,7 @@ Fractal::UsePaletteType(FractalPaletteType type)
     for (size_t i = 0; i < NumRenderers; i++) {
         auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
-            MessageBoxCudaError(err);
+            MessageBoxCudaError(err, __FILE__, __LINE__);
             return;
         }
     }
@@ -1610,7 +1615,7 @@ Fractal::UsePalette(int depth)
     for (size_t i = 0; i < NumRenderers; i++) {
         auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
-            MessageBoxCudaError(err);
+            MessageBoxCudaError(err, __FILE__, __LINE__);
             return;
         }
     }
@@ -1623,7 +1628,7 @@ Fractal::UseNextPaletteDepth()
     for (size_t i = 0; i < NumRenderers; i++) {
         auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
-            MessageBoxCudaError(err);
+            MessageBoxCudaError(err, __FILE__, __LINE__);
             return;
         }
     }
@@ -1636,7 +1641,7 @@ Fractal::SetPaletteAuxDepth(int32_t depth)
     for (size_t i = 0; i < NumRenderers; i++) {
         auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
-            MessageBoxCudaError(err);
+            MessageBoxCudaError(err, __FILE__, __LINE__);
             return;
         }
     }
@@ -1649,7 +1654,7 @@ Fractal::UseNextPaletteAuxDepth(int32_t inc)
     for (size_t i = 0; i < NumRenderers; i++) {
         auto err = InitializeGPUMemory(static_cast<RendererIndex>(i), true, m_CurIters);
         if (err) {
-            MessageBoxCudaError(err);
+            MessageBoxCudaError(err, __FILE__, __LINE__);
             return;
         }
     }
@@ -1946,7 +1951,7 @@ Fractal::CalcGpuFractal(RendererIndex idx, [[maybe_unused]] bool drawFractal, Ca
 
     uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
-        MessageBoxCudaError(err);
+        MessageBoxCudaError(err, __FILE__, __LINE__);
         return;
     }
 
@@ -1956,7 +1961,7 @@ Fractal::CalcGpuFractal(RendererIndex idx, [[maybe_unused]] bool drawFractal, Ca
         GetRenderAlgorithm(), cx2, cy2, dx2, dy2, GetNumIterations<IterType>(), m_IterationPrecision);
 
     if (err) {
-        MessageBoxCudaError(err);
+        MessageBoxCudaError(err, __FILE__, __LINE__);
     }
 }
 
@@ -2344,7 +2349,7 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
                         // FIX: add a rebase check between the BLA loop exit and the single-step
                         // perturbation, so RefIteration is rebased to 0 before overshooting.
                         if (RefIteration + l >= (IterType)results->GetCountOrbitEntries()) {
-                            std::wcerr << L"Out of bounds! :(" << std::endl;
+                            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Out of bounds! :(";
                             break;
                         }
 
@@ -2416,7 +2421,7 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
                     // miscolored pixels. Same root cause as the BLA overshoot above.
                     // FIX: add a rebase check between the BLA loop exit and here.
                     if (RefIteration >= (IterType)results->GetCountOrbitEntries()) {
-                        std::wcerr << L"Out of bounds 2! :(" << std::endl;
+                        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Out of bounds 2! :(";
                         break;
                     }
 
@@ -2545,7 +2550,7 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
         return;
 
     if (results->GetLaReference() == nullptr || results->GetOrbitData() == nullptr) {
-        std::wcerr << L"Oops - a null pointer deref" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Oops - a null pointer deref";
         return;
     }
 
@@ -2758,7 +2763,7 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
 
     uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
-        MessageBoxCudaError(err);
+        MessageBoxCudaError(err, __FILE__, __LINE__);
         return;
     }
 
@@ -2796,7 +2801,7 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
                                                                    m_IterationPrecision);
 
     if (result) {
-        MessageBoxCudaError(result);
+        MessageBoxCudaError(result, __FILE__, __LINE__);
     }
 }
 
@@ -2835,7 +2840,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
     // before generating the new orbit.
     auto err = InitializeGPUMemory(idx, results != nullptr, ctx.ItersMemory);
     if (err) {
-        MessageBoxCudaError(err);
+        MessageBoxCudaError(err, __FILE__, __LINE__);
         return;
     }
 
@@ -2853,7 +2858,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
     // The LaReference is not required when running perturbation only
     if ((RefOrbitMode == RefOrbitCalc::Extras::IncludeLAv2 && results->GetLaReference() == nullptr) ||
         results->GetOrbitData() == nullptr) {
-        std::wcerr << L"Oops - a null pointer deref" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Oops - a null pointer deref";
         return;
     }
 
@@ -2869,7 +2874,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
     err = renderer.InitializePerturb<IterType, T, SubType, PExtras, T>(
         results->GetGenerationNumber(), &gpu_results, 0, nullptr, results->GetLaReference());
     if (err) {
-        MessageBoxCudaError(err);
+        MessageBoxCudaError(err, __FILE__, __LINE__);
         return;
     }
 
@@ -2886,7 +2891,7 @@ Fractal::CalcGpuPerturbationFractalLAv2(RendererIndex idx,
         GetRenderAlgorithm(), cx2, cy2, dx2, dy2, centerX2, centerY2, GetNumIterations<IterType>());
 
     if (result) {
-        MessageBoxCudaError(result);
+        MessageBoxCudaError(result, __FILE__, __LINE__);
         return;
     }
 }
@@ -2918,7 +2923,7 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx,
 
     uint32_t err = InitializeGPUMemory(idx, true, ctx.ItersMemory);
     if (err) {
-        MessageBoxCudaError(err);
+        MessageBoxCudaError(err, __FILE__, __LINE__);
         return;
     }
 
@@ -2948,7 +2953,7 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx,
         results2->GetPeriodMaybeZero()};
 
     if (gpu_results.GetCompressedSize() != gpu_results2.GetCompressedSize()) {
-        std::wcerr << L"Mismatch on size" << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Mismatch on size";
         return;
     }
 
@@ -2966,19 +2971,14 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx,
                                                                m_IterationPrecision);
 
     if (result) {
-        MessageBoxCudaError(result);
+        MessageBoxCudaError(result, __FILE__, __LINE__);
     }
 }
 
 void
-Fractal::MessageBoxCudaError(uint32_t result)
+Fractal::MessageBoxCudaError(uint32_t result, const char *file, int line)
 {
-    char error[256];
-    sprintf(error,
-            "Error from cuda: code %u.  Message: \"%s\"\n",
-            result,
-            GPURenderer::ConvertErrorToString(result));
-    std::cerr << error << std::endl;
+    HpShark::LogCudaError(result, file, line);
 }
 
 int
@@ -3193,8 +3193,8 @@ Fractal::LoadRefOrbit(RecommendedSettings *oldSettings,
     if (imaginaSettings == ImaginaSettings::UseSaved) {
         const bool success = SetRenderAlgorithm(recommendedSettings.GetRenderAlgorithm());
         if (!success) {
-            std::wcerr << L"Warning: saved render algorithm is not supported on this system."
-                       << std::endl;
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << L"Warning: saved render algorithm is not supported on this system.";
         }
 
         SetIterType(recommendedSettings.GetIterType());

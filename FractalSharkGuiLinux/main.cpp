@@ -1,5 +1,6 @@
 // FractalSharkGuiLinux - Linux GUI entry point.
 
+#include "ConsoleLog.h"
 #include "CrashHandler.h"
 #include "Environment.h"
 #include "Exceptions.h"
@@ -9,8 +10,6 @@
 #include <X11/Xlib.h>
 
 #include <exception>
-#include <iostream>
-
 int
 main(int /*argc*/, char ** /*argv*/)
 {
@@ -29,7 +28,7 @@ main(int /*argc*/, char ** /*argv*/)
 
         return FractalShark::Linux::RunMainWindow([&splash] { splash.Stop(); });
     } catch (const std::exception &exception) {
-        std::cerr << "FractalSharkGuiLinux: " << exception.what() << '\n';
+        FractalSharkLog::WriteException("FractalSharkGuiLinux", exception, __FILE__, __LINE__);
         return 1;
     }
 }

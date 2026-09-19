@@ -1,5 +1,9 @@
 add_library(FractalSharkPlatform STATIC)
 
+target_sources(FractalSharkPlatform PRIVATE
+    Common/ConsoleLog.cpp
+)
+
 if(WIN32)
     target_sources(FractalSharkPlatform PRIVATE
         Win32/WaitCursorWin32.cpp

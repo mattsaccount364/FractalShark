@@ -6,6 +6,7 @@
 #include "KernelInvokeInternal.h"
 #include "KernelInvokeReferenceSetup.h"
 #include "LaunchParams.h"
+#include "Logging.h"
 
 #include <algorithm>
 #include <chrono>
@@ -135,7 +136,8 @@ InitHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
         auto res = cudaStreamCreate(&stream); // Create a stream
 
         if (res != cudaSuccess) {
-            std::cerr << "CUDA error in creating stream: " << cudaGetErrorString(res) << std::endl;
+            LogCudaError(
+                "CUDA error in creating stream", static_cast<uint32_t>(res), __FILE__, __LINE__);
         }
     }
 
@@ -333,7 +335,8 @@ ShutdownHpSharkReferenceKernel(const HpShark::LaunchParams &launchParams,
         auto res = cudaStreamDestroy(stream); // Destroy the stream
 
         if (res != cudaSuccess) {
-            std::cerr << "CUDA error in destroying stream: " << cudaGetErrorString(res) << std::endl;
+            LogCudaError(
+                "CUDA error in destroying stream", static_cast<uint32_t>(res), __FILE__, __LINE__);
         }
     }
 }

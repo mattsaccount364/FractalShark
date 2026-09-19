@@ -14,6 +14,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <thread>
+#include <utility>
 
 #include "ATInfo.h"
 #include "AutoZoomer.h"
@@ -47,8 +48,15 @@ IsRenderCoordinateZero(const T &value)
                              value.tail;
                          }) {
         return value.head == 0 && value.tail == 0;
-    } else {
+    } else if constexpr (requires {
+                             value.x;
+                             value.y;
+                             value.z;
+                             value.w;
+                         }) {
         return value.x == 0 && value.y == 0 && value.z == 0 && value.w == 0;
+    } else {
+        static_assert(sizeof(T) == 0, "Unsupported GPU coordinate type");
     }
 }
 } // namespace
@@ -71,7 +79,7 @@ void
 Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCursor)
 {
     m_BypassGpu = true;
-    auto SetupCuda = [&]() {
+    std::jthread setupThread{[this] {
         auto res = GPURenderer::TestCudaIsWorking();
 
         if (!res) {
@@ -82,9 +90,7 @@ Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCurs
         }
 
         m_BypassGpu = false;
-    };
-
-    auto setupThread = std::make_unique<std::thread>(SetupCuda);
+    }};
 
     // Create the control-key-down/mouse-movement-monitoring thread.
     if (nativeWindow != nullptr) {
@@ -100,7 +106,7 @@ Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCurs
     m_Palette.InitializeAllPalettes();
 
     // This one needs to be done before setting up the view.
-    setupThread->join();
+    setupThread.join();
 
     InitialDefaultViewAndSettings(width, height);
 
@@ -341,27 +347,19 @@ Fractal::RecenterViewScreen(Environment::ScreenRect rect)
     HighPrecision newMaxY = YFromScreenToCalc(HighPrecision{rect.bottom});
 
     if (newMaxX < newMinX) {
-        HighPrecision temp = newMinX;
-        newMinX = newMaxX;
-        newMaxX = temp;
+        std::swap(newMinX, newMaxX);
     }
 
     if (rect.right < rect.left) {
-        auto tempInt = rect.left;
-        rect.left = rect.right;
-        rect.right = tempInt;
+        std::swap(rect.left, rect.right);
     }
 
     if (newMaxY < newMinY) {
-        HighPrecision temp = newMinY;
-        newMinY = newMaxY;
-        newMaxY = temp;
+        std::swap(newMinY, newMaxY);
     }
 
     if (rect.bottom < rect.top) {
-        auto tempInt = rect.top;
-        rect.top = rect.bottom;
-        rect.bottom = tempInt;
+        std::swap(rect.top, rect.bottom);
     }
 
     if (newMinX == newMaxX) {
@@ -1877,8 +1875,9 @@ Fractal::FillGpuCoords(T &cx2, T &cy2, T &dx2, T &dy2, const PointZoomBBConverte
     FillCoord(srcDy, dy2);
 
     const HighPrecision zero{0};
-    if ((srcDx != zero && IsRenderCoordinateZero(dx2)) ||
-        (srcDy != zero && IsRenderCoordinateZero(dy2))) {
+    const bool lostDx = srcDx != zero && IsRenderCoordinateZero(dx2);
+    const bool lostDy = srcDy != zero && IsRenderCoordinateZero(dy2);
+    if (lostDx || lostDy) {
         throw std::range_error(std::string{GetRenderAlgorithmName()} +
                                " cannot represent this viewport's pixel spacing. Select the "
                                "corresponding HDR renderer or Auto.");
@@ -2740,6 +2739,10 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
                                        [[maybe_unused]] bool drawFractal,
                                        CalcContext &ctx)
 {
+    T cx2{}, cy2{}, dx2{}, dy2{};
+    T centerX2{}, centerY2{};
+    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
+
     auto *results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                          T,
@@ -2759,18 +2762,13 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
     auto &renderer = GetRenderer(idx);
     renderer.ClearMemory<IterType>();
 
-    T cx2{}, cy2{}, dx2{}, dy2{};
-    T centerX2{}, centerY2{};
-
-    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
-
     HighPrecision centerX = results->GetHiX() - ctx.Ptz.GetMinX();
     HighPrecision centerY = results->GetHiY() - ctx.Ptz.GetMaxY();
 
     FillCoord(centerX, centerX2);
     FillCoord(centerY, centerY2);
 
-    GPUPerturbResults<IterType, T, PerturbExtras::Disable> gpu_results{
+    GPUPerturbResults<IterType, T, PerturbExtras::Disable> gpuResults{
         (IterType)results->GetCompressedOrUncompressedOrbitSize(),
         results->GetCountOrbitEntries(),
         results->GetOrbitXLow(),
@@ -2778,23 +2776,21 @@ Fractal::CalcGpuPerturbationFractalBLA(RendererIndex idx,
         results->GetOrbitData(),
         results->GetPeriodMaybeZero()};
 
-    uint32_t result;
-
     BLAS<IterType, T> blas(*results);
     blas.Init(results->GetCountOrbitEntries(), results->GetMaxRadius());
 
     m_BenchmarkData.m_PerPixel.StartTimer();
-    result = renderer.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
-                                                    &gpu_results,
-                                                    &blas,
-                                                    cx2,
-                                                    cy2,
-                                                    dx2,
-                                                    dy2,
-                                                    centerX2,
-                                                    centerY2,
-                                                    GetNumIterations<IterType>(),
-                                                    m_IterationPrecision);
+    const uint32_t result = renderer.RenderPerturbBLA<IterType, T>(GetRenderAlgorithm(),
+                                                                   &gpuResults,
+                                                                   &blas,
+                                                                   cx2,
+                                                                   cy2,
+                                                                   dx2,
+                                                                   dy2,
+                                                                   centerX2,
+                                                                   centerY2,
+                                                                   GetNumIterations<IterType>(),
+                                                                   m_IterationPrecision);
 
     if (result) {
         MessageBoxCudaError(result);
@@ -2898,6 +2894,10 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx,
                                              [[maybe_unused]] bool drawFractal,
                                              CalcContext &ctx)
 {
+    T cx2{}, cy2{}, dx2{}, dy2{};
+    T centerX2{}, centerY2{};
+    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
+
     auto *results =
         m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
                                                          T,
@@ -2921,11 +2921,6 @@ Fractal::CalcGpuPerturbationFractalScaledBLA(RendererIndex idx,
 
     auto &renderer = GetRenderer(idx);
     renderer.ClearMemory<IterType>();
-
-    T cx2{}, cy2{}, dx2{}, dy2{};
-    T centerX2{}, centerY2{};
-
-    FillGpuCoords<T>(cx2, cy2, dx2, dy2, ctx.Ptz);
 
     HighPrecision centerX = results->GetHiX() - ctx.Ptz.GetMinX();
     HighPrecision centerY = results->GetHiY() - ctx.Ptz.GetMaxY();

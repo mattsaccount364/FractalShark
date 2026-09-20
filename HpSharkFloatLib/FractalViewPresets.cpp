@@ -1,6 +1,19 @@
 #include "FractalViewPresets.h"
 #include "PointZoomBBConverter.h"
 
+namespace {
+
+void
+CopyBounds(const PointZoomBBConverter &converter, ViewPresetResult &result)
+{
+    result.minX = converter.GetMinX();
+    result.minY = converter.GetMinY();
+    result.maxX = converter.GetMaxX();
+    result.maxY = converter.GetMaxY();
+}
+
+} // namespace
+
 ViewPresetResult
 GetViewPreset(size_t view,
               IterTypeFull defaultIterations,
@@ -577,10 +590,7 @@ GetViewPreset(size_t view,
                 HighPrecision{"5.10950250472583381635e+6710"},
                 PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             result.numIterations = 2147483646;
             result.gpuAntialiasing = 4;
             break;
@@ -1169,10 +1179,7 @@ GetViewPreset(size_t view,
                 HighPrecision{"1.4e301"},
                 PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             result.numIterations = 10100100;
             break;
         }
@@ -1209,10 +1216,7 @@ GetViewPreset(size_t view,
                 HighPrecision{"4.98201309068883908096e+44"},
                 PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             result.numIterations = 4718592;
             break;
         }
@@ -1854,10 +1858,7 @@ GetViewPreset(size_t view,
                                          HighPrecision{"1e19"},
                                          PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             result.numIterations = 1'100'100'100;
             break;
         }
@@ -2020,10 +2021,7 @@ GetViewPreset(size_t view,
                                          HighPrecision{"1.36733731087e+114514"},
                                          PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             /// SetNumIterations<IterTypeFull>(700'000);
             result.numIterations = 200'000'000;
             break;
@@ -2059,10 +2057,7 @@ GetViewPreset(size_t view,
                 HighPrecision{"1.73231758582480130207e+715"},
                 PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             // UsePalette(6); // Not part of ViewPresetResult
             result.numIterations = 69120000;
             result.gpuAntialiasing = 4;
@@ -2078,10 +2073,7 @@ GetViewPreset(size_t view,
                                          HighPrecision{"1.60610174675e+244240"},
                                          PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             /// SetNumIterations<IterTypeFull>(700'000);
             result.numIterations = 5'806'285'824;
             break;
@@ -2096,10 +2088,7 @@ GetViewPreset(size_t view,
                                          HighPrecision{strZoomFactor},
                                          PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             result.numIterations = 2'147'483'646;
             break;
         }
@@ -2113,10 +2102,7 @@ GetViewPreset(size_t view,
                                          HighPrecision{strZoomFactor},
                                          PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             result.iterType = IterTypeEnum::Bits64;
             result.numIterations = 50'000'000'000llu;
             break;
@@ -2134,10 +2120,7 @@ GetViewPreset(size_t view,
                                          HighPrecision{"1"},
                                          PointZoomBBConverter::TestMode::Enabled};
 
-            result.minX = convert.GetMinX();
-            result.minY = convert.GetMinY();
-            result.maxX = convert.GetMaxX();
-            result.maxY = convert.GetMaxY();
+            CopyBounds(convert, result);
             result.numIterations = defaultIterations;
             break;
     }

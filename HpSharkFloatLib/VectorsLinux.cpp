@@ -208,15 +208,22 @@ GrowableVector<EltT>::GrowableVector(GrowableVector<EltT> &&other) noexcept
 
     wcscpy_s(m_Filename, other.m_Filename);
 
-    other.m_FileHandle = nullptr;
-    other.m_MappedFile = nullptr;
-    other.m_UsedSizeInElts = 0;
-    other.m_CapacityInElts = 0;
-    other.m_Data = nullptr;
-    other.m_AddPointOptions = AddPointOptions::DontSave;
-    memset(other.m_Filename, 0, sizeof(other.m_Filename));
-    other.m_PhysicalMemoryCapacityKB = 0;
-    other.m_OverrideViewSizeBytes = 0;
+    other.ResetMovedFrom();
+}
+
+template <class EltT>
+void
+GrowableVector<EltT>::ResetMovedFrom()
+{
+    m_FileHandle = nullptr;
+    m_MappedFile = nullptr;
+    m_UsedSizeInElts = 0;
+    m_CapacityInElts = 0;
+    m_Data = nullptr;
+    m_AddPointOptions = AddPointOptions::DontSave;
+    memset(m_Filename, 0, sizeof(m_Filename));
+    m_PhysicalMemoryCapacityKB = 0;
+    m_OverrideViewSizeBytes = 0;
 }
 
 template <class EltT>
@@ -239,15 +246,7 @@ GrowableVector<EltT>::operator=(GrowableVector<EltT> &&other) noexcept
     m_PhysicalMemoryCapacityKB = other.m_PhysicalMemoryCapacityKB;
     m_OverrideViewSizeBytes = other.m_OverrideViewSizeBytes;
 
-    other.m_FileHandle = nullptr;
-    other.m_MappedFile = nullptr;
-    other.m_UsedSizeInElts = 0;
-    other.m_CapacityInElts = 0;
-    other.m_Data = nullptr;
-    other.m_AddPointOptions = AddPointOptions::DontSave;
-    memset(other.m_Filename, 0, sizeof(other.m_Filename));
-    other.m_PhysicalMemoryCapacityKB = 0;
-    other.m_OverrideViewSizeBytes = 0;
+    other.ResetMovedFrom();
 
     return *this;
 }

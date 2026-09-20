@@ -16,28 +16,28 @@ CudaLaunchConfig::CudaLaunchConfig()
 }
 
 static inline int
-clamp_nonzero(int v)
+ClampNonzero(int value)
 {
-    return (v <= 0) ? 1 : v;
+    return (value <= 0) ? 1 : value;
 }
 
 static inline int
-clamp_int(int v, int lo, int hi)
+ClampInt(int value, int lowerBound, int upperBound)
 {
-    if (lo > 0)
-        v = std::max(v, lo);
-    if (hi > 0)
-        v = std::min(v, hi);
-    return v;
+    if (lowerBound > 0)
+        value = std::max(value, lowerBound);
+    if (upperBound > 0)
+        value = std::min(value, upperBound);
+    return value;
 }
 
 static inline int
-ceil_div_u64_to_int(uint64_t a, uint64_t b)
+CeilDivU64ToInt(uint64_t numerator, uint64_t denominator)
 {
-    if (b == 0)
+    if (denominator == 0)
         return INT_MAX;
-    uint64_t q = (a + b - 1ull) / b;
-    return (q > (uint64_t)INT_MAX) ? INT_MAX : (int)q;
+    uint64_t quotient = (numerator + denominator - 1ull) / denominator;
+    return (quotient > (uint64_t)INT_MAX) ? INT_MAX : (int)quotient;
 }
 
 bool
@@ -91,16 +91,13 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
         // still fill minGridSize for visibility/diagnostics:
         int tmpMinGrid = 0, tmpBlock = 0;
         cudaError_t e = cudaOccupancyMaxPotentialBlockSize(
-            &tmpMinGrid, &tmpBlock, kernelFunc, (int)dynSmemBytes, blockSizeLimit ? blockSizeLimit : 0);
+            &tmpMinGrid, &tmpBlock, kernelFunc, (int)dynSmemBytes, blockSizeLimit);
         if (e != cudaSuccess)
             return fail(e);
         minGridSize = tmpMinGrid;
     } else {
-        cudaError_t e = cudaOccupancyMaxPotentialBlockSize(&minGridSize,
-                                                           &blockSize,
-                                                           kernelFunc,
-                                                           (int)dynSmemBytes,
-                                                           blockSizeLimit ? blockSizeLimit : 0);
+        cudaError_t e = cudaOccupancyMaxPotentialBlockSize(
+            &minGridSize, &blockSize, kernelFunc, (int)dynSmemBytes, blockSizeLimit);
         if (e != cudaSuccess)
             return fail(e);
     }
@@ -116,14 +113,14 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
 
     if (maxBlocksPerSM > 0)
         blocksPerSM = std::min(blocksPerSM, maxBlocksPerSM);
-    blocksPerSM = clamp_nonzero(blocksPerSM);
+    blocksPerSM = ClampNonzero(blocksPerSM);
 
-    const int fillMachineBlocks = clamp_nonzero(blocksPerSM * smCount);
+    const int fillMachineBlocks = ClampNonzero(blocksPerSM * smCount);
 
     // ----- N coverage blocks (only meaningful for non-grid-stride mapping) -----
     int coverNBlocks = 1;
     if (N > 0) {
-        coverNBlocks = clamp_nonzero(ceil_div_u64_to_int(N, (uint64_t)blockSize));
+        coverNBlocks = ClampNonzero(CeilDivU64ToInt(N, (uint64_t)blockSize));
     }
 
     // ----- final blocks selection policy -----
@@ -143,8 +140,8 @@ CudaLaunchConfig::compute(const void *kernelFunc, size_t dynSmemBytes)
             break;
     }
 
-    chosenBlocks = clamp_int(chosenBlocks, minBlocks, maxBlocks);
-    chosenBlocks = clamp_nonzero(chosenBlocks);
+    chosenBlocks = ClampInt(chosenBlocks, minBlocks, maxBlocks);
+    chosenBlocks = ClampNonzero(chosenBlocks);
 
     blocks = chosenBlocks;
     status = cudaSuccess;

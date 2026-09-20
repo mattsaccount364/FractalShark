@@ -143,6 +143,8 @@ public:
     void GrowVectorByAmount(size_t amount);
 
 private:
+    void ResetMovedFrom();
+
     // The InternalOpenFile method opens the file but
     // does not map it to memory.
     uint32_t InternalOpenFile();

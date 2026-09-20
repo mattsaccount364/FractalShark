@@ -25,12 +25,12 @@ public:
     CUDA_CRAP int32_t GetStage0PeriodDetectionThresholdExp() const;
     CUDA_CRAP int32_t GetPeriodDetectionThresholdExp() const;
 
-    CUDA_CRAP void AdjustLAThresholdScaleExponent(int32_t delta_exponent);
-    CUDA_CRAP void AdjustLAThresholdCScaleExponent(int32_t delta_exponent);
-    CUDA_CRAP void AdjustStage0PeriodDetectionThreshold2Exponent(int32_t delta_exponent);
-    CUDA_CRAP void AdjustPeriodDetectionThreshold2Exponent(int32_t delta_exponent);
-    CUDA_CRAP void AdjustStage0PeriodDetectionThresholdExponent(int32_t delta_exponent);
-    CUDA_CRAP void AdjustPeriodDetectionThresholdExponent(int32_t delta_exponent);
+    CUDA_CRAP void AdjustLAThresholdScaleExponent(int32_t deltaExponent);
+    CUDA_CRAP void AdjustLAThresholdCScaleExponent(int32_t deltaExponent);
+    CUDA_CRAP void AdjustStage0PeriodDetectionThreshold2Exponent(int32_t deltaExponent);
+    CUDA_CRAP void AdjustPeriodDetectionThreshold2Exponent(int32_t deltaExponent);
+    CUDA_CRAP void AdjustStage0PeriodDetectionThresholdExponent(int32_t deltaExponent);
+    CUDA_CRAP void AdjustPeriodDetectionThresholdExponent(int32_t deltaExponent);
 
     CUDA_CRAP void SetThreading(LAThreadingAlgorithm algorithm);
     CUDA_CRAP LAThreadingAlgorithm GetThreading() const;
@@ -45,6 +45,7 @@ private:
     bool ReadLine(std::ifstream &metafile, int32_t &value, const char *name);
 
     void PopulateFloatsFromExponents();
+    CUDA_CRAP void AdjustExponent(int32_t &exponent, int32_t deltaExponent);
 
     int32_t m_DetectionMethod;
     float m_LAThresholdScale;

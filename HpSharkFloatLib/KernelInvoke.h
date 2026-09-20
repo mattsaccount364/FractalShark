@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <utility>
 
 template <class SharkFloatParams> struct HpSharkFloat;
 template <class SharkFloatParams> struct HpSharkReferenceResults;
@@ -88,6 +89,13 @@ template <class SharkFloatParams> class GpuOrbitSession {
     HpShark::LaunchParams m_LaunchParams;
     DebugGpuCombo *m_DebugResults;
 
+    GpuOrbitSession(std::unique_ptr<HpSharkReferenceResults<SharkFloatParams>> results,
+                    const HpShark::LaunchParams &launchParams,
+                    DebugGpuCombo *debugResults)
+        : m_Results{std::move(results)}, m_LaunchParams{launchParams}, m_DebugResults{debugResults}
+    {
+    }
+
 public:
     GpuOrbitSession(const HpShark::LaunchParams &launchParams,
                     typename SharkFloatParams::Float hdrRadiusY,
@@ -95,9 +103,10 @@ public:
                     const mpf_t srcY,
                     uint32_t actualPrecisionLimbs,
                     DebugGpuCombo *debugResults)
-        : m_Results{InitHpSharkReferenceKernel<SharkFloatParams>(
-              launchParams, hdrRadiusY, srcX, srcY, actualPrecisionLimbs)},
-          m_LaunchParams{launchParams}, m_DebugResults{debugResults}
+        : GpuOrbitSession{InitHpSharkReferenceKernel<SharkFloatParams>(
+                              launchParams, hdrRadiusY, srcX, srcY, actualPrecisionLimbs),
+                          launchParams,
+                          debugResults}
     {
     }
 
@@ -107,9 +116,10 @@ public:
                     const HpSharkFloat<SharkFloatParams> &yNum,
                     ReferencePreparedTables<SharkFloatParams> &preparedTables,
                     DebugGpuCombo *debugResults)
-        : m_Results{InitHpSharkReferenceKernel<SharkFloatParams>(
-              launchParams, hdrRadiusY, xNum, yNum, preparedTables)},
-          m_LaunchParams{launchParams}, m_DebugResults{debugResults}
+        : GpuOrbitSession{InitHpSharkReferenceKernel<SharkFloatParams>(
+                              launchParams, hdrRadiusY, xNum, yNum, preparedTables),
+                          launchParams,
+                          debugResults}
     {
     }
 
@@ -119,9 +129,10 @@ public:
                     const HpSharkFloat<SharkFloatParams> &yNum,
                     uint32_t actualPrecisionLimbs,
                     DebugGpuCombo *debugResults)
-        : m_Results{InitHpSharkReferenceKernel<SharkFloatParams>(
-              launchParams, hdrRadiusY, xNum, yNum, actualPrecisionLimbs)},
-          m_LaunchParams{launchParams}, m_DebugResults{debugResults}
+        : GpuOrbitSession{InitHpSharkReferenceKernel<SharkFloatParams>(
+                              launchParams, hdrRadiusY, xNum, yNum, actualPrecisionLimbs),
+                          launchParams,
+                          debugResults}
     {
     }
 

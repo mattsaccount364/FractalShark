@@ -1,13 +1,12 @@
+#include "PrecisionCalculator.h"
 #include "CudaDblflt.h"
 #include "HDRFloat.h"
-#include "PrecisionCalculator.h"
 #include "dblflt.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
 #include <type_traits>
-#include <typeinfo>
 #include <utility>
 
 namespace PrecisionCalculator {
@@ -44,15 +43,7 @@ GetPrecision(const HighPrecision &deltaX, const HighPrecision &deltaY, bool requ
     return GetPrecision(tempX, tempY, requiresReuse);
 }
 
-template <typename T>
-constexpr const char *
-GetTypeName()
-{
-    return typeid(T).name();
-}
-
-template <typename T>
-struct UnsupportedType {
+template <typename T> struct UnsupportedType {
     static void
     trigger()
     {
@@ -69,14 +60,12 @@ GetPrecision(const T &radiusX, const T &radiusY, bool requiresReuse)
 
     if constexpr (!std::is_same<T, HDRFloat<float>>::value &&
                   !std::is_same<T, HDRFloat<double>>::value && !std::is_same<T, float>::value &&
-                  !std::is_same<T, double>::value &&
-                  !std::is_same<T, CudaDblflt<MattDblflt>>::value &&
+                  !std::is_same<T, double>::value && !std::is_same<T, CudaDblflt<MattDblflt>>::value &&
                   !std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value) {
         UnsupportedType<T>::trigger();
     }
 
-    if constexpr (std::is_same<T, HDRFloat<float>>::value ||
-                  std::is_same<T, HDRFloat<double>>::value) {
+    if constexpr (std::is_same<T, HDRFloat<float>>::value || std::is_same<T, HDRFloat<double>>::value) {
         tempExpX = radiusX.getExp();
         tempExpY = radiusY.getExp();
     } else if constexpr (std::is_same<T, float>::value || std::is_same<T, double>::value) {

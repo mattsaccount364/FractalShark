@@ -11,12 +11,15 @@
 
 #include <cstdint>
 
+inline constexpr uint32_t MinSupportedLimbCount = 256;
+inline constexpr uint32_t MaxSupportedLimbCount = 524288;
+
 // Round a raw limb count up to the nearest supported power-of-2 in [256, 524288].
 inline uint32_t
 RoundToSupportedLimbCount(uint64_t rawLimbs)
 {
-    uint32_t p = 256;
-    while (p < rawLimbs && p < 524288) {
+    uint32_t p = MinSupportedLimbCount;
+    while (p < rawLimbs && p < MaxSupportedLimbCount) {
         p <<= 1;
     }
     return p;
@@ -34,7 +37,7 @@ inline bool
 IsSupportedLimbCount(uint32_t limbCount)
 {
     switch (limbCount) {
-        case 256:
+        case MinSupportedLimbCount:
         case 512:
         case 1024:
         case 2048:
@@ -45,7 +48,7 @@ IsSupportedLimbCount(uint32_t limbCount)
         case 65536:
         case 131072:
         case 262144:
-        case 524288:
+        case MaxSupportedLimbCount:
             return true;
         default:
             return false;
@@ -129,7 +132,8 @@ struct SharkParamsNRFamily {
 };
 
 // Dispatch a callback f.template operator()<ParamsType>() based on limb count.
-// limbCount must be a power-of-2 in [256, 524288] (use RoundToSupportedLimbCount first).
+// limbCount must be a power-of-2 in [MinSupportedLimbCount, MaxSupportedLimbCount]
+// (use RoundToSupportedLimbCount first).
 template <class Family, class F>
 void
 DispatchByLimbCount(uint32_t limbCount, F &&f)

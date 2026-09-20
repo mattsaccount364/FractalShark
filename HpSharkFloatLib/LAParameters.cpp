@@ -193,45 +193,46 @@ LAParameters::GetPeriodDetectionThresholdExp() const
 }
 
 void
-LAParameters::AdjustLAThresholdScaleExponent(int32_t delta_exponent)
+LAParameters::AdjustExponent(int32_t &exponent, int32_t deltaExponent)
 {
-    m_LAThresholdScaleExponent += delta_exponent;
+    exponent += deltaExponent;
     PopulateFloatsFromExponents();
 }
 
 void
-LAParameters::AdjustLAThresholdCScaleExponent(int32_t delta_exponent)
+LAParameters::AdjustLAThresholdScaleExponent(int32_t deltaExponent)
 {
-    m_LAThresholdCScaleExponent += delta_exponent;
-    PopulateFloatsFromExponents();
+    AdjustExponent(m_LAThresholdScaleExponent, deltaExponent);
 }
 
 void
-LAParameters::AdjustStage0PeriodDetectionThreshold2Exponent(int32_t delta_exponent)
+LAParameters::AdjustLAThresholdCScaleExponent(int32_t deltaExponent)
 {
-    m_Stage0PeriodDetectionThreshold2Exponent += delta_exponent;
-    PopulateFloatsFromExponents();
+    AdjustExponent(m_LAThresholdCScaleExponent, deltaExponent);
 }
 
 void
-LAParameters::AdjustPeriodDetectionThreshold2Exponent(int32_t delta_exponent)
+LAParameters::AdjustStage0PeriodDetectionThreshold2Exponent(int32_t deltaExponent)
 {
-    m_PeriodDetectionThreshold2Exponent += delta_exponent;
-    PopulateFloatsFromExponents();
+    AdjustExponent(m_Stage0PeriodDetectionThreshold2Exponent, deltaExponent);
 }
 
 void
-LAParameters::AdjustStage0PeriodDetectionThresholdExponent(int32_t delta_exponent)
+LAParameters::AdjustPeriodDetectionThreshold2Exponent(int32_t deltaExponent)
 {
-    m_Stage0PeriodDetectionThresholdExponent += delta_exponent;
-    PopulateFloatsFromExponents();
+    AdjustExponent(m_PeriodDetectionThreshold2Exponent, deltaExponent);
 }
 
 void
-LAParameters::AdjustPeriodDetectionThresholdExponent(int32_t delta_exponent)
+LAParameters::AdjustStage0PeriodDetectionThresholdExponent(int32_t deltaExponent)
 {
-    m_PeriodDetectionThresholdExponent += delta_exponent;
-    PopulateFloatsFromExponents();
+    AdjustExponent(m_Stage0PeriodDetectionThresholdExponent, deltaExponent);
+}
+
+void
+LAParameters::AdjustPeriodDetectionThresholdExponent(int32_t deltaExponent)
+{
+    AdjustExponent(m_PeriodDetectionThresholdExponent, deltaExponent);
 }
 
 void

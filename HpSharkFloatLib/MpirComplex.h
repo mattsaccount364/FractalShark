@@ -32,4 +32,4 @@ int approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mp
 mp_bitcnt_t ChooseDerivPrec_ImaginaStyle(mp_bitcnt_t coord_prec,
                                          int scaleExp2,
                                          int coordExp2_max_abs,
-                                         mp_bitcnt_t minPrec = 256);
+                                         mp_bitcnt_t minPrec);

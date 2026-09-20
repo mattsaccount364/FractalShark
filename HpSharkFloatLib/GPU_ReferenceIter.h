@@ -26,17 +26,9 @@ struct BadField {
 struct CompressionIndexField {
     CompressionIndexField() : u{} {}
 
-    CompressionIndexField(IterTypeFull initIndex)
-    {
-        u.f.CompressionIndex = initIndex;
-        u.f.Rebase = 0;
-    }
+    CompressionIndexField(IterTypeFull initIndex) : CompressionIndexField(initIndex, 0) {}
 
-    CompressionIndexField(IterTypeFull initIndex, IterTypeFull rebase)
-    {
-        u.f.CompressionIndex = initIndex;
-        u.f.Rebase = rebase;
-    }
+    CompressionIndexField(IterTypeFull initIndex, IterTypeFull rebase) : u{{initIndex, rebase}} {}
 
     union U {
         struct F {
@@ -48,6 +40,15 @@ struct CompressionIndexField {
     } u;
 };
 
+template <PerturbExtras PExtras>
+using GPUReferenceIterBase =
+    std::conditional_t<PExtras == PerturbExtras::Bad,
+                       BadField,
+                       std::conditional_t<PExtras == PerturbExtras::SimpleCompression ||
+                                              PExtras == PerturbExtras::MaxCompression,
+                                          CompressionIndexField,
+                                          Empty>>;
+
 template <PerturbExtras PExtras> class PerturbExtrasHack {
 public:
     static constexpr PerturbExtras Val = PExtras;
@@ -55,22 +56,10 @@ public:
 
 #pragma pack(push, 8)
 template <typename Type, PerturbExtras PExtras>
-class /*alignas(8)*/ GPUReferenceIter
-    : public std::conditional_t<PExtras == PerturbExtras::Bad,
-                                BadField,
-                                std::conditional_t<PExtras == PerturbExtras::SimpleCompression ||
-                                                       PExtras == PerturbExtras::MaxCompression,
-                                                   CompressionIndexField,
-                                                   Empty>> {
+class /*alignas(8)*/ GPUReferenceIter : public GPUReferenceIterBase<PExtras> {
 
 public:
-    using BaseClass =
-        std::conditional_t<PExtras == PerturbExtras::Bad,
-                           BadField,
-                           std::conditional_t<PExtras == PerturbExtras::SimpleCompression ||
-                                                  PExtras == PerturbExtras::MaxCompression,
-                                              CompressionIndexField,
-                                              Empty>>;
+    using BaseClass = GPUReferenceIterBase<PExtras>;
 
     static constexpr IterTypeFull BadCompressionIndex = 0xFFFF'FFFF'FFFF'FFFFull;
 
@@ -121,7 +110,7 @@ public:
         std::is_same<Type, HDRFloat<double, HDROrder::Left, int32_t>>::value ||
         std::is_same<Type, HDRFloat<CudaDblflt<MattDblflt>, HDROrder::Left, int32_t>>::value ||
         std::is_same<Type, HDRFloat<CudaDblflt<dblflt>, HDROrder::Left, int32_t>>::value;
-    std::conditional<TypeCond, Type, Type>::type x;
+    Type x;
     std::conditional<TypeCond, HDRFloat<SubType, HDROrder::Right, int32_t>, Type>::type y;
 };
 #pragma pack(pop)

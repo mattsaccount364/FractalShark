@@ -1265,6 +1265,17 @@ CppAlignedMalloc(size_t size, size_t alignment)
     return res;
 }
 
+static void
+CopyReallocData(void *newPtr, const void *oldPtr, size_t oldUsableSize, size_t newUserSize, bool zeroNew)
+{
+    const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
+    std::memcpy(newPtr, oldPtr, copyUserSize);
+
+    if (zeroNew && newUserSize > oldUsableSize) {
+        std::memset(static_cast<char *>(newPtr) + oldUsableSize, 0, newUserSize - oldUsableSize);
+    }
+}
+
 void *
 CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
 {
@@ -1286,13 +1297,7 @@ CppRealloc(void *ptr, size_t newUserSize, bool zeroNew)
     }
 
     const size_t oldUsableSize = GlobalHeap().GetUserSize(ptr, "Realloc: invalid or freed block");
-    const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
-    std::memcpy(newPtr, ptr, copyUserSize);
-
-    // Zero newly extended region if requested
-    if (zeroNew && newUserSize > oldUsableSize) {
-        std::memset(static_cast<char *>(newPtr) + oldUsableSize, 0, newUserSize - oldUsableSize);
-    }
+    CopyReallocData(newPtr, ptr, oldUsableSize, newUserSize, zeroNew);
 
     CppFree(ptr);
     return newPtr;
@@ -1325,12 +1330,7 @@ CppAlignedRealloc(void *ptr, size_t newUserSize, size_t alignment, bool zeroNew)
         return nullptr;
     }
 
-    const size_t copyUserSize = std::min(oldUsableSize, newUserSize);
-    std::memcpy(newPtr, ptr, copyUserSize);
-
-    if (zeroNew && newUserSize > oldUsableSize) {
-        std::memset(static_cast<char *>(newPtr) + oldUsableSize, 0, newUserSize - oldUsableSize);
-    }
+    CopyReallocData(newPtr, ptr, oldUsableSize, newUserSize, zeroNew);
 
     CppFree(ptr);
     return newPtr;

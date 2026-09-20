@@ -2,6 +2,19 @@
 
 #include <climits>
 
+namespace {
+
+void
+CalculateAbsSquared(
+    mpf_t outAbs2, const mpf_t re, const mpf_t im, mpf_t realSquare, mpf_t imaginarySquare)
+{
+    mpf_mul(realSquare, re, re);
+    mpf_mul(imaginarySquare, im, im);
+    mpf_add(outAbs2, realSquare, imaginarySquare);
+}
+
+} // namespace
+
 // ============================================================
 // mpf_complex helpers
 // ============================================================
@@ -51,9 +64,7 @@ mpf_complex_add(mpf_complex &out, const mpf_complex &a, const mpf_complex &b)
 void
 mpf_complex_norm(mpf_t out, const mpf_complex &z, mpf_t t1, mpf_t t2)
 {
-    mpf_mul(t1, z.re, z.re);
-    mpf_mul(t2, z.im, z.im);
-    mpf_add(out, t1, t2);
+    CalculateAbsSquared(out, z.re, z.im, t1, t2);
 }
 
 int
@@ -69,9 +80,7 @@ approx_ilogb_mpf(const mpf_t x)
 int
 approx_ilogb_mpf_abs2(const mpf_t re, const mpf_t im, mpf_t t1, mpf_t t2, mpf_t outAbs2)
 {
-    mpf_mul(t1, re, re);
-    mpf_mul(t2, im, im);
-    mpf_add(outAbs2, t1, t2);
+    CalculateAbsSquared(outAbs2, re, im, t1, t2);
     return approx_ilogb_mpf(outAbs2);
 }
 

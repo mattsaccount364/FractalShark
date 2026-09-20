@@ -1,5 +1,33 @@
 ﻿#include "PointZoomBBConverter.h"
 
+namespace {
+
+double
+ZoomDivisorForScale(double scale)
+{
+    return 1.0 / (1.0 + 2.0 * scale);
+}
+
+void
+CalculateHalfExtents(const HighPrecision &minX,
+                     const HighPrecision &minY,
+                     const HighPrecision &maxX,
+                     const HighPrecision &maxY,
+                     HighPrecision &halfX,
+                     HighPrecision &halfY)
+{
+    const auto prec = halfX.precisionInBits();
+    HighPrecision width{HighPrecision::SetPrecision::True, prec};
+    HighPrecision height{HighPrecision::SetPrecision::True, prec};
+
+    width.subFrom(maxX, minX);
+    height.subFrom(maxY, minY);
+    halfX.divFrom_ui(width, 2);
+    halfY.divFrom_ui(height, 2);
+}
+
+} // namespace
+
 PointZoomBBConverter::PointZoomBBConverter(TestMode testMode)
     : m_MinX{}, m_MinY{}, m_MaxX{}, m_MaxY{}, m_PtX{}, m_PtY{}, m_ZoomFactor{}, m_Test{testMode}
 {
@@ -115,7 +143,7 @@ PointZoomBBConverter::SetPrecision(uint64_t precInBits)
     m_PtY.precisionInBits(precInBits);
     m_ZoomFactor.precisionInBits(precInBits);
 
-    SetDebugStrings();
+    SetDebugStrings(nullptr);
 }
 
 void
@@ -146,17 +174,13 @@ PointZoomBBConverter::SetDebugStrings(const HighPrecision *deltaY)
 bool
 PointZoomBBConverter::Degenerate() const
 {
-    if (m_MinX == m_MaxX || m_MinY == m_MaxY) {
-        return true;
-    }
-
-    return false;
+    return m_MinX == m_MaxX || m_MinY == m_MaxY;
 }
 
 PointZoomBBConverter
 PointZoomBBConverter::ZoomedAtCenter(double scale) const
 {
-    double divisor = 1.0 / (1.0 + 2.0 * scale);
+    const double divisor = ZoomDivisorForScale(scale);
     PointZoomBBConverter out = *this;
     out.ZoomDivisor(divisor);
     return out;
@@ -171,19 +195,13 @@ PointZoomBBConverter::ZoomedRecentered(const HighPrecision &calcX,
     // then apply ZoomedAtCenter.
     const auto prec = m_PtX.precisionInBits();
 
-    HighPrecision width{HighPrecision::SetPrecision::True, prec};
-    HighPrecision height{HighPrecision::SetPrecision::True, prec};
     HighPrecision halfW{HighPrecision::SetPrecision::True, prec};
     HighPrecision halfH{HighPrecision::SetPrecision::True, prec};
 
-    width.subFrom(m_MaxX, m_MinX);
-    height.subFrom(m_MaxY, m_MinY);
+    // halfW = (m_MaxX - m_MinX) / 2, halfH = (m_MaxY - m_MinY) / 2
+    CalculateHalfExtents(m_MinX, m_MinY, m_MaxX, m_MaxY, halfW, halfH);
 
-    // halfW = width / 2,  halfH = height / 2
-    halfW.divFrom_ui(width, 2);
-    halfH.divFrom_ui(height, 2);
-
-    // Reuse width/height as the four bounding-box corners
+    // Build the four bounding-box corners
     HighPrecision newMinX{HighPrecision::SetPrecision::True, prec};
     HighPrecision newMinY{HighPrecision::SetPrecision::True, prec};
     HighPrecision newMaxX{HighPrecision::SetPrecision::True, prec};
@@ -404,7 +422,7 @@ PointZoomBBConverter::ZoomInPlace(double scale)
     // Old-style additive convention:
     // scale=0.3 expands each edge by 30% (zoom out)
     // scale=-0.3 shrinks each edge by 30% (zoom in)
-    double divisor = 1.0 / (1.0 + 2.0 * scale);
+    const double divisor = ZoomDivisorForScale(scale);
     ZoomDivisor(divisor);
 }
 
@@ -422,13 +440,8 @@ PointZoomBBConverter::ZoomDivisor(double divisor)
     HighPrecision halfX{HighPrecision::SetPrecision::True, prec};
     HighPrecision halfY{HighPrecision::SetPrecision::True, prec};
 
-    // halfX = (m_MaxX - m_MinX) / 2
-    halfX.subFrom(m_MaxX, m_MinX);
-    halfX.divFrom_ui(halfX, 2);
-
-    // halfY = (m_MaxY - m_MinY) / 2
-    halfY.subFrom(m_MaxY, m_MinY);
-    halfY.divFrom_ui(halfY, 2);
+    // halfX = (m_MaxX - m_MinX) / 2, halfY = (m_MaxY - m_MinY) / 2
+    CalculateHalfExtents(m_MinX, m_MinY, m_MaxX, m_MaxY, halfX, halfY);
 
     // newHalf = half / hf  (divisor > 1 => smaller box => zoom in)
     // Reuse halfX/halfY as newHalfX/newHalfY

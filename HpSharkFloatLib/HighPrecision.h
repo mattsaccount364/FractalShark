@@ -40,6 +40,7 @@ public:
     // Friend the other version of HighPrecisionT so we can copy between them.
     template <HPDestructor T> friend class HighPrecisionT;
 
+private:
     void
     InitMpf()
     {
@@ -52,17 +53,23 @@ public:
     // HpSharkFloat.h, update this constant.
     static constexpr uint64_t MaxPrecisionBits = 64'000'000;
 
-    void
-    InitMpf2(uint64_t precisionInBits)
+    static void
+    ValidatePrecision(uint64_t precisionInBits)
     {
         if (precisionInBits > MaxPrecisionBits) {
             throw FractalSharkSeriousException(
                 "Requested precision is too high.  This is probably a bug..");
         }
+    }
 
+    void
+    InitMpf2(uint64_t precisionInBits)
+    {
+        ValidatePrecision(precisionInBits);
         mpf_init2(m_Data, precisionInBits);
     }
 
+public:
     HighPrecisionT() { InitMpf(); }
 
     HighPrecisionT(const HighPrecisionT &other)
@@ -130,7 +137,7 @@ public:
     }
 
     template <HPDestructor T>
-    HighPrecisionT<T> &
+    HighPrecisionT &
     operator=(const HighPrecisionT<T> &other)
     {
         if (this == &other) {
@@ -149,7 +156,9 @@ public:
             return *this;
         }
 
-        mpf_clear(m_Data);
+        if constexpr (Destructor == HPDestructor::True) {
+            mpf_clear(m_Data);
+        }
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
 
@@ -157,14 +166,16 @@ public:
     }
 
     template <HPDestructor T>
-    HighPrecisionT<T> &
+    HighPrecisionT &
     operator=(HighPrecisionT<T> &&other)
     {
         if (this == &other) {
             return *this;
         }
 
-        mpf_clear(m_Data);
+        if constexpr (Destructor == HPDestructor::True) {
+            mpf_clear(m_Data);
+        }
         m_Data[0] = other.m_Data[0];
         other.m_Data[0] = {};
 
@@ -242,13 +253,14 @@ public:
     void
     precisionInBits(uint64_t prec)
     {
+        ValidatePrecision(prec);
         mpf_set_prec(m_Data, prec);
     }
 
     uint64_t
     precisionInBits() const
     {
-        return (uint32_t)mpf_get_prec(m_Data);
+        return mpf_get_prec(m_Data);
     }
 
     template <typename T>
@@ -393,11 +405,7 @@ public:
     static void
     defaultPrecisionInBits(uint64_t prec)
     {
-        if (prec > MaxPrecisionBits) {
-            throw FractalSharkSeriousException(
-                "Requested precision is too high.  This is probably a bug..");
-        }
-
+        ValidatePrecision(prec);
         mpf_set_default_prec(prec);
     }
 

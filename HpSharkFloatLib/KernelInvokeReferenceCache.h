@@ -199,16 +199,14 @@ ValidateHeader(const ReferenceCacheHeader &header,
     }
 }
 
-template <class SharkFloatParams>
-void
+inline void
 CopyDeviceToCache(uint8_t *destination, const void *source, size_t bytes, const char *operation)
 {
     ReferenceSetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyDeviceToHost),
                                     operation);
 }
 
-template <class SharkFloatParams>
-void
+inline void
 CopyCacheToDevice(void *destination, const uint8_t *source, size_t bytes, const char *operation)
 {
     ReferenceSetupDetail::CheckCuda(cudaMemcpy(destination, source, bytes, cudaMemcpyHostToDevice),
@@ -223,22 +221,22 @@ CopyPreparedPayloadToCache(
     uint8_t *payload)
 {
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
-    CopyDeviceToCache<SharkFloatParams>(payload + layout.StageOmegasOffset,
-                                        workspace.StageOmegas,
-                                        layout.StageBytes,
-                                        "cudaMemcpy(Reference cache stage omegas D2H)");
-    CopyDeviceToCache<SharkFloatParams>(payload + layout.StageOmegasInverseOffset,
-                                        workspace.StageOmegasInverse,
-                                        layout.StageBytes,
-                                        "cudaMemcpy(Reference cache inverse stage omegas D2H)");
-    CopyDeviceToCache<SharkFloatParams>(payload + layout.ForwardTwiddlesOffset,
-                                        workspace.ForwardTwiddles,
-                                        layout.TwiddleBytes,
-                                        "cudaMemcpy(Reference cache forward twiddles D2H)");
-    CopyDeviceToCache<SharkFloatParams>(payload + layout.InverseTwiddlesOffset,
-                                        workspace.InverseTwiddles,
-                                        layout.TwiddleBytes,
-                                        "cudaMemcpy(Reference cache inverse twiddles D2H)");
+    CopyDeviceToCache(payload + layout.StageOmegasOffset,
+                      workspace.StageOmegas,
+                      layout.StageBytes,
+                      "cudaMemcpy(Reference cache stage omegas D2H)");
+    CopyDeviceToCache(payload + layout.StageOmegasInverseOffset,
+                      workspace.StageOmegasInverse,
+                      layout.StageBytes,
+                      "cudaMemcpy(Reference cache inverse stage omegas D2H)");
+    CopyDeviceToCache(payload + layout.ForwardTwiddlesOffset,
+                      workspace.ForwardTwiddles,
+                      layout.TwiddleBytes,
+                      "cudaMemcpy(Reference cache forward twiddles D2H)");
+    CopyDeviceToCache(payload + layout.InverseTwiddlesOffset,
+                      workspace.InverseTwiddles,
+                      layout.TwiddleBytes,
+                      "cudaMemcpy(Reference cache inverse twiddles D2H)");
     std::vector<uint64_t> ninv(layout.PlanCacheEntryCount);
     const uint32_t firstSlot = layout.MinFusedStages - Workspace::MinFusedStages;
     for (uint32_t index = 0; index < ninv.size(); ++index)
@@ -259,22 +257,22 @@ CopyCachePayloadToPrepared(const uint8_t *payload,
         cudaMemcpy(
             &workspace, prepared.GetDeviceDescriptor(), sizeof(workspace), cudaMemcpyDeviceToHost),
         "cudaMemcpy(Reference cache descriptor D2H)");
-    CopyCacheToDevice<SharkFloatParams>(workspace.StageOmegas,
-                                        payload + layout.StageOmegasOffset,
-                                        layout.StageBytes,
-                                        "cudaMemcpy(Reference cache stage omegas H2D)");
-    CopyCacheToDevice<SharkFloatParams>(workspace.StageOmegasInverse,
-                                        payload + layout.StageOmegasInverseOffset,
-                                        layout.StageBytes,
-                                        "cudaMemcpy(Reference cache inverse stage omegas H2D)");
-    CopyCacheToDevice<SharkFloatParams>(workspace.ForwardTwiddles,
-                                        payload + layout.ForwardTwiddlesOffset,
-                                        layout.TwiddleBytes,
-                                        "cudaMemcpy(Reference cache forward twiddles H2D)");
-    CopyCacheToDevice<SharkFloatParams>(workspace.InverseTwiddles,
-                                        payload + layout.InverseTwiddlesOffset,
-                                        layout.TwiddleBytes,
-                                        "cudaMemcpy(Reference cache inverse twiddles H2D)");
+    CopyCacheToDevice(workspace.StageOmegas,
+                      payload + layout.StageOmegasOffset,
+                      layout.StageBytes,
+                      "cudaMemcpy(Reference cache stage omegas H2D)");
+    CopyCacheToDevice(workspace.StageOmegasInverse,
+                      payload + layout.StageOmegasInverseOffset,
+                      layout.StageBytes,
+                      "cudaMemcpy(Reference cache inverse stage omegas H2D)");
+    CopyCacheToDevice(workspace.ForwardTwiddles,
+                      payload + layout.ForwardTwiddlesOffset,
+                      layout.TwiddleBytes,
+                      "cudaMemcpy(Reference cache forward twiddles H2D)");
+    CopyCacheToDevice(workspace.InverseTwiddles,
+                      payload + layout.InverseTwiddlesOffset,
+                      layout.TwiddleBytes,
+                      "cudaMemcpy(Reference cache inverse twiddles H2D)");
     std::vector<uint64_t> ninv(layout.PlanCacheEntryCount);
     std::memcpy(ninv.data(), payload + layout.NinvOffset, layout.NinvBytes);
     const uint32_t firstSlot = layout.MinFusedStages - Workspace::MinFusedStages;

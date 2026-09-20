@@ -60,7 +60,7 @@ public:
 
 private:
     void ZoomDivisor(double divisor);
-    void SetDebugStrings(const HighPrecision *deltaY = nullptr);
+    void SetDebugStrings(const HighPrecision *deltaY);
     HighPrecision m_MinX, m_MinY;
     HighPrecision m_MaxX, m_MaxY;
     HighPrecision m_PtX, m_PtY;

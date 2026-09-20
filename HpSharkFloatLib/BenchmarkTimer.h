@@ -5,11 +5,11 @@
 class BenchmarkTimer {
 public:
     BenchmarkTimer();
-    BenchmarkTimer(const BenchmarkTimer &);
-    BenchmarkTimer(BenchmarkTimer &&) noexcept;
-    BenchmarkTimer &operator=(const BenchmarkTimer &);
-    BenchmarkTimer &operator=(BenchmarkTimer &&) noexcept;
-    ~BenchmarkTimer();
+    BenchmarkTimer(const BenchmarkTimer &) = default;
+    BenchmarkTimer(BenchmarkTimer &&) noexcept = default;
+    BenchmarkTimer &operator=(const BenchmarkTimer &) = default;
+    BenchmarkTimer &operator=(BenchmarkTimer &&) noexcept = default;
+    ~BenchmarkTimer() = default;
 
     void StartTimer();
     void StopTimer();

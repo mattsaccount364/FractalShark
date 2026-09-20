@@ -12,7 +12,7 @@ namespace Environment {
 class JobObject::JobObjectImpl {
 public:
     JobObjectImpl();
-    ~JobObjectImpl();
+    ~JobObjectImpl() noexcept;
 
     JobObjectImpl &operator=(const JobObjectImpl &) = delete;
     JobObjectImpl(const JobObjectImpl &) = delete;
@@ -53,20 +53,16 @@ JobObject::JobObjectImpl::JobObjectImpl()
                                  &m_ExtendedLimitInfo,
                                  sizeof(m_ExtendedLimitInfo))) {
         FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to set job object information";
-        CloseHandle(m_JobHandle);
-        m_JobHandle = nullptr;
         return;
     }
 
     if (!AssignProcessToJobObject(m_JobHandle, GetCurrentProcess())) {
         FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Failed to assign process to job object";
-        CloseHandle(m_JobHandle);
-        m_JobHandle = nullptr;
         return;
     }
 }
 
-JobObject::JobObjectImpl::~JobObjectImpl()
+JobObject::JobObjectImpl::~JobObjectImpl() noexcept
 {
     if (m_JobHandle != nullptr) {
         CloseHandle(m_JobHandle);
@@ -81,10 +77,10 @@ JobObject::JobObjectImpl::GetCommitLimitInBytes() const
 
 JobObject::JobObject() : m_Impl{std::make_unique<JobObjectImpl>()} {}
 
-JobObject::~JobObject() = default;
+JobObject::~JobObject() noexcept = default;
 
 uint64_t
-JobObject::GetCommitLimitInBytes() const
+JobObject::GetCommitLimitInBytes() const noexcept
 {
     return m_Impl->GetCommitLimitInBytes();
 }

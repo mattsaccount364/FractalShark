@@ -1,21 +1,26 @@
 ﻿#pragma once
 
 // Platform-agnostic environment interface.
-// All platform-specific calls (Win32 today, Linux in the future)
+// All platform-specific calls (Win32 and Linux)
 // are routed through this namespace. No windows.h types appear here.
 //
-// Implementation: EnvironmentWin32.cpp (or EnvironmentLinux.cpp in future).
+// Implementations: EnvironmentWin32.cpp and EnvironmentLinux.cpp.
 
 #include <cstddef>
 #include <cstdint>
+#ifdef _MSC_VER
+#include <malloc.h>
+#else
 #include <cstdlib>
 #include <filesystem>
+#endif
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <utility>
+
+#include "PlatformTypes.h"
 
 // =========================================================================
 // MPIR/GMP compatibility (formerly MpirGmp.h)
@@ -43,10 +48,6 @@ mpf_get_2exp_d(double *d, mpf_srcptr f)
 // =========================================================================
 // Aligned allocation (formerly AlignedAlloc.h)
 // =========================================================================
-
-#ifdef _MSC_VER
-#include <malloc.h>
-#endif
 
 namespace Environment {
 
@@ -77,41 +78,6 @@ AlignedFree(void *ptr)
     free(ptr);
 }
 #endif
-
-} // namespace Environment
-
-// =========================================================================
-// Portable geometry types (formerly PlatformTypes.h)
-// =========================================================================
-
-namespace Environment {
-
-// Portable rectangle -- replaces Win32 RECT in library interfaces.
-struct ScreenRect {
-    int32_t left;
-    int32_t top;
-    int32_t right;
-    int32_t bottom;
-};
-
-// Portable 2D point -- replaces Win32 POINT in library interfaces.
-struct ScreenPoint {
-    int32_t x;
-    int32_t y;
-};
-
-} // namespace Environment
-
-namespace Environment {
-
-// Register a one-time atexit handler that flushes / cleans up the custom heap
-// allocator used by HpSharkFloatLib. The real definition lives in
-// HpSharkFloatLib/heap_allocator/HeapCpp.cpp.
-void RegisterHeapCleanup();
-
-} // namespace Environment
-
-namespace Environment {
 
 // =========================================================================
 // File handle operations (for PerturbationResults delete-on-close)
@@ -204,7 +170,7 @@ enum class Key : int {
 bool IsKeyDown(Key key);
 
 // Returns the current cursor position in screen coordinates.
-std::pair<int, int> GetCursorPosition();
+ScreenPoint GetCursorPosition();
 
 // =========================================================================
 // System heap (fallback for HeapCpp bootstrap)
@@ -278,15 +244,22 @@ enum class FileFlags : uint32_t {
     Temporary = 2,     // FILE_ATTRIBUTE_TEMPORARY / hint to OS
     ShareRead = 4,     // FILE_SHARE_READ / allow concurrent readers
 };
-inline FileFlags
-operator|(FileFlags a, FileFlags b)
+inline constexpr FileFlags
+operator|(FileFlags a, FileFlags b) noexcept
 {
     return static_cast<FileFlags>(static_cast<uint32_t>(a) | static_cast<uint32_t>(b));
 }
-inline bool
-operator&(FileFlags a, FileFlags b)
+
+constexpr bool
+HasFileAccess(FileAccess access, FileAccess requested) noexcept
 {
-    return (static_cast<uint32_t>(a) & static_cast<uint32_t>(b)) != 0;
+    return (static_cast<uint32_t>(access) & static_cast<uint32_t>(requested)) != 0;
+}
+
+constexpr bool
+HasFileFlag(FileFlags flags, FileFlags requested) noexcept
+{
+    return (static_cast<uint32_t>(flags) & static_cast<uint32_t>(requested)) != 0;
 }
 
 // Open or create a file.  Returns opaque handle, or InvalidHandle on failure.
@@ -313,15 +286,17 @@ public:
     static std::unique_ptr<MappedFile> CreateWrite(const wchar_t *path, size_t bytes);
     static std::unique_ptr<MappedFile> OpenRead(const wchar_t *path);
 
-    ~MappedFile();
+    ~MappedFile() noexcept;
 
     MappedFile(const MappedFile &) = delete;
     MappedFile &operator=(const MappedFile &) = delete;
+    MappedFile(MappedFile &&) = delete;
+    MappedFile &operator=(MappedFile &&) = delete;
 
-    uint8_t *Data();
-    const uint8_t *Data() const;
-    size_t Size() const;
-    bool Flush();
+    uint8_t *Data() noexcept;
+    const uint8_t *Data() const noexcept;
+    size_t Size() const noexcept;
+    bool Flush() noexcept;
 
 private:
     struct Impl;
@@ -364,7 +339,7 @@ std::wstring TempDirectoryPath();
 // File system utilities
 // =========================================================================
 
-// Create a directory.  Returns true on success or if it already exists.
+// Create a directory. Returns true on success or if the path is already a directory.
 bool DirectoryCreate(const wchar_t *path);
 
 // Returns true if the path exists and is a directory.

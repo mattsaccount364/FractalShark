@@ -8,12 +8,14 @@ namespace Environment {
 class JobObject {
 public:
     JobObject();
-    ~JobObject();
+    ~JobObject() noexcept;
 
     JobObject &operator=(const JobObject &) = delete;
     JobObject(const JobObject &) = delete;
+    JobObject &operator=(JobObject &&) = delete;
+    JobObject(JobObject &&) = delete;
 
-    uint64_t GetCommitLimitInBytes() const;
+    uint64_t GetCommitLimitInBytes() const noexcept;
 
 private:
     class JobObjectImpl;

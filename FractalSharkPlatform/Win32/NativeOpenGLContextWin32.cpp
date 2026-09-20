@@ -120,8 +120,7 @@ MaybeShareWithRoot(HWND hWnd, HGLRC newRc)
     if (!root || root == newRc)
         return;
 
-    if (wglShareLists(root, newRc) == FALSE) {
-    }
+    (void)wglShareLists(root, newRc);
 }
 
 } // namespace
@@ -193,7 +192,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
 NativeOpenGLContext::~NativeOpenGLContext()
 {
-    if (wglGetCurrentContext() == AsHGLRC(m_RenderContext)) {
+    if (m_RenderContext && wglGetCurrentContext() == AsHGLRC(m_RenderContext)) {
         wglMakeCurrent(nullptr, nullptr);
     }
 

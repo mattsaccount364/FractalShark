@@ -21,7 +21,6 @@ using MiniDumpWriteDumpFn = BOOL(WINAPI *)(HANDLE hProcess,
                                            CONST PMINIDUMP_USER_STREAM_INFORMATION UserStreamParam,
                                            CONST PMINIDUMP_CALLBACK_INFORMATION CallbackParam);
 
-static HMODULE s_DbgHelpModule = nullptr;
 static MiniDumpWriteDumpFn s_MiniDumpWriteDump = nullptr;
 
 static constexpr MINIDUMP_TYPE DumpFlags = static_cast<MINIDUMP_TYPE>(
@@ -92,6 +91,13 @@ WriteMiniDumpFromCurrentContext()
     }
 }
 
+static void
+TerminateAfterMiniDump()
+{
+    WriteMiniDumpFromCurrentContext();
+    ::TerminateProcess(::GetCurrentProcess(), 1);
+}
+
 // ---------------------------------------------------------------------------
 // SEH unhandled-exception filter
 // ---------------------------------------------------------------------------
@@ -114,8 +120,7 @@ InvalidParameterHandler(const wchar_t * /*expression*/,
                         unsigned int /*line*/,
                         uintptr_t /*reserved*/)
 {
-    WriteMiniDumpFromCurrentContext();
-    ::TerminateProcess(::GetCurrentProcess(), 1);
+    TerminateAfterMiniDump();
 }
 
 // ---------------------------------------------------------------------------
@@ -125,8 +130,7 @@ InvalidParameterHandler(const wchar_t * /*expression*/,
 static void
 PureCallHandler()
 {
-    WriteMiniDumpFromCurrentContext();
-    ::TerminateProcess(::GetCurrentProcess(), 1);
+    TerminateAfterMiniDump();
 }
 
 // ---------------------------------------------------------------------------
@@ -136,8 +140,7 @@ PureCallHandler()
 static void
 TerminateHandler()
 {
-    WriteMiniDumpFromCurrentContext();
-    ::TerminateProcess(::GetCurrentProcess(), 1);
+    TerminateAfterMiniDump();
 }
 
 // ---------------------------------------------------------------------------
@@ -157,10 +160,10 @@ CrashHandler::Install()
 
     // Eagerly load dbghelp.dll and resolve MiniDumpWriteDump so the crash
     // path doesn't have to call LoadLibrary (which touches the heap).
-    s_DbgHelpModule = ::LoadLibraryW(L"dbghelp.dll");
-    if (s_DbgHelpModule != nullptr) {
-        s_MiniDumpWriteDump = reinterpret_cast<MiniDumpWriteDumpFn>(
-            ::GetProcAddress(s_DbgHelpModule, "MiniDumpWriteDump"));
+    HMODULE dbgHelpModule = ::LoadLibraryW(L"dbghelp.dll");
+    if (dbgHelpModule != nullptr) {
+        s_MiniDumpWriteDump =
+            reinterpret_cast<MiniDumpWriteDumpFn>(::GetProcAddress(dbgHelpModule, "MiniDumpWriteDump"));
     }
 
     // SEH top-level filter.

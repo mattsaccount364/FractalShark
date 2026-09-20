@@ -4,9 +4,9 @@
 // Search for TODO
 //
 
-#include "Environment.h"
 #include "FractalPalette.h"
 #include "GPU_Render.h"
+#include "PlatformTypes.h"
 
 #include <array>
 

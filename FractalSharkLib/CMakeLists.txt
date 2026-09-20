@@ -51,10 +51,6 @@ target_include_directories(FractalSharkLib PRIVATE
 target_link_libraries(FractalSharkLib PUBLIC FractalSharkPlatform)
 target_link_libraries(FractalSharkLib PUBLIC HpSharkFloatLib)
 
-# GMP (MPIR on Windows, GMP on Linux — Environment.h handles the include)
-find_library(GMP_LIBRARY gmp REQUIRED)
-target_link_libraries(FractalSharkLib PUBLIC ${GMP_LIBRARY})
-
 # OpenGL + GLU (gluOrtho2D used by OpenGLContext.cpp)
 find_package(OpenGL REQUIRED COMPONENTS OpenGL)
 target_link_libraries(FractalSharkLib PUBLIC OpenGL::GL)

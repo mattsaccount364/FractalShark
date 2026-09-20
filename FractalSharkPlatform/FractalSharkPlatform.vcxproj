@@ -34,34 +34,10 @@
     <ClCompile Include="Common\ConsoleLog.cpp" />
     <ClCompile Include="Win32\WaitCursorWin32.cpp" />
     <ClCompile Include="Win32\NativeOpenGLContextWin32.cpp" />
-    <ClCompile Include="Linux\WaitCursorLinux.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="Linux\NativeOpenGLContextLinux.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="Win32\EnvironmentWin32.cpp" />
     <ClCompile Include="Win32\LocalIpcTransportWin32.cpp" />
-    <ClCompile Include="Linux\EnvironmentLinux.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
-    <ClCompile Include="Linux\LocalIpcTransportLinux.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="Win32\CrashHandlerWin32.cpp" />
-    <ClCompile Include="Linux\CrashHandlerLinux.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="Win32\JobObjectWin32.cpp" />
-    <ClCompile Include="Linux\JobObjectLinux.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Common\ConsoleLog.h" />
@@ -72,6 +48,8 @@
     <ClInclude Include="Common\CrashHandler.h" />
     <ClInclude Include="Common\JobObject.h" />
     <ClInclude Include="Common\LocalIpcTransport.h" />
+    <ClInclude Include="Common\LocalIpcTransportDetail.h" />
+    <ClInclude Include="Common\PlatformTypes.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

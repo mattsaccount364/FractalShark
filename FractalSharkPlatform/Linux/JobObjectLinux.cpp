@@ -10,7 +10,7 @@ namespace Environment {
 class JobObject::JobObjectImpl {
 public:
     JobObjectImpl();
-    ~JobObjectImpl() = default;
+    ~JobObjectImpl() noexcept = default;
 
     JobObjectImpl &operator=(const JobObjectImpl &) = delete;
     JobObjectImpl(const JobObjectImpl &) = delete;
@@ -74,10 +74,10 @@ JobObject::JobObjectImpl::GetCommitLimitInBytes() const
 
 JobObject::JobObject() : m_Impl{std::make_unique<JobObjectImpl>()} {}
 
-JobObject::~JobObject() = default;
+JobObject::~JobObject() noexcept = default;
 
 uint64_t
-JobObject::GetCommitLimitInBytes() const
+JobObject::GetCommitLimitInBytes() const noexcept
 {
     return m_Impl->GetCommitLimitInBytes();
 }

@@ -55,21 +55,24 @@ struct Environment::MappedFile::Impl {
     HANDLE mapping{};
     uint8_t *data{};
     size_t size{};
+
+    ~Impl()
+    {
+        if (data != nullptr) {
+            ::UnmapViewOfFile(data);
+        }
+        if (mapping != nullptr) {
+            ::CloseHandle(mapping);
+        }
+        if (file != INVALID_HANDLE_VALUE) {
+            ::CloseHandle(file);
+        }
+    }
 };
 
 Environment::MappedFile::MappedFile() : m_Impl{std::make_unique<Impl>()} {}
 
-Environment::MappedFile::~MappedFile()
-{
-    if (m_Impl == nullptr)
-        return;
-    if (m_Impl->data != nullptr)
-        ::UnmapViewOfFile(m_Impl->data);
-    if (m_Impl->mapping != nullptr)
-        ::CloseHandle(m_Impl->mapping);
-    if (m_Impl->file != INVALID_HANDLE_VALUE)
-        ::CloseHandle(m_Impl->file);
-}
+Environment::MappedFile::~MappedFile() noexcept = default;
 
 std::unique_ptr<Environment::MappedFile>
 Environment::MappedFile::CreateWrite(const wchar_t *path, size_t bytes)
@@ -136,28 +139,27 @@ Environment::MappedFile::OpenRead(const wchar_t *path)
 }
 
 uint8_t *
-Environment::MappedFile::Data()
+Environment::MappedFile::Data() noexcept
 {
-    return m_Impl != nullptr ? m_Impl->data : nullptr;
+    return m_Impl->data;
 }
 
 const uint8_t *
-Environment::MappedFile::Data() const
+Environment::MappedFile::Data() const noexcept
 {
-    return m_Impl != nullptr ? m_Impl->data : nullptr;
+    return m_Impl->data;
 }
 
 size_t
-Environment::MappedFile::Size() const
+Environment::MappedFile::Size() const noexcept
 {
-    return m_Impl != nullptr ? m_Impl->size : 0;
+    return m_Impl->size;
 }
 
 bool
-Environment::MappedFile::Flush()
+Environment::MappedFile::Flush() noexcept
 {
-    return m_Impl != nullptr && m_Impl->data != nullptr &&
-           ::FlushViewOfFile(m_Impl->data, m_Impl->size) != FALSE &&
+    return m_Impl->data != nullptr && ::FlushViewOfFile(m_Impl->data, m_Impl->size) != FALSE &&
            ::FlushFileBuffers(m_Impl->file) != FALSE;
 }
 
@@ -354,12 +356,12 @@ Environment::IsKeyDown(Key key)
     return (::GetAsyncKeyState(static_cast<int>(key)) & 0x8000) != 0;
 }
 
-std::pair<int, int>
+Environment::ScreenPoint
 Environment::GetCursorPosition()
 {
-    POINT pt;
+    POINT pt{};
     ::GetCursorPos(&pt);
-    return {pt.x, pt.y};
+    return ScreenPoint{pt.x, pt.y};
 }
 
 // =========================================================================
@@ -469,10 +471,10 @@ Environment::FileOpen(const wchar_t *path,
                       FileFlags flags)
 {
     DWORD desiredAccess = 0;
-    if (static_cast<uint32_t>(access) & static_cast<uint32_t>(FileAccess::Read)) {
+    if (HasFileAccess(access, FileAccess::Read)) {
         desiredAccess |= GENERIC_READ;
     }
-    if (static_cast<uint32_t>(access) & static_cast<uint32_t>(FileAccess::Write)) {
+    if (HasFileAccess(access, FileAccess::Write)) {
         desiredAccess |= GENERIC_WRITE;
     }
 
@@ -492,16 +494,16 @@ Environment::FileOpen(const wchar_t *path,
     DWORD attributes = 0;
     DWORD shareMode = 0;
 
-    if (flags & FileFlags::DeleteOnClose) {
+    if (HasFileFlag(flags, FileFlags::DeleteOnClose)) {
         attributes |= FILE_FLAG_DELETE_ON_CLOSE;
     }
-    if (flags & FileFlags::Temporary) {
+    if (HasFileFlag(flags, FileFlags::Temporary)) {
         attributes |= FILE_ATTRIBUTE_TEMPORARY;
     }
     if (attributes == 0) {
         attributes = FILE_ATTRIBUTE_NORMAL;
     }
-    if (flags & FileFlags::ShareRead) {
+    if (HasFileFlag(flags, FileFlags::ShareRead)) {
         shareMode |= FILE_SHARE_READ;
     }
 
@@ -642,7 +644,7 @@ Environment::DirectoryCreate(const wchar_t *path)
     if (::CreateDirectoryW(path, nullptr)) {
         return true;
     }
-    return ::GetLastError() == ERROR_ALREADY_EXISTS;
+    return ::GetLastError() == ERROR_ALREADY_EXISTS && DirectoryExists(path);
 }
 
 bool

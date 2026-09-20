@@ -19,6 +19,15 @@ struct LinuxCursorTarget {
 std::mutex g_LinuxCursorMutex;
 LinuxCursorTarget g_LinuxCursorTarget;
 
+void
+ReleaseLinuxCursorTargetLocked() noexcept
+{
+    if (g_LinuxCursorTarget.DisplayHandle && g_LinuxCursorTarget.WaitCursor) {
+        XFreeCursor(g_LinuxCursorTarget.DisplayHandle, g_LinuxCursorTarget.WaitCursor);
+    }
+    g_LinuxCursorTarget = {};
+}
+
 } // namespace
 
 WaitCursor::WaitCursor() : m_CursorSet{false}
@@ -36,10 +45,10 @@ WaitCursor::WaitCursor() : m_CursorSet{false}
     m_CursorSet = true;
 }
 
-WaitCursor::~WaitCursor() { ResetCursor(); }
+WaitCursor::~WaitCursor() noexcept { ResetCursor(); }
 
 void
-WaitCursor::ResetCursor()
+WaitCursor::ResetCursor() noexcept
 {
     std::lock_guard lock{g_LinuxCursorMutex};
     if (!m_CursorSet || !g_LinuxCursorTarget.DisplayHandle || !g_LinuxCursorTarget.WindowHandle) {
@@ -63,11 +72,7 @@ WaitCursor::RegisterLinuxCursorTarget(void *display, std::uintptr_t window, std:
     auto *xDisplay = static_cast<Display *>(display);
     std::lock_guard lock{g_LinuxCursorMutex};
 
-    if (g_LinuxCursorTarget.DisplayHandle && g_LinuxCursorTarget.WaitCursor) {
-        XFreeCursor(g_LinuxCursorTarget.DisplayHandle, g_LinuxCursorTarget.WaitCursor);
-    }
-
-    g_LinuxCursorTarget = {};
+    ReleaseLinuxCursorTargetLocked();
     if (!xDisplay || window == 0) {
         return;
     }
@@ -82,10 +87,7 @@ void
 WaitCursor::UnregisterLinuxCursorTarget()
 {
     std::lock_guard lock{g_LinuxCursorMutex};
-    if (g_LinuxCursorTarget.DisplayHandle && g_LinuxCursorTarget.WaitCursor) {
-        XFreeCursor(g_LinuxCursorTarget.DisplayHandle, g_LinuxCursorTarget.WaitCursor);
-    }
-    g_LinuxCursorTarget = {};
+    ReleaseLinuxCursorTargetLocked();
 }
 
 } // namespace Environment

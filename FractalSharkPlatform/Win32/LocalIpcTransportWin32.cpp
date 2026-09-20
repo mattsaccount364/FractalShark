@@ -12,17 +12,8 @@
 namespace Environment {
 namespace {
 
-bool
-IsValidHandle(std::intptr_t handle)
-{
-    return handle != -1;
-}
-
 HANDLE
-AsHandle(std::intptr_t value)
-{
-    return reinterpret_cast<HANDLE>(value);
-}
+AsHandle(std::intptr_t value) { return reinterpret_cast<HANDLE>(value); }
 
 std::intptr_t
 AsInteger(HANDLE value)
@@ -33,24 +24,7 @@ AsInteger(HANDLE value)
 std::string
 SystemErrorMessage(const char *operation, DWORD errorCode)
 {
-    return std::string(operation) + ": " +
-           std::system_category().message(static_cast<int>(errorCode));
-}
-
-std::string
-SanitizeName(std::string_view name)
-{
-    std::string result;
-    result.reserve(name.size());
-    for (unsigned char c : name) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
-            c == '_' || c == '.') {
-            result.push_back(static_cast<char>(c));
-        } else {
-            result.push_back('_');
-        }
-    }
-    return result;
+    return std::string(operation) + ": " + std::system_category().message(static_cast<int>(errorCode));
 }
 
 std::string
@@ -69,9 +43,10 @@ NormalizeEndpoint(std::string_view serviceName, std::string_view endpoint)
         if (GetUserNameA(userName, &userNameLength) != 0 && userNameLength > 0) {
             user.assign(userName, userNameLength - 1);
         }
-        endpointName = SanitizeName(serviceName) + "-" + SanitizeName(user);
+        endpointName =
+            LocalIpcDetail::SanitizeName(serviceName) + "-" + LocalIpcDetail::SanitizeName(user);
     } else {
-        endpointName = SanitizeName(endpoint);
+        endpointName = LocalIpcDetail::SanitizeName(endpoint);
     }
     return std::string(pipePrefix) + endpointName;
 }
@@ -80,15 +55,12 @@ NormalizeEndpoint(std::string_view serviceName, std::string_view endpoint)
 
 LocalIpcConnection::LocalIpcConnection(std::intptr_t nativeHandle) : m_NativeHandle(nativeHandle) {}
 
-LocalIpcConnection::~LocalIpcConnection()
-{
-    Close();
-}
+LocalIpcConnection::~LocalIpcConnection() { Close(); }
 
 LocalIpcConnection::LocalIpcConnection(LocalIpcConnection &&other) noexcept
     : m_NativeHandle(other.m_NativeHandle)
 {
-    other.m_NativeHandle = -1;
+    other.m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
 }
 
 LocalIpcConnection &
@@ -97,15 +69,15 @@ LocalIpcConnection::operator=(LocalIpcConnection &&other) noexcept
     if (this != &other) {
         Close();
         m_NativeHandle = other.m_NativeHandle;
-        other.m_NativeHandle = -1;
+        other.m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
     }
     return *this;
 }
 
 bool
-LocalIpcConnection::IsOpen() const
+LocalIpcConnection::IsOpen() const noexcept
 {
-    return IsValidHandle(m_NativeHandle);
+    return LocalIpcDetail::IsValidHandle(m_NativeHandle);
 }
 
 bool
@@ -161,18 +133,15 @@ LocalIpcConnection::WriteExact(const void *buffer, size_t size, std::string &err
 }
 
 void
-LocalIpcConnection::Close()
+LocalIpcConnection::Close() noexcept
 {
     if (IsOpen()) {
         CloseHandle(AsHandle(m_NativeHandle));
-        m_NativeHandle = -1;
+        m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
     }
 }
 
-LocalIpcListener::~LocalIpcListener()
-{
-    Close();
-}
+LocalIpcListener::~LocalIpcListener() { Close(); }
 
 bool
 LocalIpcListener::Open(std::string_view serviceName, std::string_view endpoint, std::string &error)
@@ -180,8 +149,8 @@ LocalIpcListener::Open(std::string_view serviceName, std::string_view endpoint, 
     Close();
     m_Endpoint = NormalizeEndpoint(serviceName, endpoint);
 
-    const std::string mutexName =
-        "Local\\" + SanitizeName(serviceName) + "-" + SanitizeName(m_Endpoint) + "-lock";
+    const std::string mutexName = "Local\\" + LocalIpcDetail::SanitizeName(serviceName) + "-" +
+                                  LocalIpcDetail::SanitizeName(m_Endpoint) + "-lock";
     HANDLE lock = CreateMutexA(nullptr, TRUE, mutexName.c_str());
     if (!lock) {
         error = SystemErrorMessage("CreateMutex", GetLastError());
@@ -190,21 +159,20 @@ LocalIpcListener::Open(std::string_view serviceName, std::string_view endpoint, 
     }
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         CloseHandle(lock);
-        error = "another " + std::string(serviceName) + " server is already using endpoint " +
-                m_Endpoint;
+        error =
+            "another " + std::string(serviceName) + " server is already using endpoint " + m_Endpoint;
         m_Endpoint.clear();
         return false;
     }
 
     m_LockHandle = AsInteger(lock);
-    m_OwnsEndpoint = true;
     return true;
 }
 
 LocalIpcConnection
 LocalIpcListener::Accept(std::string &error)
 {
-    if (!IsValidHandle(m_LockHandle)) {
+    if (!LocalIpcDetail::IsValidHandle(m_LockHandle)) {
         error = "IPC listener is closed";
         return {};
     }
@@ -234,18 +202,17 @@ LocalIpcListener::Accept(std::string &error)
 }
 
 void
-LocalIpcListener::Close()
+LocalIpcListener::Close() noexcept
 {
-    if (IsValidHandle(m_LockHandle)) {
+    if (LocalIpcDetail::IsValidHandle(m_LockHandle)) {
         CloseHandle(AsHandle(m_LockHandle));
-        m_LockHandle = -1;
+        m_LockHandle = LocalIpcDetail::InvalidNativeHandle;
     }
-    m_OwnsEndpoint = false;
     m_Endpoint.clear();
 }
 
-const std::string &
-LocalIpcListener::Endpoint() const
+std::string_view
+LocalIpcListener::Endpoint() const noexcept
 {
     return m_Endpoint;
 }

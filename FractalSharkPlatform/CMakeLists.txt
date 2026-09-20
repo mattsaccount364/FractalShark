@@ -15,22 +15,14 @@ if(WIN32)
     )
     find_package(OpenGL REQUIRED COMPONENTS OpenGL)
     target_link_libraries(FractalSharkPlatform PUBLIC OpenGL::GL)
-else()
-    set(FRACTALSHARK_IMAGINA_FIXTURE_NAMES
-        View0.im
-        View5.im
-        View14.im
-        View15.im
-        View19.im
-        ViewEasy1.im
-    )
-    set(FRACTALSHARK_IMAGINA_FIXTURE_PRESETS
-        0
-        5
-        14
-        15
-        19
-        none
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    set(FRACTALSHARK_IMAGINA_FIXTURES
+        "View0.im|0"
+        "View5.im|5"
+        "View14.im|14"
+        "View15.im|15"
+        "View19.im|19"
+        "ViewEasy1.im|none"
     )
 
     function(fractalshark_bytes_for_file output_var file_path)
@@ -59,11 +51,13 @@ else()
         "${CMAKE_CURRENT_BINARY_DIR}/EmbeddedImaginaFixturesLinux.cpp")
     set(generated_source "#include \"Environment.h\"\n\n#include <array>\n\nnamespace {\n\n")
 
-    list(LENGTH FRACTALSHARK_IMAGINA_FIXTURE_NAMES fixture_count)
+    list(LENGTH FRACTALSHARK_IMAGINA_FIXTURES fixture_count)
     math(EXPR last_fixture "${fixture_count} - 1")
 
     foreach(fixture_index RANGE 0 ${last_fixture})
-        list(GET FRACTALSHARK_IMAGINA_FIXTURE_NAMES ${fixture_index} fixture_name)
+        list(GET FRACTALSHARK_IMAGINA_FIXTURES ${fixture_index} fixture_record)
+        string(REPLACE "|" ";" fixture_fields "${fixture_record}")
+        list(GET fixture_fields 0 fixture_name)
         string(MAKE_C_IDENTIFIER "${fixture_name}" fixture_symbol)
         set(fixture_path "${CMAKE_SOURCE_DIR}/FromImagina/${fixture_name}")
         set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${fixture_path}")
@@ -80,8 +74,10 @@ else()
         "const std::array<Environment::ImaginaFixtureInfo, ${fixture_count}> kImaginaFixtureInfos{{\n")
 
     foreach(fixture_index RANGE 0 ${last_fixture})
-        list(GET FRACTALSHARK_IMAGINA_FIXTURE_NAMES ${fixture_index} fixture_name)
-        list(GET FRACTALSHARK_IMAGINA_FIXTURE_PRESETS ${fixture_index} fixture_preset)
+        list(GET FRACTALSHARK_IMAGINA_FIXTURES ${fixture_index} fixture_record)
+        string(REPLACE "|" ";" fixture_fields "${fixture_record}")
+        list(GET fixture_fields 0 fixture_name)
+        list(GET fixture_fields 1 fixture_preset)
         if(fixture_preset STREQUAL "none")
             set(preset_expr "std::nullopt")
         else()
@@ -95,7 +91,9 @@ else()
         "const std::array<ImaginaFixtureResource, ${fixture_count}> kImaginaFixtureResources{{\n")
 
     foreach(fixture_index RANGE 0 ${last_fixture})
-        list(GET FRACTALSHARK_IMAGINA_FIXTURE_NAMES ${fixture_index} fixture_name)
+        list(GET FRACTALSHARK_IMAGINA_FIXTURES ${fixture_index} fixture_record)
+        string(REPLACE "|" ";" fixture_fields "${fixture_record}")
+        list(GET fixture_fields 0 fixture_name)
         string(MAKE_C_IDENTIFIER "${fixture_name}" fixture_symbol)
         string(APPEND generated_source
             "    {L\"${fixture_name}\", std::span<const std::byte>{k${fixture_symbol}Bytes}},\n")
@@ -137,6 +135,8 @@ else()
         message(FATAL_ERROR "FractalSharkPlatform requires GLX.")
     endif()
     target_link_libraries(FractalSharkPlatform PUBLIC X11::X11 OpenGL::GL ${OPENGL_glx_LIBRARY})
+else()
+    message(FATAL_ERROR "FractalSharkPlatform supports only Windows and Linux.")
 endif()
 
 target_include_directories(FractalSharkPlatform PUBLIC

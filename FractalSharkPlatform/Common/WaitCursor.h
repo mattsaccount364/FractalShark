@@ -8,14 +8,14 @@ namespace Environment {
 class WaitCursor {
 public:
     WaitCursor();
-    ~WaitCursor();
+    ~WaitCursor() noexcept;
 
     WaitCursor &operator=(const WaitCursor &) = delete;
     WaitCursor &operator=(WaitCursor &&) = delete;
     WaitCursor(const WaitCursor &) = delete;
     WaitCursor(WaitCursor &&) = delete;
 
-    void ResetCursor();
+    void ResetCursor() noexcept;
 
     static void RegisterLinuxCursorTarget(void *display,
                                           std::uintptr_t window,

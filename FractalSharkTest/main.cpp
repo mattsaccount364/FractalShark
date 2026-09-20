@@ -1,6 +1,7 @@
 #include "Environment.h"
 #include "HighPrecision.h"
 #include "TestFramework.h"
+#include "heap_allocator/include/HeapCpp.h"
 
 int
 main()

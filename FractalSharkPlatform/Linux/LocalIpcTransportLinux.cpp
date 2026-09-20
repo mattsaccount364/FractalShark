@@ -16,32 +16,10 @@
 namespace Environment {
 namespace {
 
-bool
-IsValidHandle(std::intptr_t handle)
-{
-    return handle != -1;
-}
-
 std::string
 SystemErrorMessage(const char *operation, int errorCode)
 {
     return std::string(operation) + ": " + std::system_category().message(errorCode);
-}
-
-std::string
-SanitizeName(std::string_view name)
-{
-    std::string result;
-    result.reserve(name.size());
-    for (unsigned char c : name) {
-        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' ||
-            c == '_' || c == '.') {
-            result.push_back(static_cast<char>(c));
-        } else {
-            result.push_back('_');
-        }
-    }
-    return result;
 }
 
 std::string
@@ -72,12 +50,12 @@ NormalizeEndpoint(std::string_view serviceName, std::string_view endpoint)
         return std::string(endpoint);
     }
 
-    const std::string service = LowercaseAscii(SanitizeName(serviceName));
+    const std::string service = LowercaseAscii(LocalIpcDetail::SanitizeName(serviceName));
     if (endpoint.empty()) {
         return RuntimeDirectory() + "/" + service + "-" +
                std::to_string(static_cast<unsigned long long>(getuid())) + ".sock";
     }
-    return RuntimeDirectory() + "/" + service + "-" + SanitizeName(endpoint) + ".sock";
+    return RuntimeDirectory() + "/" + service + "-" + LocalIpcDetail::SanitizeName(endpoint) + ".sock";
 }
 
 bool
@@ -94,19 +72,22 @@ SetSocketAddress(sockaddr_un &address, const std::string &path, std::string &err
     return true;
 }
 
+socklen_t
+SocketAddressLength(std::string_view path) noexcept
+{
+    return static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + path.size() + 1);
+}
+
 } // namespace
 
 LocalIpcConnection::LocalIpcConnection(std::intptr_t nativeHandle) : m_NativeHandle(nativeHandle) {}
 
-LocalIpcConnection::~LocalIpcConnection()
-{
-    Close();
-}
+LocalIpcConnection::~LocalIpcConnection() { Close(); }
 
 LocalIpcConnection::LocalIpcConnection(LocalIpcConnection &&other) noexcept
     : m_NativeHandle(other.m_NativeHandle)
 {
-    other.m_NativeHandle = -1;
+    other.m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
 }
 
 LocalIpcConnection &
@@ -115,15 +96,15 @@ LocalIpcConnection::operator=(LocalIpcConnection &&other) noexcept
     if (this != &other) {
         Close();
         m_NativeHandle = other.m_NativeHandle;
-        other.m_NativeHandle = -1;
+        other.m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
     }
     return *this;
 }
 
 bool
-LocalIpcConnection::IsOpen() const
+LocalIpcConnection::IsOpen() const noexcept
 {
-    return IsValidHandle(m_NativeHandle);
+    return LocalIpcDetail::IsValidHandle(m_NativeHandle);
 }
 
 bool
@@ -189,18 +170,15 @@ LocalIpcConnection::WriteExact(const void *buffer, size_t size, std::string &err
 }
 
 void
-LocalIpcConnection::Close()
+LocalIpcConnection::Close() noexcept
 {
     if (IsOpen()) {
-        close(static_cast<int>(m_NativeHandle));
-        m_NativeHandle = -1;
+        ::close(static_cast<int>(m_NativeHandle));
+        m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
     }
 }
 
-LocalIpcListener::~LocalIpcListener()
-{
-    Close();
-}
+LocalIpcListener::~LocalIpcListener() { Close(); }
 
 bool
 LocalIpcListener::Open(std::string_view serviceName, std::string_view endpoint, std::string &error)
@@ -214,7 +192,7 @@ LocalIpcListener::Open(std::string_view serviceName, std::string_view endpoint, 
         return false;
     }
 
-    struct stat existing {};
+    struct stat existing{};
     if (lstat(m_Endpoint.c_str(), &existing) == 0) {
         if (!S_ISSOCK(existing.st_mode)) {
             error = "IPC endpoint exists and is not a Unix socket: " + m_Endpoint;
@@ -224,15 +202,14 @@ LocalIpcListener::Open(std::string_view serviceName, std::string_view endpoint, 
 
         const int probe = socket(AF_UNIX, SOCK_STREAM, 0);
         if (probe != -1) {
-            const socklen_t addressLength =
-                static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + m_Endpoint.size() + 1);
+            const socklen_t addressLength = SocketAddressLength(m_Endpoint);
             const bool active =
                 connect(probe, reinterpret_cast<const sockaddr *>(&address), addressLength) == 0;
             const int probeError = errno;
             close(probe);
             if (active) {
-                error = "another " + std::string(serviceName) +
-                        " server is already using endpoint " + m_Endpoint;
+                error = "another " + std::string(serviceName) + " server is already using endpoint " +
+                        m_Endpoint;
                 m_Endpoint.clear();
                 return false;
             }
@@ -285,14 +262,13 @@ LocalIpcListener::Open(std::string_view serviceName, std::string_view endpoint, 
     }
 
     m_NativeHandle = socketHandle;
-    m_OwnsEndpoint = true;
     return true;
 }
 
 LocalIpcConnection
 LocalIpcListener::Accept(std::string &error)
 {
-    if (!IsValidHandle(m_NativeHandle)) {
+    if (!LocalIpcDetail::IsValidHandle(m_NativeHandle)) {
         error = "IPC listener is closed";
         return {};
     }
@@ -310,21 +286,20 @@ LocalIpcListener::Accept(std::string &error)
 }
 
 void
-LocalIpcListener::Close()
+LocalIpcListener::Close() noexcept
 {
-    if (IsValidHandle(m_NativeHandle)) {
-        close(static_cast<int>(m_NativeHandle));
-        m_NativeHandle = -1;
+    if (LocalIpcDetail::IsValidHandle(m_NativeHandle)) {
+        ::close(static_cast<int>(m_NativeHandle));
+        m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
     }
-    if (m_OwnsEndpoint && !m_Endpoint.empty()) {
-        unlink(m_Endpoint.c_str());
+    if (!m_Endpoint.empty()) {
+        ::unlink(m_Endpoint.c_str());
     }
-    m_OwnsEndpoint = false;
     m_Endpoint.clear();
 }
 
-const std::string &
-LocalIpcListener::Endpoint() const
+std::string_view
+LocalIpcListener::Endpoint() const noexcept
 {
     return m_Endpoint;
 }
@@ -350,8 +325,7 @@ ConnectLocalIpc(std::string_view serviceName,
             return {};
         }
 
-        const socklen_t addressLength =
-            static_cast<socklen_t>(offsetof(sockaddr_un, sun_path) + path.size() + 1);
+        const socklen_t addressLength = SocketAddressLength(path);
         if (connect(socketHandle, reinterpret_cast<const sockaddr *>(&address), addressLength) == 0) {
             return LocalIpcConnection(socketHandle);
         }

@@ -7,25 +7,19 @@
 #include <X11/Xlib.h>
 #include <X11/keysym.h>
 
-#include <atomic>
 #include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
-#include <cwchar>
 #include <string>
 
-#include <dirent.h>
 #include <fcntl.h>
 #include <ftw.h>
 #include <malloc.h> // malloc_usable_size
 #include <pthread.h>
-#include <signal.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
-#include <sys/sysinfo.h>
-#include <sys/types.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -166,6 +160,31 @@ GetConsoleRawGuard()
 
 int g_ConsolePending = -1;
 
+cpu_set_t
+CpuSetFromMask(uint64_t mask)
+{
+    cpu_set_t result{};
+    CPU_ZERO(&result);
+    for (int cpu = 0; cpu < 64; ++cpu) {
+        if ((mask & (static_cast<uint64_t>(1) << cpu)) != 0) {
+            CPU_SET(cpu, &result);
+        }
+    }
+    return result;
+}
+
+uint64_t
+MaskFromCpuSet(const cpu_set_t &cpuSet)
+{
+    uint64_t result = 0;
+    for (int cpu = 0; cpu < 64; ++cpu) {
+        if (CPU_ISSET(cpu, &cpuSet)) {
+            result |= static_cast<uint64_t>(1) << cpu;
+        }
+    }
+    return result;
+}
+
 } // anonymous namespace
 
 } // namespace Environment
@@ -174,19 +193,21 @@ struct Environment::MappedFile::Impl {
     int file{-1};
     void *data{MAP_FAILED};
     size_t size{};
+
+    ~Impl()
+    {
+        if (data != MAP_FAILED) {
+            ::munmap(data, size);
+        }
+        if (file >= 0) {
+            ::close(file);
+        }
+    }
 };
 
 Environment::MappedFile::MappedFile() : m_Impl{std::make_unique<Impl>()} {}
 
-Environment::MappedFile::~MappedFile()
-{
-    if (m_Impl == nullptr)
-        return;
-    if (m_Impl->data != MAP_FAILED)
-        ::munmap(m_Impl->data, m_Impl->size);
-    if (m_Impl->file >= 0)
-        ::close(m_Impl->file);
-}
+Environment::MappedFile::~MappedFile() noexcept = default;
 
 std::unique_ptr<Environment::MappedFile>
 Environment::MappedFile::CreateWrite(const wchar_t *path, size_t bytes)
@@ -230,30 +251,28 @@ Environment::MappedFile::OpenRead(const wchar_t *path)
 }
 
 uint8_t *
-Environment::MappedFile::Data()
+Environment::MappedFile::Data() noexcept
 {
-    return m_Impl != nullptr && m_Impl->data != MAP_FAILED ? static_cast<uint8_t *>(m_Impl->data)
-                                                           : nullptr;
+    return m_Impl->data != MAP_FAILED ? static_cast<uint8_t *>(m_Impl->data) : nullptr;
 }
 
 const uint8_t *
-Environment::MappedFile::Data() const
+Environment::MappedFile::Data() const noexcept
 {
-    return m_Impl != nullptr && m_Impl->data != MAP_FAILED ? static_cast<const uint8_t *>(m_Impl->data)
-                                                           : nullptr;
+    return m_Impl->data != MAP_FAILED ? static_cast<const uint8_t *>(m_Impl->data) : nullptr;
 }
 
 size_t
-Environment::MappedFile::Size() const
+Environment::MappedFile::Size() const noexcept
 {
-    return m_Impl != nullptr ? m_Impl->size : 0;
+    return m_Impl->size;
 }
 
 bool
-Environment::MappedFile::Flush()
+Environment::MappedFile::Flush() noexcept
 {
-    return m_Impl != nullptr && m_Impl->data != MAP_FAILED &&
-           ::msync(m_Impl->data, m_Impl->size, MS_SYNC) == 0 && ::fsync(m_Impl->file) == 0;
+    return m_Impl->data != MAP_FAILED && ::msync(m_Impl->data, m_Impl->size, MS_SYNC) == 0 &&
+           ::fsync(m_Impl->file) == 0;
 }
 
 // =========================================================================
@@ -263,13 +282,16 @@ Environment::MappedFile::Flush()
 void *
 Environment::FileOpenDeleteOnClose(const wchar_t *path)
 {
-    std::string u8 = WideToUtf8(path);
-    int fd = ::open(u8.c_str(), O_RDWR);
+    const std::string utf8Path = WideToUtf8(path);
+    int fd = ::open(utf8Path.c_str(), O_RDWR);
     if (fd < 0) {
         return Environment::InvalidHandle;
     }
     // POSIX delete-on-close idiom: unlink while open.
-    ::unlink(u8.c_str());
+    if (::unlink(utf8Path.c_str()) != 0) {
+        ::close(fd);
+        return Environment::InvalidHandle;
+    }
     return reinterpret_cast<void *>(static_cast<intptr_t>(fd));
 }
 
@@ -463,32 +485,19 @@ Environment::GetCurrentThreadHandle()
 uint64_t
 Environment::SetThreadAffinity(void *threadHandle, uint64_t mask)
 {
-    cpu_set_t cpuset;
-    CPU_ZERO(&cpuset);
-    for (int i = 0; i < 64; ++i) {
-        if (mask & (static_cast<uint64_t>(1) << i)) {
-            CPU_SET(i, &cpuset);
-        }
-    }
-
-    auto th = static_cast<pthread_t>(reinterpret_cast<uintptr_t>(threadHandle));
+    const cpu_set_t cpuSet = CpuSetFromMask(mask);
+    const auto thread = static_cast<pthread_t>(reinterpret_cast<uintptr_t>(threadHandle));
 
     // Read previous affinity.
-    cpu_set_t prev;
-    CPU_ZERO(&prev);
-    ::pthread_getaffinity_np(th, sizeof(prev), &prev);
-
-    uint64_t prevMask = 0;
-    for (int i = 0; i < 64; ++i) {
-        if (CPU_ISSET(i, &prev)) {
-            prevMask |= (static_cast<uint64_t>(1) << i);
-        }
-    }
-
-    if (::pthread_setaffinity_np(th, sizeof(cpuset), &cpuset) != 0) {
+    cpu_set_t previous{};
+    if (::pthread_getaffinity_np(thread, sizeof(previous), &previous) != 0) {
         return 0;
     }
-    return prevMask;
+
+    if (::pthread_setaffinity_np(thread, sizeof(cpuSet), &cpuSet) != 0) {
+        return 0;
+    }
+    return MaskFromCpuSet(previous);
 }
 
 // =========================================================================
@@ -519,12 +528,12 @@ Environment::IsKeyDown(Key key)
     return g_X11KeyState.IsKeyDown(key);
 }
 
-std::pair<int, int>
+Environment::ScreenPoint
 Environment::GetCursorPosition()
 {
     Display *display = ::XOpenDisplay(nullptr);
     if (!display) {
-        return {0, 0};
+        return ScreenPoint{0, 0};
     }
 
     Window rootReturn = 0;
@@ -541,9 +550,9 @@ Environment::GetCursorPosition()
     ::XCloseDisplay(display);
 
     if (!ok) {
-        return {0, 0};
+        return ScreenPoint{0, 0};
     }
-    return {rootX, rootY};
+    return ScreenPoint{rootX, rootY};
 }
 
 // =========================================================================
@@ -709,9 +718,12 @@ Environment::FileOpen(const wchar_t *path,
         return Environment::InvalidHandle;
     }
 
-    if (flags & FileFlags::DeleteOnClose) {
+    if (HasFileFlag(flags, FileFlags::DeleteOnClose)) {
         // POSIX delete-on-close: unlink now; data lives until fd is closed.
-        ::unlink(u8.c_str());
+        if (::unlink(u8.c_str()) != 0) {
+            ::close(fd);
+            return Environment::InvalidHandle;
+        }
     }
 
     return reinterpret_cast<void *>(static_cast<intptr_t>(fd));
@@ -774,12 +786,7 @@ Environment::TempDirectoryPath()
     if (narrow.back() != '/') {
         narrow.push_back('/');
     }
-    std::wstring wide;
-    wide.reserve(narrow.size());
-    for (char c : narrow) {
-        wide.push_back(static_cast<wchar_t>(static_cast<unsigned char>(c)));
-    }
-    return wide;
+    return Utf8ToWide(narrow);
 }
 
 // =========================================================================
@@ -834,7 +841,7 @@ Environment::DirectoryCreate(const wchar_t *path)
     if (::mkdir(u8.c_str(), 0777) == 0) {
         return true;
     }
-    return errno == EEXIST;
+    return errno == EEXIST && DirectoryExists(path);
 }
 
 bool
@@ -915,7 +922,7 @@ Environment::SetClipboardText(std::string_view text)
 void
 Environment::PumpUIEvents()
 {
-    // TODO: Linux, should we be checking the state of things etc here at all
+    // Linux UI integrations pump their own event loops.
 }
 
 std::wstring

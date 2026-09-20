@@ -5,7 +5,6 @@
 #include "CrummyTest.h"
 #include "DynamicPopupMenu.h"
 #include "Fractal.h"
-#include "JobObject.h"
 #include "MainWindow.h"
 #include "RecommendedSettings.h"
 #include "resource.h"

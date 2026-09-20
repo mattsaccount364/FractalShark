@@ -12,10 +12,10 @@ WaitCursor::WaitCursor() : m_PreviousCursor{SetCursor(LoadCursor(nullptr, IDC_WA
 {
 }
 
-WaitCursor::~WaitCursor() { ResetCursor(); }
+WaitCursor::~WaitCursor() noexcept { ResetCursor(); }
 
 void
-WaitCursor::ResetCursor()
+WaitCursor::ResetCursor() noexcept
 {
     if (!m_CursorSet) {
         return;

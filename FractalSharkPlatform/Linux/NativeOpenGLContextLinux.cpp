@@ -14,6 +14,7 @@
 #include <array>
 #include <cctype>
 #include <cstdio>
+#include <memory>
 #include <mutex>
 #include <string_view>
 #include <unordered_map>
@@ -58,6 +59,18 @@ struct SharedWindowGlState {
 std::mutex g_windowMutex;
 std::unordered_map<Window, SharedWindowGlState> g_windowState;
 
+struct XVisualInfoDeleter {
+    void
+    operator()(XVisualInfo *visualInfo) const noexcept
+    {
+        if (visualInfo) {
+            XFree(visualInfo);
+        }
+    }
+};
+
+using XVisualInfoPtr = std::unique_ptr<XVisualInfo, XVisualInfoDeleter>;
+
 void
 RegisterWindowGlState(Window win, GLXContext ctx, bool doubleBuffered)
 {
@@ -97,7 +110,7 @@ IsWindowDoubleBuffered(Window win)
     return it->second.doubleBuffered;
 }
 
-XVisualInfo *
+XVisualInfoPtr
 GetWindowVisualInfo(Display *dpy, Window win)
 {
     XWindowAttributes attributes{};
@@ -110,7 +123,8 @@ GetWindowVisualInfo(Display *dpy, Window win)
     visualTemplate.screen = XScreenNumberOfScreen(attributes.screen);
 
     int visualCount = 0;
-    return XGetVisualInfo(dpy, VisualIDMask | VisualScreenMask, &visualTemplate, &visualCount);
+    return XVisualInfoPtr{
+        XGetVisualInfo(dpy, VisualIDMask | VisualScreenMask, &visualTemplate, &visualCount)};
 }
 
 } // namespace
@@ -132,8 +146,8 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
     Window win = reinterpret_cast<Window>(m_NativeWindow);
 
-    XVisualInfo *vi = GetWindowVisualInfo(dpy, win);
-    if (!vi) {
+    XVisualInfoPtr visualInfo = GetWindowVisualInfo(dpy, win);
+    if (!visualInfo) {
         FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: failed to query window visual";
         return;
     }
@@ -141,18 +155,16 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
     int supportsGl = False;
     int rgba = False;
     int doubleBuffered = False;
-    if (glXGetConfig(dpy, vi, GLX_USE_GL, &supportsGl) != 0 || supportsGl != True ||
-        glXGetConfig(dpy, vi, GLX_RGBA, &rgba) != 0 || rgba != True ||
-        glXGetConfig(dpy, vi, GLX_DOUBLEBUFFER, &doubleBuffered) != 0) {
+    if (glXGetConfig(dpy, visualInfo.get(), GLX_USE_GL, &supportsGl) != 0 || supportsGl != True ||
+        glXGetConfig(dpy, visualInfo.get(), GLX_RGBA, &rgba) != 0 || rgba != True ||
+        glXGetConfig(dpy, visualInfo.get(), GLX_DOUBLEBUFFER, &doubleBuffered) != 0) {
         FractalSharkLog::LogLine(__FILE__, __LINE__)
             << "OpenGlContext: window visual is not a usable GLX RGBA visual";
-        XFree(vi);
         return;
     }
 
     GLXContext shareCtx = GetShareRoot(win);
-    GLXContext ctx = glXCreateContext(dpy, vi, shareCtx, GL_TRUE);
-    XFree(vi);
+    GLXContext ctx = glXCreateContext(dpy, visualInfo.get(), shareCtx, GL_TRUE);
 
     if (!ctx) {
         FractalSharkLog::LogLine(__FILE__, __LINE__) << "OpenGlContext: glXCreateContext failed";
@@ -191,7 +203,7 @@ NativeOpenGLContext::NativeOpenGLContext(void *nativeWindow) : m_NativeWindow(na
 
 NativeOpenGLContext::~NativeOpenGLContext()
 {
-    Display *dpy = GetX11Display();
+    Display *dpy = g_display;
     GLXContext ctx = reinterpret_cast<GLXContext>(m_RenderContext);
 
     if (dpy && ctx && glXGetCurrentContext() == ctx) {

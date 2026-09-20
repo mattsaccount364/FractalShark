@@ -1,9 +1,10 @@
 // OpenGLContext.h
 #pragma once
 
-#include "Environment.h"
 #include "NativeOpenGLContext.h"
+#include "PlatformTypes.h"
 
+#include <cstddef>
 #include <memory>
 #include <string_view>
 

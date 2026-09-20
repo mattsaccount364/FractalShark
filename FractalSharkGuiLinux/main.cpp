@@ -6,6 +6,7 @@
 #include "Exceptions.h"
 #include "LinuxMainWindow.h"
 #include "LinuxSplashWindow.h"
+#include "heap_allocator/include/HeapCpp.h"
 
 #include <X11/Xlib.h>
 

@@ -5,6 +5,8 @@
 #include <string>
 #include <string_view>
 
+#include "LocalIpcTransportDetail.h"
+
 namespace Environment {
 
 class LocalIpcConnection {
@@ -19,13 +21,13 @@ public:
     LocalIpcConnection(LocalIpcConnection &&other) noexcept;
     LocalIpcConnection &operator=(LocalIpcConnection &&other) noexcept;
 
-    bool IsOpen() const;
+    bool IsOpen() const noexcept;
     bool ReadExact(void *buffer, size_t size, std::string &error);
     bool WriteExact(const void *buffer, size_t size, std::string &error);
-    void Close();
+    void Close() noexcept;
 
 private:
-    std::intptr_t m_NativeHandle = -1;
+    std::intptr_t m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
 };
 
 class LocalIpcListener {
@@ -40,14 +42,13 @@ public:
 
     bool Open(std::string_view serviceName, std::string_view endpoint, std::string &error);
     LocalIpcConnection Accept(std::string &error);
-    void Close();
+    void Close() noexcept;
 
-    const std::string &Endpoint() const;
+    std::string_view Endpoint() const noexcept;
 
 private:
-    std::intptr_t m_NativeHandle = -1;
-    std::intptr_t m_LockHandle = -1;
-    bool m_OwnsEndpoint = false;
+    std::intptr_t m_NativeHandle = LocalIpcDetail::InvalidNativeHandle;
+    std::intptr_t m_LockHandle = LocalIpcDetail::InvalidNativeHandle;
     std::string m_Endpoint;
 };
 

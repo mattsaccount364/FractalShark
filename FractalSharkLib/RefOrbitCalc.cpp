@@ -1644,23 +1644,27 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
         memset(ThreadZxMemory, 0, sizeof(*ThreadZxMemory));
 
-        auto *ThreadZyMemory =
-            (ThreadPtrs<ThreadZyData> *)Environment::AlignedAlloc(sizeof(ThreadPtrs<ThreadZyData>), 64);
-        if (ThreadZyMemory == nullptr) {
-            throw FractalSharkSeriousException(
-                "Memory allocation failure site: ThreadZyMemory (RefOrbitCalc MT)");
+        ThreadPtrs<ThreadZyData> *ThreadZyMemory = nullptr;
+        ThreadPtrs<ThreadReusedData> *ThreadReusedMemory = nullptr;
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            ThreadZyMemory = (ThreadPtrs<ThreadZyData> *)Environment::AlignedAlloc(
+                sizeof(ThreadPtrs<ThreadZyData>), 64);
+            if (ThreadZyMemory == nullptr) {
+                throw FractalSharkSeriousException(
+                    "Memory allocation failure site: ThreadZyMemory (RefOrbitCalc MT)");
+            }
+
+            memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
+
+            ThreadReusedMemory = (ThreadPtrs<ThreadReusedData> *)Environment::AlignedAlloc(
+                sizeof(ThreadPtrs<ThreadReusedData>), 64);
+            if (ThreadReusedMemory == nullptr) {
+                throw FractalSharkSeriousException(
+                    "Memory allocation failure site: ThreadReusedMemory (RefOrbitCalc MT)");
+            }
+
+            memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
         }
-
-        memset(ThreadZyMemory, 0, sizeof(*ThreadZyMemory));
-
-        auto *ThreadReusedMemory = (ThreadPtrs<ThreadReusedData> *)Environment::AlignedAlloc(
-            sizeof(ThreadPtrs<ThreadReusedData>), 64);
-        if (ThreadReusedMemory == nullptr) {
-            throw FractalSharkSeriousException(
-                "Memory allocation failure site: ThreadReusedMemory (RefOrbitCalc MT)");
-        }
-
-        memset(ThreadReusedMemory, 0, sizeof(*ThreadReusedMemory));
 
         auto InitTls = [&]() {
             if constexpr (Reuse != RefOrbitCalc::ReuseMode::SaveForReuse1 &&
@@ -1807,15 +1811,23 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
         auto *threadZxdata = (ThreadZxData *)Environment::AlignedAlloc(sizeof(ThreadZxData), 64);
         auto *threadZydata = (ThreadZyData *)Environment::AlignedAlloc(sizeof(ThreadZyData), 64);
-        auto *threadReuseddata =
-            (ThreadReusedData *)Environment::AlignedAlloc(sizeof(ThreadReusedData), 64);
+        ThreadReusedData *threadReuseddata = nullptr;
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            threadReuseddata =
+                (ThreadReusedData *)Environment::AlignedAlloc(sizeof(ThreadReusedData), 64);
+        }
 
         new (threadZxdata)(ThreadZxData){};
         new (threadZydata)(ThreadZyData){};
-        new (threadReuseddata)(ThreadReusedData){};
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            new (threadReuseddata)(ThreadReusedData){};
+        }
 
         std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(threadReal, ThreadZxMemory));
-        std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(threadImaginary, ThreadZyMemory));
+        std::unique_ptr<std::thread> tZy;
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            tZy = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(threadImaginary, ThreadZyMemory));
+        }
 
         std::unique_ptr<std::thread> tReuse;
 
@@ -1832,7 +1844,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             *this,
             Environment::GetCurrentThreadHandle(),
             reinterpret_cast<void *>(tZx->native_handle()),
-            reinterpret_cast<void *>(tZy->native_handle()),
+            tZy ? reinterpret_cast<void *>(tZy->native_handle()) : nullptr,
             tReuse ? reinterpret_cast<void *>(tReuse->native_handle()) : nullptr};
 
         ThreadZxData *expectedZx = nullptr;
@@ -1845,7 +1857,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         mpf_set(zx, cxMpf);
         mpf_set(zy, cyMpf);
 
-        // Both workers read these coordinates until their results have been collected.
+        // Keep the current pair unchanged until the real worker has finished reading it.
         threadZxdata->inputX = &zx;
         threadZxdata->inputY = &zy;
         threadZydata->inputX = &zx;
@@ -1867,9 +1879,25 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 break;
             }
 
-            // Publish the unchanged current pair to both arithmetic workers.
+            // Publish the unchanged current pair to the real worker.
             ThreadZxMemory->In.store(threadZxdata, std::memory_order_release);
-            ThreadZyMemory->In.store(threadZydata, std::memory_order_release);
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+                // Balance the factored real product against the imaginary product on main.
+                if constexpr (floatOrDouble) {
+                    threadZydata->zyLow = (T)mpf_get_d(zy);
+                } else {
+                    int32_t zyExponent;
+                    double zyMantissa;
+                    zyExponent = static_cast<int32_t>(mpf_get_2exp_d(&zyMantissa, zy));
+                    threadZydata->zyLow = T{zyExponent, static_cast<SubType>(zyMantissa)};
+                }
+
+                mpf_mul(threadZydata->nextY, zx, zy);
+                mpf_mul_2exp(threadZydata->nextY, threadZydata->nextY, 1);
+                mpf_add(threadZydata->nextY, threadZydata->nextY, cyMpf);
+            } else {
+                ThreadZyMemory->In.store(threadZydata, std::memory_order_release);
+            }
 
             T doubleZx = doubleZxLast;
             T doubleZy = doubleZyLast;
@@ -1961,32 +1989,46 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 ThreadReusedMemory->In.store(threadReuseddata, std::memory_order_release);
             }
 
-            done1 = false;
-            done2 = false;
-
-            for (;;) {
-                expectedZy = threadZydata;
-
-                _mm_pause();
-                if (!done2 && ThreadZyMemory->Out.compare_exchange_weak(
-                                  expectedZy, nullptr, std::memory_order_release)) {
-                    done2 = true;
-                    doubleZyLast = threadZydata->zyLow;
-                    PrefetchHighPrec(threadZydata->nextY);
+            if constexpr (Reuse == RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+                doubleZyLast = threadZydata->zyLow;
+                for (;;) {
+                    expectedZx = threadZxdata;
+                    _mm_pause();
+                    if (ThreadZxMemory->Out.compare_exchange_weak(
+                            expectedZx, nullptr, std::memory_order_release)) {
+                        doubleZxLast = threadZxdata->zxLow;
+                        PrefetchHighPrec(threadZxdata->nextX);
+                        break;
+                    }
                 }
+            } else {
+                done1 = false;
+                done2 = false;
 
-                expectedZx = threadZxdata;
+                for (;;) {
+                    expectedZy = threadZydata;
 
-                _mm_pause();
-                if (!done1 && ThreadZxMemory->Out.compare_exchange_weak(
-                                  expectedZx, nullptr, std::memory_order_release)) {
-                    done1 = true;
-                    doubleZxLast = threadZxdata->zxLow;
-                    PrefetchHighPrec(threadZxdata->nextX);
-                }
+                    _mm_pause();
+                    if (!done2 && ThreadZyMemory->Out.compare_exchange_weak(
+                                      expectedZy, nullptr, std::memory_order_release)) {
+                        done2 = true;
+                        doubleZyLast = threadZydata->zyLow;
+                        PrefetchHighPrec(threadZydata->nextY);
+                    }
 
-                if (done1 && done2) {
-                    break;
+                    expectedZx = threadZxdata;
+
+                    _mm_pause();
+                    if (!done1 && ThreadZxMemory->Out.compare_exchange_weak(
+                                      expectedZx, nullptr, std::memory_order_release)) {
+                        done1 = true;
+                        doubleZxLast = threadZxdata->zxLow;
+                        PrefetchHighPrec(threadZxdata->nextX);
+                    }
+
+                    if (done1 && done2) {
+                        break;
+                    }
                 }
             }
 
@@ -2009,27 +2051,32 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             results->SetBad(false);
         }
 
-        bool res1 = false, res2 = false, res3 = false;
+        bool res1 = false;
         while (!res1) {
             expectedZx = nullptr;
             res1 = ThreadZxMemory->In.compare_exchange_strong(
                 expectedZx, (ThreadZxData *)0x1, std::memory_order_release);
         }
 
-        while (!res2) {
-            expectedZy = nullptr;
-            res2 = ThreadZyMemory->In.compare_exchange_strong(
-                expectedZy, (ThreadZyData *)0x1, std::memory_order_release);
-        }
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            bool res2 = false, res3 = false;
+            while (!res2) {
+                expectedZy = nullptr;
+                res2 = ThreadZyMemory->In.compare_exchange_strong(
+                    expectedZy, (ThreadZyData *)0x1, std::memory_order_release);
+            }
 
-        while (!res3) {
-            expectedReused = nullptr;
-            res3 = ThreadReusedMemory->In.compare_exchange_strong(
-                expectedReused, (ThreadReusedData *)0x1, std::memory_order_release);
+            while (!res3) {
+                expectedReused = nullptr;
+                res3 = ThreadReusedMemory->In.compare_exchange_strong(
+                    expectedReused, (ThreadReusedData *)0x1, std::memory_order_release);
+            }
         }
 
         tZx->join();
-        tZy->join();
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            tZy->join();
+        }
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse2 ||
                       Reuse == RefOrbitCalc::ReuseMode::SaveForReuse3 ||
@@ -2039,16 +2086,22 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         }
 
         Environment::AlignedFree(ThreadZxMemory);
-        Environment::AlignedFree(ThreadZyMemory);
-        Environment::AlignedFree(ThreadReusedMemory);
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            Environment::AlignedFree(ThreadZyMemory);
+            Environment::AlignedFree(ThreadReusedMemory);
+        }
 
         threadZxdata->~ThreadZxData();
         threadZydata->~ThreadZyData();
-        threadReuseddata->~ThreadReusedData();
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            threadReuseddata->~ThreadReusedData();
+        }
 
         Environment::AlignedFree(threadZxdata);
         Environment::AlignedFree(threadZydata);
-        Environment::AlignedFree(threadReuseddata);
+        if constexpr (Reuse != RefOrbitCalc::ReuseMode::DontSaveForReuse) {
+            Environment::AlignedFree(threadReuseddata);
+        }
 
         if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
             std::ignore = bumpAllocator->GetAllocated(1); // Destruct the return value

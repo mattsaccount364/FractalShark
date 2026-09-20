@@ -423,13 +423,13 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
     }
 
     {
-        mpf_t cxMpf;
-        mpf_init(cxMpf);
-        mpf_set(cxMpf, cx.backend());
+        mpf_t cx_mpf;
+        mpf_init(cx_mpf);
+        mpf_set(cx_mpf, cx.backend());
 
-        mpf_t cyMpf;
-        mpf_init(cyMpf);
-        mpf_set(cyMpf, cy.backend());
+        mpf_t cy_mpf;
+        mpf_init(cy_mpf);
+        mpf_set(cy_mpf, cy.backend());
 
         mpf_t zx;
         mpf_init(zx);
@@ -440,15 +440,15 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
         mpf_t zx2;
         mpf_init(zx2);
 
-        mpf_t tempMpf;
-        mpf_init(tempMpf);
+        mpf_t temp_mpf;
+        mpf_init(temp_mpf);
 
-        mpf_t temp2Mpf;
-        mpf_init(temp2Mpf);
+        mpf_t temp2_mpf;
+        mpf_init(temp2_mpf);
 
         IterTypeFull i;
 
-        const T smallFloat = T((SubType)1.1754944e-38);
+        const T small_float = T((SubType)1.1754944e-38);
         // Note: results->bad is not here.  See end of this function.
         SubType glitch = (SubType)0.0000001;
 
@@ -456,20 +456,20 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
         T dzdcY = T{0};
 
         constexpr bool floatOrDouble = std::is_same<T, double>::value || std::is_same<T, float>::value;
-        T cxCast;
-        T cyCast;
+        T cx_cast;
+        T cy_cast;
         if constexpr (floatOrDouble) {
-            cxCast = (T)mpf_get_d(cxMpf);
-            cyCast = (T)mpf_get_d(cyMpf);
+            cx_cast = (T)mpf_get_d(cx_mpf);
+            cy_cast = (T)mpf_get_d(cy_mpf);
         } else {
-            int32_t cxExponent, cyExponent;
-            double cxMantissa, cyMantissa;
+            int32_t cx_exponent, cy_exponent;
+            double cx_mantissa, cy_mantissa;
 
-            cxExponent = static_cast<int32_t>(mpf_get_2exp_d(&cxMantissa, cxMpf));
-            cyExponent = static_cast<int32_t>(mpf_get_2exp_d(&cyMantissa, cyMpf));
+            cx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cx_mantissa, cx_mpf));
+            cy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cy_mantissa, cy_mpf));
 
-            cxCast = T{cxExponent, static_cast<SubType>(cxMantissa)};
-            cyCast = T{cyExponent, static_cast<SubType>(cyMantissa)};
+            cx_cast = T{cx_exponent, static_cast<SubType>(cx_mantissa)};
+            cy_cast = T{cy_exponent, static_cast<SubType>(cy_mantissa)};
         }
 
         static const T HighOne = T{1.0};
@@ -485,8 +485,8 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
         MaxIntermediateOrbitCompressor<IterType, T, PExtras> maxIntermediateCompressor{
             *results, m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Intermediate)};
 
-        mpf_set(zx, cxMpf);
-        mpf_set(zy, cyMpf);
+        mpf_set(zx, cx_mpf);
+        mpf_set(zy, cy_mpf);
 
         for (i = 0; i < m_Fractal.GetNumIterations<IterType>(); i++) {
             if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
@@ -494,23 +494,25 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
                 break;
             }
 
-            T doubleZx;
-            T doubleZy;
+            mpf_mul_2exp(zx2, zx, 1); // Multiply by 2
+
+            T double_zx;
+            T double_zy;
 
             if constexpr (floatOrDouble) {
-                doubleZx = (T)mpf_get_d(zx);
-                doubleZy = (T)mpf_get_d(zy);
+                double_zx = (T)mpf_get_d(zx);
+                double_zy = (T)mpf_get_d(zy);
             } else {
-                doubleZx = T{zx};
-                doubleZy = T{zy};
+                double_zx = T{zx};
+                double_zy = T{zy};
             }
 
             if constexpr (PExtras == PerturbExtras::Disable) {
-                results->AddUncompressedIteration({doubleZx, doubleZy});
+                results->AddUncompressedIteration({double_zx, double_zy});
             } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-                compressor.MaybeAddCompressedIteration({doubleZx, doubleZy, i + 1});
+                compressor.MaybeAddCompressedIteration({double_zx, double_zy, i + 1});
             } else if constexpr (PExtras == PerturbExtras::Bad) {
-                results->AddUncompressedIteration({doubleZx, doubleZy, false});
+                results->AddUncompressedIteration({double_zx, double_zy, false});
             }
 
             if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1 ||
@@ -524,16 +526,16 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
             }
 
             if constexpr (PExtras == PerturbExtras::Bad) {
-                const T sqX = doubleZx * doubleZx;
-                const T sqY = doubleZy * doubleZy;
-                const T norm = HdrReduce((sqX + sqY) * glitch);
+                const T sq_x = double_zx * double_zx;
+                const T sq_y = double_zy * double_zy;
+                const T norm = HdrReduce((sq_x + sq_y) * glitch);
 
-                // TODO This is stupid - we can fix this by using doubleZx/doubleZy:
-                const auto zxReduced = HdrReduce(HdrAbs((T)mpf_get_d(zx)));
-                const auto zyReduced = HdrReduce(HdrAbs((T)mpf_get_d(zy)));
-                const bool underflow = (HdrCompareToBothPositiveReducedLE(zxReduced, smallFloat) ||
-                                        HdrCompareToBothPositiveReducedLE(zyReduced, smallFloat) ||
-                                        HdrCompareToBothPositiveReducedLE(norm, smallFloat));
+                // TODO This is stupid - we can fix this by using double_zx/double_zy:
+                const auto zx_reduced = HdrReduce(HdrAbs((T)mpf_get_d(zx)));
+                const auto zy_reduced = HdrReduce(HdrAbs((T)mpf_get_d(zy)));
+                const bool underflow = (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                                        HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                                        HdrCompareToBothPositiveReducedLE(norm, small_float));
                 results->SetBad(underflow);
             }
 
@@ -555,11 +557,11 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
                 HdrReduce(dzdcY);
                 auto dzdcY1 = HdrAbs(dzdcY);
 
-                HdrReduce(doubleZx);
-                auto zxCopy1 = HdrAbs(doubleZx);
+                HdrReduce(double_zx);
+                auto zxCopy1 = HdrAbs(double_zx);
 
-                HdrReduce(doubleZy);
-                auto zyCopy1 = HdrAbs(doubleZy);
+                HdrReduce(double_zy);
+                auto zyCopy1 = HdrAbs(double_zy);
 
                 T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
@@ -574,28 +576,26 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
                     }
                 } else {
                     auto dzdcXOrig = dzdcX;
-                    dzdcX = HighTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + HighOne;
-                    dzdcY = HighTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
+                    dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                    dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                 }
             }
 
-            // Compute the imaginary component before changing either input.
-            mpf_mul(zx2, zx, zy);
-            mpf_mul_2exp(zx2, zx2, 1);
-            mpf_add(zx2, zx2, cyMpf);
+            // zx = zx * zx - zy * zy + cx;
+            mpf_mul(temp_mpf, zx, zx);
+            mpf_mul(temp2_mpf, zy, zy);
+            mpf_sub(zx, temp_mpf, temp2_mpf);
+            mpf_add(zx, zx, cx_mpf);
 
-            // (zx + zy) * (zx - zy) replaces two squares and a subtraction.
-            mpf_add(tempMpf, zx, zy);
-            mpf_sub(temp2Mpf, zx, zy);
-            mpf_mul(zx, tempMpf, temp2Mpf);
-            mpf_add(zx, zx, cxMpf);
-            mpf_set(zy, zx2);
+            // zy = zx2 * zy + cy;
+            mpf_mul(zy, zx2, zy);
+            mpf_add(zy, zy, cy_mpf);
 
             // !!!!!!!!!!!!!!!!!!!!!!!!!
-            T tempZX = doubleZx + cxCast;
-            T tempZY = doubleZy + cyCast;
-            T znSize = tempZX * tempZX + tempZY * tempZY;
-            if (HdrCompareToBothPositiveReducedGT(znSize, TwoFiftySix)) {
+            T tempZX = double_zx + cx_cast;
+            T tempZY = double_zy + cy_cast;
+            T zn_size = tempZX * tempZX + tempZY * tempZY;
+            if (HdrCompareToBothPositiveReducedGT(zn_size, TwoFiftySix)) {
                 break;
             }
         }
@@ -611,14 +611,14 @@ RefOrbitCalc::AddPerturbationReferencePointST(const PointZoomBBConverter &ptz,
         results->template CompleteResults<Reuse>(bumpAllocator->GetAllocated(1));
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
-        mpf_clear(cxMpf);
-        mpf_clear(cyMpf);
+        mpf_clear(cx_mpf);
+        mpf_clear(cy_mpf);
         mpf_clear(zx);
         mpf_clear(zy);
 
         mpf_clear(zx2);
-        mpf_clear(tempMpf);
-        mpf_clear(temp2Mpf);
+        mpf_clear(temp_mpf);
+        mpf_clear(temp2_mpf);
     } // End of scope for allocators.
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
@@ -1541,13 +1541,13 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
     std::unique_ptr<ThreadMemory> reusedAllocator;
 
     {
-        mpf_t cxMpf;
-        mpf_init(cxMpf);
-        mpf_set(cxMpf, cx.backend());
+        mpf_t cx_mpf;
+        mpf_init(cx_mpf);
+        mpf_set(cx_mpf, cx.backend());
 
-        mpf_t cyMpf;
-        mpf_init(cyMpf);
-        mpf_set(cyMpf, cy.backend());
+        mpf_t cy_mpf;
+        mpf_init(cy_mpf);
+        mpf_set(cy_mpf, cy.backend());
 
         mpf_t zx;
         mpf_init(zx);
@@ -1555,67 +1555,75 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         mpf_t zy;
         mpf_init(zy);
 
+        mpf_t zx2;
+        mpf_init(zx2);
+
+        mpf_t temp_mpf;
+        mpf_init(temp_mpf);
+
+        mpf_t temp2_mpf;
+        mpf_init(temp2_mpf);
+
         constexpr bool floatOrDouble = std::is_same<T, double>::value || std::is_same<T, float>::value;
-        T cxCast;
-        T cyCast;
+        T cx_cast;
+        T cy_cast;
         if constexpr (floatOrDouble) {
-            cxCast = (T)mpf_get_d(cxMpf);
-            cyCast = (T)mpf_get_d(cyMpf);
+            cx_cast = (T)mpf_get_d(cx_mpf);
+            cy_cast = (T)mpf_get_d(cy_mpf);
         } else {
-            int32_t cxExponent, cyExponent;
-            double cxMantissa, cyMantissa;
+            int32_t cx_exponent, cy_exponent;
+            double cx_mantissa, cy_mantissa;
 
-            cxExponent = static_cast<int32_t>(mpf_get_2exp_d(&cxMantissa, cxMpf));
-            cyExponent = static_cast<int32_t>(mpf_get_2exp_d(&cyMantissa, cyMpf));
+            cx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cx_mantissa, cx_mpf));
+            cy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&cy_mantissa, cy_mpf));
 
-            cxCast = T{cxExponent, static_cast<SubType>(cxMantissa)};
-            cyCast = T{cyExponent, static_cast<SubType>(cyMantissa)};
+            cx_cast = T{cx_exponent, static_cast<SubType>(cx_mantissa)};
+            cy_cast = T{cy_exponent, static_cast<SubType>(cy_mantissa)};
         }
 
         T dzdcX = T{1.0};
         T dzdcY = T{0.0};
 
-        const T smallFloat = T((SubType)1.1754944e-38);
+        const T small_float = T((SubType)1.1754944e-38);
         // Note: results->bad is not here.  See end of this function.
         SubType glitch = (SubType)0.0000001;
 
         struct ThreadZxData {
             ThreadZxData()
             {
-                mpf_init(sum);
-                mpf_init(difference);
-                mpf_init(nextX);
-                zxLow = T{0.0};
+                mpf_init(zx);
+                mpf_init(zx_sq);
+                zx_low = T{0.0};
             }
 
             ~ThreadZxData()
             {
-                mpf_clear(sum);
-                mpf_clear(difference);
-                mpf_clear(nextX);
+                mpf_clear(zx);
+                mpf_clear(zx_sq);
             }
 
-            const mpf_t *inputX{};
-            const mpf_t *inputY{};
-            mpf_t sum;
-            mpf_t difference;
-            mpf_t nextX;
-            T zxLow;
+            mpf_t zx;
+            mpf_t zx_sq;
+            T zx_low;
         };
 
         struct ThreadZyData {
             ThreadZyData()
             {
-                mpf_init(nextY);
-                zyLow = T{0.0};
+                mpf_init(zy);
+                mpf_init(zy_sq);
+                zy_low = T{0.0};
             }
 
-            ~ThreadZyData() { mpf_clear(nextY); }
+            ~ThreadZyData()
+            {
+                mpf_clear(zy);
+                mpf_clear(zy_sq);
+            }
 
-            const mpf_t *inputX{};
-            const mpf_t *inputY{};
-            mpf_t nextY;
-            T zyLow;
+            mpf_t zy;
+            mpf_t zy_sq;
+            T zy_low;
         };
 
         struct ThreadReusedData {
@@ -1684,8 +1692,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             }
         };
 
-        auto threadReal = [&InitTls, &ShutdownTls, &cxMpf](ThreadPtrs<ThreadZxData> *ThreadMemory) {
-            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadReal");
+        auto ThreadSqZx = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZxData> *ThreadMemory) {
+            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadSqZx");
 
             InitTls();
 
@@ -1694,19 +1702,19 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 ThreadZxData *ok = nullptr;
 
                 CheckStartCriteria;
+                // PrefetchHighPrec(ok->zx);
+
+                // ok->zx_low = (T)mpf_get_d(ok->zx);
                 if constexpr (floatOrDouble) {
-                    ok->zxLow = (T)mpf_get_d(*ok->inputX);
+                    ok->zx_low = (T)mpf_get_d(ok->zx);
                 } else {
-                    int32_t zxExponent;
-                    double zxMantissa;
-                    zxExponent = static_cast<int32_t>(mpf_get_2exp_d(&zxMantissa, *ok->inputX));
-                    ok->zxLow = T{zxExponent, static_cast<SubType>(zxMantissa)};
+                    int32_t zx_exponent;
+                    double zx_mantissa;
+                    zx_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zx_mantissa, ok->zx));
+                    ok->zx_low = T{zx_exponent, static_cast<SubType>(zx_mantissa)};
                 }
 
-                mpf_add(ok->sum, *ok->inputX, *ok->inputY);
-                mpf_sub(ok->difference, *ok->inputX, *ok->inputY);
-                mpf_mul(ok->nextX, ok->sum, ok->difference);
-                mpf_add(ok->nextX, ok->nextX, cxMpf);
+                mpf_mul(ok->zx_sq, ok->zx, ok->zx);
 
                 // Give result back.
                 CheckFinishCriteria;
@@ -1715,8 +1723,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             ShutdownTls();
         };
 
-        auto threadImaginary = [&InitTls, &ShutdownTls, &cyMpf](ThreadPtrs<ThreadZyData> *ThreadMemory) {
-            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadImaginary");
+        auto ThreadSqZy = [&InitTls, &ShutdownTls](ThreadPtrs<ThreadZyData> *ThreadMemory) {
+            Environment::SetCurrentThreadName(L"AddPerturbationReferencePointMT3 ThreadSqZy");
 
             InitTls();
 
@@ -1725,18 +1733,19 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 ThreadZyData *ok = nullptr;
 
                 CheckStartCriteria;
+                // PrefetchHighPrec(ok->zy);
+
+                // ok->zy_low = (T)mpf_get_d(ok->zy);
                 if constexpr (floatOrDouble) {
-                    ok->zyLow = (T)mpf_get_d(*ok->inputY);
+                    ok->zy_low = (T)mpf_get_d(ok->zy);
                 } else {
-                    int32_t zyExponent;
-                    double zyMantissa;
-                    zyExponent = static_cast<int32_t>(mpf_get_2exp_d(&zyMantissa, *ok->inputY));
-                    ok->zyLow = T{zyExponent, static_cast<SubType>(zyMantissa)};
+                    int32_t zy_exponent;
+                    double zy_mantissa;
+                    zy_exponent = static_cast<int32_t>(mpf_get_2exp_d(&zy_mantissa, ok->zy));
+                    ok->zy_low = T{zy_exponent, static_cast<SubType>(zy_mantissa)};
                 }
 
-                mpf_mul(ok->nextY, *ok->inputX, *ok->inputY);
-                mpf_mul_2exp(ok->nextY, ok->nextY, 1);
-                mpf_add(ok->nextY, ok->nextY, cyMpf);
+                mpf_mul(ok->zy_sq, ok->zy, ok->zy);
 
                 // Give result back.
                 CheckFinishCriteria;
@@ -1814,8 +1823,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         new (threadZydata)(ThreadZyData){};
         new (threadReuseddata)(ThreadReusedData){};
 
-        std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(threadReal, ThreadZxMemory));
-        std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(threadImaginary, ThreadZyMemory));
+        std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(ThreadSqZx, ThreadZxMemory));
+        std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
 
         std::unique_ptr<std::thread> tReuse;
 
@@ -1842,21 +1851,20 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         bool done1 = false;
         bool done2 = false;
 
-        mpf_set(zx, cxMpf);
-        mpf_set(zy, cyMpf);
+        mpf_t zy_sq_orig;
+        mpf_init(zy_sq_orig);
 
-        // Both workers read these coordinates until their results have been collected.
-        threadZxdata->inputX = &zx;
-        threadZxdata->inputY = &zy;
-        threadZydata->inputX = &zx;
-        threadZydata->inputY = &zy;
+        mpf_set(zx, cx_mpf);
+        mpf_set(zy, cy_mpf);
 
-        bool periodicityShouldBreak = false;
+        bool periodicity_should_break = false;
 
         static const T HighOne = T{1.0};
         static const T HighTwo = T{2.0};
-        T doubleZxLast = T{0.0};
-        T doubleZyLast = T{0.0};
+        bool zyStarted = false;
+
+        T double_zx_last = T{0.0};
+        T double_zy_last = T{0.0};
 
         RefOrbitCompressor<IterType, T, PExtras> compressor{
             *results, m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low)};
@@ -1867,39 +1875,51 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 break;
             }
 
-            // Publish the unchanged current pair to both arithmetic workers.
+            // Start Zx squaring thread
+            mpf_set(threadZxdata->zx, zx);
+
+            if (!zyStarted) {
+                mpf_set(threadZydata->zy, zy);
+            }
+
             ThreadZxMemory->In.store(threadZxdata, std::memory_order_release);
-            ThreadZyMemory->In.store(threadZydata, std::memory_order_release);
 
-            T doubleZx = doubleZxLast;
-            T doubleZy = doubleZyLast;
+            if (!zyStarted) {
+                // Start Zy squaring thread
+                ThreadZyMemory->In.store(threadZydata, std::memory_order_relaxed);
 
-            SubType znSize;
+                zyStarted = true;
+            }
+
+            T double_zx = double_zx_last;
+            T double_zy = double_zy_last;
+
+            SubType zn_size;
 
             if (i > 0) {
                 if constexpr (PExtras == PerturbExtras::Disable) {
-                    results->AddUncompressedIteration({doubleZx, doubleZy});
+                    results->AddUncompressedIteration({double_zx, double_zy});
                 } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-                    compressor.MaybeAddCompressedIteration({doubleZx, doubleZy, i});
+                    compressor.MaybeAddCompressedIteration({double_zx, double_zy, i});
                 } else if constexpr (PExtras == PerturbExtras::Bad) {
-                    results->AddUncompressedIteration({doubleZx, doubleZy, false});
+                    results->AddUncompressedIteration({double_zx, double_zy, false});
                 }
 
                 if constexpr (PExtras == PerturbExtras::Bad) {
-                    const T norm = HdrReduce((doubleZx * doubleZx + doubleZy * doubleZy) * glitch);
-                    const auto zxReduced = HdrReduce(HdrAbs((T)doubleZx));
-                    const auto zyReduced = HdrReduce(HdrAbs((T)doubleZy));
+                    const T norm = HdrReduce((double_zx * double_zx + double_zy * double_zy) * glitch);
+                    const auto zx_reduced = HdrReduce(HdrAbs((T)double_zx));
+                    const auto zy_reduced = HdrReduce(HdrAbs((T)double_zy));
 
-                    const bool underflow = (HdrCompareToBothPositiveReducedLE(zxReduced, smallFloat) ||
-                                            HdrCompareToBothPositiveReducedLE(zyReduced, smallFloat) ||
-                                            HdrCompareToBothPositiveReducedLE(norm, smallFloat));
+                    const bool underflow = (HdrCompareToBothPositiveReducedLE(zx_reduced, small_float) ||
+                                            HdrCompareToBothPositiveReducedLE(zy_reduced, small_float) ||
+                                            HdrCompareToBothPositiveReducedLE(norm, small_float));
                     results->SetBad(underflow);
                 }
 
                 // Note: not T.
-                const SubType tempZX = (SubType)doubleZx + (SubType)cxCast;
-                const SubType tempZY = (SubType)doubleZy + (SubType)cyCast;
-                znSize = tempZX * tempZX + tempZY * tempZY;
+                const SubType tempZX = (SubType)double_zx + (SubType)cx_cast;
+                const SubType tempZY = (SubType)double_zy + (SubType)cy_cast;
+                zn_size = tempZX * tempZX + tempZY * tempZY;
 
                 if constexpr (Periodicity) {
                     HdrReduce(dzdcX);
@@ -1908,11 +1928,11 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                     HdrReduce(dzdcY);
                     auto dzdcY1 = HdrAbs(dzdcY);
 
-                    HdrReduce(doubleZx);
-                    auto zxCopy1 = HdrAbs(doubleZx);
+                    HdrReduce(double_zx);
+                    auto zxCopy1 = HdrAbs(double_zx);
 
-                    HdrReduce(doubleZy);
-                    auto zyCopy1 = HdrAbs(doubleZy);
+                    HdrReduce(double_zy);
+                    auto zyCopy1 = HdrAbs(double_zy);
 
                     T n2 = HdrMaxPositiveReduced(zxCopy1, zyCopy1);
 
@@ -1922,12 +1942,12 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
                     if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
                         if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                            periodicityShouldBreak = true;
+                            periodicity_should_break = true;
                         }
                     } else {
                         auto dzdcXOrig = dzdcX;
-                        dzdcX = HighTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + HighOne;
-                        dzdcY = HighTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
+                        dzdcX = HighTwo * (double_zx * dzdcX - double_zy * dzdcY) + HighOne;
+                        dzdcY = HighTwo * (double_zx * dzdcY + double_zy * dzdcXOrig);
                     }
                 }
 
@@ -1946,7 +1966,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                     }
                 }
             } else {
-                znSize = 0;
+                zn_size = 0;
             }
 
             if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse1) {
@@ -1961,8 +1981,16 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 ThreadReusedMemory->In.store(threadReuseddata, std::memory_order_release);
             }
 
+            // zy = zx * 2 * zy + cy;
+
+            // Store in temp
+            mpf_mul(temp_mpf, zx, zy);
+            mpf_mul_ui(temp_mpf, temp_mpf, 2);
+            mpf_add(zy, temp_mpf, cy_mpf);
+
             done1 = false;
             done2 = false;
+            bool quitting = false;
 
             for (;;) {
                 expectedZy = threadZydata;
@@ -1971,8 +1999,29 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 if (!done2 && ThreadZyMemory->Out.compare_exchange_weak(
                                   expectedZy, nullptr, std::memory_order_release)) {
                     done2 = true;
-                    doubleZyLast = threadZydata->zyLow;
-                    PrefetchHighPrec(threadZydata->nextY);
+
+                    PrefetchHighPrec(threadZydata->zy_sq);
+
+                    if constexpr (Periodicity) {
+                        if (periodicity_should_break) {
+                            results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
+                            quitting = true;
+                        }
+                    }
+
+                    if (zn_size > 256) {
+                        quitting = true;
+                    }
+
+                    if (!quitting) {
+                        mpf_set(zy_sq_orig, threadZydata->zy_sq);
+                        double_zy_last = threadZydata->zy_low;
+
+                        // Restart right away!
+                        mpf_set(threadZydata->zy, zy);
+
+                        ThreadZyMemory->In.store(threadZydata, std::memory_order_release);
+                    }
                 }
 
                 expectedZx = threadZxdata;
@@ -1981,8 +2030,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 if (!done1 && ThreadZxMemory->Out.compare_exchange_weak(
                                   expectedZx, nullptr, std::memory_order_release)) {
                     done1 = true;
-                    doubleZxLast = threadZxdata->zxLow;
-                    PrefetchHighPrec(threadZxdata->nextX);
+
+                    double_zx_last = threadZxdata->zx_low;
+                    PrefetchHighPrec(threadZxdata->zx_sq);
                 }
 
                 if (done1 && done2) {
@@ -1990,19 +2040,15 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 }
             }
 
-            mpf_set(zx, threadZxdata->nextX);
-            mpf_set(zy, threadZydata->nextY);
+            // zx = threadZxdata->zx_sq - zy_sq_orig + cx;
+            mpf_sub(temp_mpf, threadZxdata->zx_sq, zy_sq_orig);
+            mpf_add(zx, temp_mpf, cx_mpf);
 
-            if constexpr (Periodicity) {
-                if (periodicityShouldBreak) {
-                    results->SetPeriodMaybeZero((IterType)results->GetCountOrbitEntries());
-                    break;
-                }
+            if (!quitting) {
+                continue;
             }
 
-            if (znSize > 256) {
-                break;
-            }
+            break;
         }
 
         if constexpr (PExtras == PerturbExtras::Bad) {
@@ -2057,10 +2103,15 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
         results->template CompleteResults<Reuse>(std::move(reusedAllocator));
         m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
 
-        mpf_clear(cxMpf);
-        mpf_clear(cyMpf);
+        mpf_clear(cx_mpf);
+        mpf_clear(cy_mpf);
         mpf_clear(zx);
         mpf_clear(zy);
+        mpf_clear(zx2);
+        mpf_clear(temp_mpf);
+        mpf_clear(temp2_mpf);
+        mpf_clear(zy_sq_orig);
+
     } // End of scope for boundedAllocator and bumpAllocator
 
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);

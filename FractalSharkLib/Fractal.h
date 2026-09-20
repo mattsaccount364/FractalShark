@@ -41,6 +41,8 @@ class FeatureFinderOrchestrator;
 class FeatureSummary;
 struct ItersMemoryContainer;
 
+enum class GpuMode { Auto, Disabled };
+
 class Fractal {
 public:
     // TODO get rid of this junk:
@@ -55,7 +57,8 @@ public:
             void *nativeWindow,
             bool UseSensoCursor,
             uint64_t commitLimitInBytes,
-            bool hostOwnedGlPresentation = false);
+            bool hostOwnedGlPresentation,
+            GpuMode gpuMode);
     ~Fractal();
 
     void InitialDefaultViewAndSettings(int width = 0, int height = 0);
@@ -312,6 +315,7 @@ public:
 
     void GetRenderDetails(std::string &shortStr, std::string &longStr) const;
 
+    GpuMode GetGpuMode() const;
     bool GpuBypassed() const;
 
     void TryFindPeriodicPoint(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
@@ -331,7 +335,7 @@ public:
     void SetNRInnerLoopBackend(NRInnerLoopBackend v);
 
 private:
-    void Initialize(int width, int height, void *nativeWindow, bool UseSensoCursor);
+    void Initialize(int width, int height, void *nativeWindow, bool UseSensoCursor, GpuMode gpuMode);
     void Uninitialize();
 
     void SaveCurPos();
@@ -516,6 +520,7 @@ private:
 
     const uint64_t m_CommitLimitInBytes;
     const bool m_HostOwnedGlPresentation = false;
+    const GpuMode m_GpuMode;
 
     // Async render thread pool
     std::unique_ptr<RenderThreadPool> m_RenderPool;

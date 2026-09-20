@@ -245,7 +245,8 @@ DrawingThread(void *)
     glResetViewDim(rt.right, rt.bottom);
 
     Fractal *gFractal = nullptr;
-    gFractal = DEBUG_NEW Fractal(rt.right, rt.bottom, static_cast<void *>(gHWnd), true, 0);
+    gFractal = DEBUG_NEW Fractal(
+        rt.right, rt.bottom, static_cast<void *>(gHWnd), true, 0, false, GpuMode::Auto);
 
     // Autozoom
     bool gAutoZoomDone = false;

@@ -67,32 +67,36 @@ Fractal::Fractal(int width,
                  void *nativeWindow,
                  bool UseSensoCursor,
                  uint64_t commitLimitInBytes,
-                 bool hostOwnedGlPresentation)
+                 bool hostOwnedGlPresentation,
+                 GpuMode gpuMode)
     : m_RefOrbit{*this, commitLimitInBytes}, m_CommitLimitInBytes{commitLimitInBytes},
-      m_HostOwnedGlPresentation{hostOwnedGlPresentation}
+      m_HostOwnedGlPresentation{hostOwnedGlPresentation}, m_GpuMode{gpuMode}
 {
-    Initialize(width, height, nativeWindow, UseSensoCursor);
+    Initialize(width, height, nativeWindow, UseSensoCursor, gpuMode);
 }
 
 Fractal::~Fractal() { Uninitialize(); }
 
 void
-Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCursor)
+Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCursor, GpuMode gpuMode)
 {
     m_BypassGpu = true;
-    std::jthread setupThread{[this] {
-        auto res = GPURenderer::TestCudaIsWorking();
+    std::jthread setupThread;
+    if (gpuMode == GpuMode::Auto) {
+        setupThread = std::jthread{[this] {
+            auto res = GPURenderer::TestCudaIsWorking();
 
-        if (!res) {
-            FractalSharkLog::LogLine(__FILE__, __LINE__)
-                << "CUDA initialization failed.  GPU rendering will be disabled.";
-            MessageBoxCudaError(res, __FILE__, __LINE__);
-            m_BypassGpu = true;
-            return;
-        }
+            if (!res) {
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "CUDA initialization failed.  GPU rendering will be disabled.";
+                MessageBoxCudaError(res, __FILE__, __LINE__);
+                m_BypassGpu = true;
+                return;
+            }
 
-        m_BypassGpu = false;
-    }};
+            m_BypassGpu = false;
+        }};
+    }
 
     // Create the control-key-down/mouse-movement-monitoring thread.
     if (nativeWindow != nullptr) {
@@ -108,7 +112,9 @@ Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCurs
     m_Palette.InitializeAllPalettes();
 
     // This one needs to be done before setting up the view.
-    setupThread.join();
+    if (setupThread.joinable()) {
+        setupThread.join();
+    }
 
     InitialDefaultViewAndSettings(width, height);
 
@@ -521,7 +527,7 @@ Fractal::InitialDefaultViewAndSettings(int width, int height)
     // Note!  This specific setting is overridden in MainWindow via a hardcoded
     // commandDispatcher.Dispatch(IDM_ALG_AUTO); call
     const bool success = SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO));
-    if (!success) {
+    if (!success && !m_BypassGpu) {
         FractalSharkLog::LogLine(__FILE__, __LINE__) << "Error: could not set default render algorithm.";
     }
 
@@ -3428,6 +3434,12 @@ Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr) const
                                smaxY);
 
     longStr += tempStr;
+}
+
+GpuMode
+Fractal::GetGpuMode() const
+{
+    return m_GpuMode;
 }
 
 bool

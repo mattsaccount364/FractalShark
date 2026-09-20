@@ -66,6 +66,7 @@
     <ClCompile Include="TestRenderGoldens.cpp" />
     <ClCompile Include="TestGuiShared.cpp" />
     <ClCompile Include="TestGrowableVector.cpp" />
+    <ClCompile Include="TestFractalSharkLib.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Crc64.h" />

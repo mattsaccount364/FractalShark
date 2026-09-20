@@ -474,7 +474,8 @@ LinuxMainWindow::LinuxMainWindow()
                                         reinterpret_cast<void *>(static_cast<uintptr_t>(window)),
                                         /*UseSensoCursor=*/false,
                                         /*commitLimitInBytes=*/UINT64_MAX,
-                                        /*hostOwnedGlPresentation=*/true);
+                                        /*hostOwnedGlPresentation=*/true,
+                                        GpuMode::Auto);
 
     // Create the GLX context on this (the GUI) thread.  OpenGlContext's
     // constructor binds GL to this thread via glXMakeCurrent — every

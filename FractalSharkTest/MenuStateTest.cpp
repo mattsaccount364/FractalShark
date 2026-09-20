@@ -46,7 +46,8 @@ CommandForAlgorithm(RenderAlgorithmEnum algorithm)
 
 TEST(MenuState_EnablementRulesUseSharedRuntimeState)
 {
-    Fractal fractal(32, 32, nullptr, false, std::numeric_limits<uint64_t>::max());
+    Fractal fractal(
+        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
     FractalShark::MenuState state(fractal);
 
     ASSERT_TRUE(state.IsEnabled(FractalShark::Rule::Always));
@@ -74,7 +75,8 @@ TEST(MenuState_EnablementRulesUseSharedRuntimeState)
 
 TEST(MenuState_RepaintingReflectsFractalState)
 {
-    Fractal fractal(32, 32, nullptr, false, std::numeric_limits<uint64_t>::max());
+    Fractal fractal(
+        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
     FractalShark::MenuState state(fractal);
 
     fractal.SetRepaint(false);
@@ -88,7 +90,8 @@ TEST(MenuState_RepaintingReflectsFractalState)
 
 TEST(MenuState_RadioGroupsFollowFractalState)
 {
-    Fractal fractal(32, 32, nullptr, false, std::numeric_limits<uint64_t>::max());
+    Fractal fractal(
+        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
     FractalShark::MenuState state(fractal);
 
     const auto cpu64 = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);

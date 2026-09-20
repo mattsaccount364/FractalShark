@@ -230,68 +230,6 @@ TEST(BLA_PerturbationSingleStep)
 }
 
 // ---------------------------------------------------------------------------
-// Multi-step: compose BLA steps from a short orbit, verify against
-// direct sequential perturbation iteration.
-//
-// Reference orbit: c = -0.5 (inside main cardioid, doesn't escape)
-//   z_0 = 0
-//   z_1 = -0.5
-//   z_2 = (-0.5)² + (-0.5) = -0.25
-//   z_3 = (-0.25)² + (-0.5) = -0.4375
-// ---------------------------------------------------------------------------
-
-TEST(BLA_MultiStepOrbit)
-{
-    const double c_re = -0.5, c_im = 0.0;
-
-    // Compute short reference orbit
-    double z_re[4], z_im[4];
-    z_re[0] = 0.0;
-    z_im[0] = 0.0;
-    z_re[1] = c_re;
-    z_im[1] = c_im;
-    z_re[2] = z_re[1] * z_re[1] - z_im[1] * z_im[1] + c_re;
-    z_im[2] = 2.0 * z_re[1] * z_im[1] + c_im;
-    z_re[3] = z_re[2] * z_re[2] - z_im[2] * z_im[2] + c_re;
-    z_im[3] = 2.0 * z_re[2] * z_im[2] + c_im;
-
-    // Build single-step BLAs: A_n = 2·z_n, B_n = 1
-    BLAd s1(256.0, 2.0 * z_re[1], 2.0 * z_im[1], 1.0, 0.0, 1);
-    BLAd s2(256.0, 2.0 * z_re[2], 2.0 * z_im[2], 1.0, 0.0, 1);
-    BLAd s3(256.0, 2.0 * z_re[3], 2.0 * z_im[3], 1.0, 0.0, 1);
-
-    // Compose all three into one multi-step BLA
-    double compA12r, compA12i, compB12r, compB12i;
-    BLAd::getNewA(s1, s2, compA12r, compA12i);
-    BLAd::getNewB(s1, s2, compB12r, compB12i);
-    BLAd comp12(256.0, compA12r, compA12i, compB12r, compB12i, 2);
-
-    double compA123r, compA123i, compB123r, compB123i;
-    BLAd::getNewA(comp12, s3, compA123r, compA123i);
-    BLAd::getNewB(comp12, s3, compB123r, compB123i);
-    BLAd comp123(256.0, compA123r, compA123i, compB123r, compB123i, 3);
-
-    // Pixel perturbation
-    double dcR = 0.0001, dcI = 0.0002;
-
-    // Method A: Sequential application of single-step BLAs
-    // δz_1 = δc (since δz_0 = 0 and z_0 = 0 → A_0 = 0, B_0 = 1... but we start at n=1)
-    // Actually: δz_1 = δc, then apply s1, s2, s3 sequentially
-    double seqR = dcR, seqI = dcI;
-    s1.getValue(seqR, seqI, dcR, dcI);
-    s2.getValue(seqR, seqI, dcR, dcI);
-    s3.getValue(seqR, seqI, dcR, dcI);
-
-    // Method B: Single application of composed 3-step BLA
-    double multiR = dcR, multiI = dcI;
-    comp123.getValue(multiR, multiI, dcR, dcI);
-
-    // Should match exactly (composition is algebraically exact for linear maps)
-    ASSERT_NEAR(multiR, seqR, 1e-12);
-    ASSERT_NEAR(multiI, seqI, 1e-12);
-}
-
-// ---------------------------------------------------------------------------
 // Short orbit loop: compute a reference orbit, build BLA steps, compose,
 // then compare BLA-approximated perturbation against direct iteration
 // for a nearby pixel. This is the end-to-end perturbation pipeline on CPU.

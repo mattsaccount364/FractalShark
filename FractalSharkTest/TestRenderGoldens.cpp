@@ -130,7 +130,9 @@ RunGoldenCase(const GoldenCase &c)
                     req.Height,
                     /*nativeWindow=*/nullptr,
                     /*UseSensoCursor=*/false,
-                    req.CommitCapBytes);
+                    req.CommitCapBytes,
+                    /*hostOwnedGlPresentation=*/true,
+                    GpuMode::Disabled);
     int rc = RenderToPng(req, fractal, &err);
     if (rc != 0) {
         std::ostringstream oss;
@@ -198,7 +200,9 @@ RenderSmallOutputPathCase(const std::filesystem::path &basename,
                     req.Height,
                     /*nativeWindow=*/nullptr,
                     /*UseSensoCursor=*/false,
-                    req.CommitCapBytes);
+                    req.CommitCapBytes,
+                    /*hostOwnedGlPresentation=*/true,
+                    GpuMode::Disabled);
     int rc = RenderToPng(req, fractal, &err);
     if (rc != 0) {
         std::ostringstream oss;
@@ -264,8 +268,6 @@ TEST(RenderGolden_view5_cpu64_bla_v2) { RunGoldenCase(kCases[9]); }
 
 TEST(RenderGolden_view5_cpu32_rc_bla_v2) { RunGoldenCase(kCases[10]); }
 
-TEST(RenderGolden_view5_cpu64_rc_bla_v2)
-{
-    RunGoldenCase(kCases[11]);
-    RunOutputPathHandlingCases();
-}
+TEST(RenderGolden_view5_cpu64_rc_bla_v2) { RunGoldenCase(kCases[11]); }
+
+TEST(RenderOutputPathHandling) { RunOutputPathHandlingCases(); }

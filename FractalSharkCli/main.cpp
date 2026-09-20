@@ -63,6 +63,7 @@ struct CliArgs {
     uint64_t Iterations = 0;              // 0 => unspecified (parser rejects 0)
     uint32_t Antialiasing = 0;            // 0 => unspecified (parser rejects 0)
     uint64_t CommitCapBytes = UINT64_MAX; // UINT64_MAX => unlimited
+    GpuMode GpuRuntimeMode = GpuMode::Auto;
 
     std::string RenderAlgorithm;
     std::string PerturbationAlg; // empty => unspecified
@@ -89,10 +90,11 @@ PrintUsage()
                  "                   --center-x X --center-y Y --zoom Z}\n"
                  "                  [--iterations N] [--antialiasing N]\n"
                  "                  [--perturbation-alg NAME] [--commit-cap-bytes N]\n"
+                 "                  [--no-gpu]\n"
                  "                  [--quiet]\n"
                  "\n"
                  "  FractalSharkCli --server [--endpoint NAME] [--width W --height H]\n"
-                 "                   [--commit-cap-bytes N]\n"
+                 "                   [--commit-cap-bytes N] [--no-gpu]\n"
                  "  FractalSharkCli --connect [--endpoint NAME] <the render arguments above>\n"
                  "  FractalSharkCli --connect --endpoint NAME --shutdown\n"
                  "\n"
@@ -240,6 +242,8 @@ ParseArgs(int argc, char *argv[], CliArgs &a, std::ostream &errorOut)
             a.Shutdown = true;
         } else if (arg == "--quiet") {
             a.Quiet = true;
+        } else if (arg == "--no-gpu") {
+            a.GpuRuntimeMode = GpuMode::Disabled;
         } else if (arg == "--console") {
             a.Console = true;
         } else if (arg == "--color") {
@@ -489,6 +493,10 @@ ValidateRenderArgs(const CliArgs &args, std::string &error, bool fromClient)
         error = "--commit-cap-bytes is a server startup option; put it on --server";
         return false;
     }
+    if (fromClient && args.GpuRuntimeMode == GpuMode::Disabled) {
+        error = "--no-gpu is a server startup option; put it on --server";
+        return false;
+    }
     if (!ParseRenderAlgorithm(args.RenderAlgorithm)) {
         error = "unknown render algorithm: " + args.RenderAlgorithm +
                 "\n(run --list-render-algorithms for valid names)";
@@ -519,7 +527,8 @@ ValidateServerArgs(const CliArgs &args, std::string &error)
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
         args.Console || args.Color || args.Iterations != 0 || args.Antialiasing != 0 ||
         !args.PerturbationAlg.empty() || args.LocationIndex != SIZE_MAX) {
-        error = "server accepts only --endpoint, --width, --height, --commit-cap-bytes, and --quiet";
+        error = "server accepts only --endpoint, --width, --height, --commit-cap-bytes, --no-gpu, and "
+                "--quiet";
         return false;
     }
     return true;
@@ -530,6 +539,10 @@ ValidateShutdownArgs(const CliArgs &args, std::string &error)
 {
     if (args.Mode != CliMode::Client) {
         error = "--shutdown requires --connect";
+        return false;
+    }
+    if (args.GpuRuntimeMode == GpuMode::Disabled) {
+        error = "--no-gpu is a server startup option; put it on --server";
         return false;
     }
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
@@ -795,7 +808,9 @@ RunServer(const CliArgs &serverArgs)
                     serverArgs.Height,
                     /*nativeWindow=*/nullptr,
                     /*UseSensoCursor=*/false,
-                    serverArgs.CommitCapBytes);
+                    serverArgs.CommitCapBytes,
+                    /*hostOwnedGlPresentation=*/true,
+                    serverArgs.GpuRuntimeMode);
 
     Environment::LocalIpcListener listener;
     std::string error;
@@ -838,6 +853,10 @@ RunServer(const CliArgs &serverArgs)
                     std::string validationError;
                     if (!ValidateRenderArgs(requestArgs, validationError, false)) {
                         requestError << "error: " << validationError << "\n";
+                        response.Status = 2;
+                    } else if (requestArgs.GpuRuntimeMode == GpuMode::Disabled) {
+                        requestError
+                            << "error: --no-gpu is a server startup option; put it on --server\n";
                         response.Status = 2;
                     } else if (requestArgs.CommitCapBytes != UINT64_MAX &&
                                requestArgs.CommitCapBytes != serverArgs.CommitCapBytes) {
@@ -956,7 +975,9 @@ main(int argc, char *argv[])
                         request.Height,
                         /*nativeWindow=*/nullptr,
                         /*UseSensoCursor=*/false,
-                        request.CommitCapBytes);
+                        request.CommitCapBytes,
+                        /*hostOwnedGlPresentation=*/true,
+                        args.GpuRuntimeMode);
         return ExecuteRenderRequest(args, request, fractal, std::cout, std::cerr);
     } catch (const std::exception &exception) {
         std::cerr << "error: " << exception.what() << "\n";

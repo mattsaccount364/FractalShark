@@ -335,8 +335,13 @@ MainWindow::InitInstance(HINSTANCE hInstance, int nCmdShow)
     RECT rt{};
     GetClientRect(hWnd, &rt);
 
-    gFractal = std::make_unique<Fractal>(
-        rt.right, rt.bottom, static_cast<void *>(hWnd), false, gJobObj->GetCommitLimitInBytes());
+    gFractal = std::make_unique<Fractal>(rt.right,
+                                         rt.bottom,
+                                         static_cast<void *>(hWnd),
+                                         false,
+                                         gJobObj->GetCommitLimitInBytes(),
+                                         false,
+                                         GpuMode::Auto);
 
     // Create menu / popup (doesn't require the window to be shown)
     MenuState menuState(*gFractal);

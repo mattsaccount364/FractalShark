@@ -445,7 +445,8 @@ FractalTrayDialog::RunCalculation(std::stop_token stopToken)
     }
 
     const bool requiresReuse = false;
-    auto fractal = std::make_unique<Fractal>(DefaultWidth, DefaultHeight, nullptr, false, 0);
+    auto fractal =
+        std::make_unique<Fractal>(DefaultWidth, DefaultHeight, nullptr, false, 0, false, GpuMode::Auto);
 
     std::string line;
     for (int i = 0; std::getline(locationFile, line); i++) {

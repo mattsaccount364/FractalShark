@@ -32,6 +32,14 @@ HasPathExtension(std::wstring_view filename)
 }
 
 void
+LowercaseAscii(std::string &value)
+{
+    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
+        return static_cast<char>(std::tolower(ch));
+    });
+}
+
+void
 RemoveExistingRegularFile(const std::wstring &filename)
 {
     const std::filesystem::path path(filename);
@@ -102,9 +110,7 @@ FindReferenceOrbitFiles(const std::filesystem::path &directory, size_t maximumCo
             continue;
         }
         std::string extension = entry.path().extension().string();
-        std::transform(extension.begin(), extension.end(), extension.begin(), [](unsigned char ch) {
-            return static_cast<char>(std::tolower(ch));
-        });
+        LowercaseAscii(extension);
         if (extension == ".im") {
             files.push_back(entry.path());
         }
@@ -112,13 +118,8 @@ FindReferenceOrbitFiles(const std::filesystem::path &directory, size_t maximumCo
     std::sort(files.begin(), files.end(), [](const auto &left, const auto &right) {
         std::string leftName = left.filename().string();
         std::string rightName = right.filename().string();
-        const auto lower = [](std::string &value) {
-            std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-                return static_cast<char>(std::tolower(ch));
-            });
-        };
-        lower(leftName);
-        lower(rightName);
+        LowercaseAscii(leftName);
+        LowercaseAscii(rightName);
         return leftName < rightName;
     });
     if (files.size() > maximumCount) {

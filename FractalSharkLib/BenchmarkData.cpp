@@ -7,45 +7,15 @@ BenchmarkData::BenchmarkData() : m_freq{}, m_startTime{}, m_endTime{}, m_DeltaTi
     m_freq = Environment::HighResFrequency();
 }
 
-BenchmarkData::~BenchmarkData() {}
+BenchmarkData::~BenchmarkData() = default;
 
-BenchmarkData::BenchmarkData(const BenchmarkData &other)
-    : m_freq{other.m_freq}, m_startTime{other.m_startTime}, m_endTime{other.m_endTime},
-      m_DeltaTime{other.m_DeltaTime}
-{
-}
+BenchmarkData::BenchmarkData(const BenchmarkData &) = default;
 
-BenchmarkData::BenchmarkData(BenchmarkData &&other) noexcept
-    : m_freq{other.m_freq}, m_startTime{other.m_startTime}, m_endTime{other.m_endTime},
-      m_DeltaTime{other.m_DeltaTime}
-{
-}
+BenchmarkData::BenchmarkData(BenchmarkData &&) noexcept = default;
 
-BenchmarkData &
-BenchmarkData::operator=(const BenchmarkData &other)
-{
-    if (this != &other) {
-        m_freq = other.m_freq;
-        m_startTime = other.m_startTime;
-        m_endTime = other.m_endTime;
-        m_DeltaTime = other.m_DeltaTime;
-    }
+BenchmarkData &BenchmarkData::operator=(const BenchmarkData &) = default;
 
-    return *this;
-}
-
-BenchmarkData &
-BenchmarkData::operator=(BenchmarkData &&other) noexcept
-{
-    if (this != &other) {
-        m_freq = other.m_freq;
-        m_startTime = other.m_startTime;
-        m_endTime = other.m_endTime;
-        m_DeltaTime = other.m_DeltaTime;
-    }
-
-    return *this;
-}
+BenchmarkData &BenchmarkData::operator=(BenchmarkData &&) noexcept = default;
 
 void
 BenchmarkData::StartTimer()

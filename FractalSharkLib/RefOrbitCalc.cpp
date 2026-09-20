@@ -188,40 +188,18 @@ template <typename IterType, class T, PerturbExtras PExtras>
 PerturbationResults<IterType, T, PExtras> *
 RefOrbitCalc::GetElt(size_t i)
 {
-    // Given std::vector<AwesomeVariantUniquePtr> m_C;
-    // We want to get the last element of the vector.
-    // Use std::visit
-
-    // This is a lambda that will be called for each element in the vector.
-    // It will return the last element.
-    auto lambda = [&](auto &elt) -> PerturbationResults<IterType, T, PExtras> * {
-        using eltType = std::decay_t<decltype(elt)>;
-        if constexpr (std::is_same<eltType,
-                                   std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>::value) {
-            return elt.get();
-        } else {
-            return nullptr;
-        }
-    };
-
-    return std::visit(lambda, m_C[i]);
+    using Results = PerturbationResults<IterType, T, PExtras>;
+    const auto *stored = std::get_if<std::unique_ptr<Results>>(&m_C[i]);
+    return stored == nullptr ? nullptr : stored->get();
 }
 
 template <typename IterType, class T, PerturbExtras PExtras>
 const PerturbationResults<IterType, T, PExtras> *
 RefOrbitCalc::GetEltConst(size_t i) const
 {
-    auto lambda = [&](const auto &elt) -> PerturbationResults<IterType, T, PExtras> * {
-        using eltType = std::decay_t<decltype(elt)>;
-        if constexpr (std::is_same<eltType,
-                                   std::unique_ptr<PerturbationResults<IterType, T, PExtras>>>::value) {
-            return elt.get();
-        } else {
-            return nullptr;
-        }
-    };
-
-    return std::visit(lambda, m_C[i]);
+    using Results = PerturbationResults<IterType, T, PExtras>;
+    const auto *stored = std::get_if<std::unique_ptr<Results>>(&m_C[i]);
+    return stored == nullptr ? nullptr : stored->get();
 }
 
 void

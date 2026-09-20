@@ -1,13 +1,14 @@
 #pragma once
 
+#include <atomic>
+#include <condition_variable>
+#include <cstddef>
 #include <deque>
 #include <memory>
 #include <mutex>
 #include <thread>
 
 struct DrawThreadSync {
-    // DrawThreadSync& operator=(const DrawThreadSync&) = delete;
-    // DrawThreadSync(const DrawThreadSync&) = delete;
     DrawThreadSync(size_t index,
                    std::unique_ptr<std::thread> thread,
                    std::deque<std::atomic_uint64_t> &draw_thread_atomics)

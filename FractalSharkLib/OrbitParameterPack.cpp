@@ -21,34 +21,8 @@ OrbitParameterPack::OrbitParameterPack(const Imagina::IMFileHeader &fileHeader,
 {
 }
 
-OrbitParameterPack &
-OrbitParameterPack::operator=(OrbitParameterPack &&other) noexcept
-{
-    if (this != &other) {
-        fileHeader = other.fileHeader;
-        orbitX = std::move(other.orbitX);
-        orbitY = std::move(other.orbitY);
-        iterationLimit = other.iterationLimit;
-        halfH = other.halfH;
-        extendedRange = other.extendedRange;
-        m_OrbitType = other.m_OrbitType;
-        file = std::move(other.file);
-    }
+OrbitParameterPack &OrbitParameterPack::operator=(OrbitParameterPack &&) noexcept = default;
 
-    return *this;
-}
+OrbitParameterPack::OrbitParameterPack(OrbitParameterPack &&) noexcept = default;
 
-OrbitParameterPack::OrbitParameterPack(OrbitParameterPack &&other) noexcept
-    : fileHeader(other.fileHeader), orbitX(std::move(other.orbitX)), orbitY(std::move(other.orbitY)),
-      iterationLimit(other.iterationLimit), halfH(other.halfH), extendedRange(other.extendedRange),
-      m_OrbitType(other.m_OrbitType), file(std::move(other.file))
-{
-}
-
-OrbitParameterPack::~OrbitParameterPack()
-{
-    if (file != nullptr) {
-        file->close();
-        file = nullptr;
-    }
-}
+OrbitParameterPack::~OrbitParameterPack() = default;

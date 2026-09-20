@@ -1,24 +1,6 @@
 #include "stdafx.h"
 #include "RenderAlgorithm.h"
 
-RenderAlgorithm &
-RenderAlgorithm::operator=(const RenderAlgorithm &other)
-{
-    if (this != &other) {
-        this->Algorithm = other.Algorithm;
-        this->AlgorithmStr = other.AlgorithmStr;
-        this->UseLocalColor = other.UseLocalColor;
-        this->RequiresCompression = other.RequiresCompression;
-        this->RequiresReferencePoints = other.RequiresReferencePoints;
-        this->Gpu = other.Gpu;
-        this->TestInclude = other.TestInclude;
-    }
+RenderAlgorithm &RenderAlgorithm::operator=(const RenderAlgorithm &) = default;
 
-    return *this;
-}
-
-RenderAlgorithm &
-RenderAlgorithm::operator=(RenderAlgorithm &&other)
-{
-    return *this = other;
-}
+RenderAlgorithm &RenderAlgorithm::operator=(RenderAlgorithm &&) = default;

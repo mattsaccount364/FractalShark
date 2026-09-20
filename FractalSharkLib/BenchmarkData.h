@@ -1,7 +1,6 @@
 #pragma once
 
-#include "HighPrecision.h"
-#include <stdint.h>
+#include <cstdint>
 
 class BenchmarkData {
 public:
@@ -26,7 +25,7 @@ private:
 };
 
 struct ScopedBenchmarkStopper {
-    ScopedBenchmarkStopper(BenchmarkData &data) : m_Data{&data} { m_Data->StartTimer(); }
+    ScopedBenchmarkStopper(BenchmarkData &data) : ScopedBenchmarkStopper{&data} {}
     ScopedBenchmarkStopper(BenchmarkData *data) : m_Data{data}
     {
         if (m_Data != nullptr) {

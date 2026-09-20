@@ -102,7 +102,7 @@ public:
         // to GPUPerturbSingleResults directly
     }
 
-    ~GPUPerturbResults() {}
+    ~GPUPerturbResults() = default;
 
     const GPUReferenceIter<T, PExtras> *
     GetFullOrbit() const

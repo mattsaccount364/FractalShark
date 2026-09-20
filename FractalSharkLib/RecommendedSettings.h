@@ -1,6 +1,5 @@
 #pragma once
 
-class RenderAlgorithm;
 enum class IterTypeEnum;
 
 #include "HighPrecision.h"
@@ -57,6 +56,8 @@ struct RecommendedSettings {
     void OverrideIterType(IterTypeEnum iterType);
 
 private:
+    void SetIterTypeFromNumIterations();
+
     uint64_t PrecisionInBits;
     std::unique_ptr<PointZoomBBConverter> m_PointZoomBBConverter;
 

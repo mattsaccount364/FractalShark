@@ -232,7 +232,7 @@ Fractal::SetCurItersMemory()
 }
 
 void
-Fractal::Uninitialize(void)
+Fractal::Uninitialize()
 {
     // Shutdown the render thread pool first
     if (m_RenderPool) {
@@ -306,7 +306,7 @@ Fractal::SetPrecision(uint64_t prec)
 // }
 
 uint64_t
-Fractal::GetPrecision(void) const
+Fractal::GetPrecision() const
 {
     return Fractal::GetPrecision(m_Ptz, m_RefOrbit.RequiresReuse());
 }
@@ -559,7 +559,6 @@ Fractal::InitialDefaultViewAndSettings(int width, int height)
 
     m_Palette.SetDefaults();
     UsePaletteType(FractalPaletteType::Default);
-    UsePalette(8);
 
     // Make sure the screen is completely redrawn the first time.
     ChangedMakeDirty();
@@ -635,7 +634,7 @@ Fractal::View(size_t view, bool includeMsgBox)
 // your resolution is 1024x768 or some other "nonsquare" resolution.
 //////////////////////////////////////////////////////////////////////////////
 void
-Fractal::SquareCurrentView(void)
+Fractal::SquareCurrentView()
 {
     m_Ptz.SquareAspectRatio(m_ScrnWidth, m_ScrnHeight);
     m_ChangedWindow = true;
@@ -646,7 +645,7 @@ Fractal::SquareCurrentView(void)
 // Used for creating sequences of still images.
 // The images can then be made into a movie!
 void
-Fractal::ApproachTarget(void)
+Fractal::ApproachTarget()
 {
     // Drain any in-flight render pool work before running the animation.
     // ApproachTarget calls CalcFractal(true) and SaveCurrentFractal directly,
@@ -743,7 +742,7 @@ Fractal::ApproachTarget(void)
 // Returns to the previous view.
 //////////////////////////////////////////////////////////////////////////////
 bool
-Fractal::Back(void)
+Fractal::Back()
 {
     if (!m_PrevPtz.empty()) {
         m_Ptz = m_PrevPtz.back();
@@ -828,7 +827,7 @@ Fractal::FindInterestingLocation(Environment::ScreenRect *rect)
 // the previous coordinates.
 //////////////////////////////////////////////////////////////////////////////
 void
-Fractal::SaveCurPos(void)
+Fractal::SaveCurPos()
 {
     if (!m_Ptz.Degenerate()) {
         m_PrevPtz.push_back(m_Ptz);
@@ -856,7 +855,7 @@ template void Fractal::SetNumIterations<uint64_t>(IterTypeFull);
 
 template <typename IterType>
 IterType
-Fractal::GetNumIterations(void) const
+Fractal::GetNumIterations() const
 {
     if constexpr (std::is_same<IterType, uint32_t>::value) {
         if (m_NumIterations > GetMaxIterations<IterType>()) {
@@ -870,8 +869,8 @@ Fractal::GetNumIterations(void) const
     return (IterType)m_NumIterations;
 }
 
-template uint32_t Fractal::GetNumIterations<uint32_t>(void) const;
-template uint64_t Fractal::GetNumIterations<uint64_t>(void) const;
+template uint32_t Fractal::GetNumIterations<uint32_t>() const;
+template uint64_t Fractal::GetNumIterations<uint64_t>() const;
 
 IterTypeFull
 Fractal::GetMaxIterationsRT() const
@@ -940,7 +939,7 @@ Fractal::GetIterType() const
 }
 
 void
-Fractal::ResetNumIterations(void)
+Fractal::ResetNumIterations()
 {
     //
     // Resets the number of iterations to the default value.
@@ -1093,29 +1092,7 @@ Fractal::DefaultCompressionErrorExp(CompressionError err)
 bool
 Fractal::RequiresUseLocalColor() const
 {
-    //
-    // Returns true if the current render algorithm requires the use of
-    // CPU-based color implementation
-    //
-
-    switch (GetRenderAlgorithm().Algorithm) {
-        case RenderAlgorithmEnum::CpuHigh:
-        case RenderAlgorithmEnum::Cpu64:
-        case RenderAlgorithmEnum::CpuHDR32:
-        case RenderAlgorithmEnum::CpuHDR64:
-
-        case RenderAlgorithmEnum::Cpu64PerturbedBLA:
-        case RenderAlgorithmEnum::Cpu32PerturbedBLAHDR:
-        case RenderAlgorithmEnum::Cpu64PerturbedBLAHDR:
-
-        case RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR:
-        case RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR:
-        case RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR:
-        case RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR:
-            return true;
-        default:
-            return false;
-    }
+    return GetRenderAlgorithm().UseLocalColor;
 }
 
 void
@@ -1666,8 +1643,14 @@ Fractal::GetPaletteDepth() const
     return m_Palette.GetPaletteDepth();
 }
 
+int
+Fractal::GetPaletteDepthIndex() const
+{
+    return m_Palette.GetPaletteDepthIndex();
+}
+
 void
-Fractal::ResetFractalPalette(void)
+Fractal::ResetFractalPalette()
 {
     m_Palette.ResetPaletteRotation();
 }
@@ -1679,7 +1662,7 @@ Fractal::RotateFractalPalette(int delta)
 }
 
 void
-Fractal::CreateNewFractalPalette(void)
+Fractal::CreateNewFractalPalette()
 {
     m_Palette.CreateNewRandomPalette();
 }
@@ -1994,7 +1977,7 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
 
     static const size_t num_threads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
-    std::vector<std::unique_ptr<std::thread>> threads;
+    std::vector<std::thread> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
     threads.reserve(num_threads);
 
@@ -2128,11 +2111,11 @@ Fractal::CalcCpuPerturbationFractal(CalcContext &ctx)
     m_BenchmarkData.m_PerPixel.StartTimer();
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
-        threads.push_back(std::make_unique<std::thread>(one_thread));
+        threads.emplace_back(one_thread);
     }
 
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
-        threads[cur_thread]->join();
+        threads[cur_thread].join();
     }
 }
 
@@ -2172,7 +2155,7 @@ Fractal::CalcCpuHDR(CalcContext &ctx)
 
         const size_t num_threads = std::thread::hardware_concurrency();
         std::deque<std::atomic_uint64_t> atomics;
-        std::vector<std::unique_ptr<std::thread>> threads;
+        std::vector<std::thread> threads;
         atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
         threads.reserve(num_threads);
 
@@ -2242,11 +2225,11 @@ Fractal::CalcCpuHDR(CalcContext &ctx)
         m_BenchmarkData.m_PerPixel.StartTimer();
 
         for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
-            threads.push_back(std::make_unique<std::thread>(one_thread));
+            threads.emplace_back(one_thread);
         }
 
         for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
-            threads[cur_thread]->join();
+            threads[cur_thread].join();
         }
     }
 
@@ -2289,9 +2272,8 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
     HdrReduce(centerY);
 
     const size_t num_threads = std::thread::hardware_concurrency();
-    ;
     std::deque<std::atomic_uint64_t> atomics;
-    std::vector<std::unique_ptr<std::thread>> threads;
+    std::vector<std::thread> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
     threads.reserve(num_threads);
 
@@ -2525,11 +2507,11 @@ Fractal::CalcCpuPerturbationFractalBLA(CalcContext &ctx)
     m_BenchmarkData.m_PerPixel.StartTimer();
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
-        threads.push_back(std::make_unique<std::thread>(one_thread));
+        threads.emplace_back(one_thread);
     }
 
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
-        threads[cur_thread]->join();
+        threads[cur_thread].join();
     }
 }
 
@@ -2572,9 +2554,8 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
     HdrReduce(centerY);
 
     const size_t num_threads = std::thread::hardware_concurrency();
-    ;
     std::deque<std::atomic_uint64_t> atomics;
-    std::vector<std::unique_ptr<std::thread>> threads;
+    std::vector<std::thread> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
     threads.reserve(num_threads);
 
@@ -2733,11 +2714,11 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
     m_BenchmarkData.m_PerPixel.StartTimer();
 
     for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
-        threads.push_back(std::make_unique<std::thread>(one_thread));
+        threads.emplace_back(one_thread);
     }
 
     for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
-        threads[cur_thread]->join();
+        threads[cur_thread].join();
     }
 }
 
@@ -2991,26 +2972,21 @@ template <PngParallelSave::Type Typ>
 int
 Fractal::SaveFractalData(std::wstring filename_base, bool copy_the_iters)
 {
-    auto lambda = [&]<typename T>(T &savesInProgress) {
-        for (;;) {
-            uint32_t memoryLoad = Environment::GetMemoryLoad();
+    for (;;) {
+        uint32_t memoryLoad = Environment::GetMemoryLoad();
 
-            if (savesInProgress.size() > std::thread::hardware_concurrency() ||
-                (memoryLoad > 90 && !savesInProgress.empty())) {
-                if (!CleanupThreads(false)) {
-                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
-                }
-            } else {
-                auto newPtr =
-                    std::make_unique<PngParallelSave>(Typ, filename_base, copy_the_iters, *this);
-                savesInProgress.push_back(std::move(newPtr));
-                savesInProgress.back()->StartThread();
-                break;
+        if (m_FractalSavesInProgress.size() > std::thread::hardware_concurrency() ||
+            (memoryLoad > 90 && !m_FractalSavesInProgress.empty())) {
+            if (!CleanupThreads(false)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
             }
+        } else {
+            auto newPtr = std::make_unique<PngParallelSave>(Typ, filename_base, copy_the_iters, *this);
+            m_FractalSavesInProgress.push_back(std::move(newPtr));
+            m_FractalSavesInProgress.back()->StartThread();
+            break;
         }
-    };
-
-    lambda(m_FractalSavesInProgress);
+    }
 
     return 0;
 }
@@ -3019,28 +2995,24 @@ bool
 Fractal::CleanupThreads(bool all)
 {
     bool ret = false;
-    auto lambda = [&]<typename T>(T &savesInProgress) {
-        bool continueCriteria = true;
+    bool continueCriteria = true;
 
-        while (continueCriteria) {
-            for (size_t i = 0; i < savesInProgress.size(); i++) {
-                auto &it = savesInProgress[i];
-                if (it->m_Destructable.load(std::memory_order_acquire)) {
-                    savesInProgress.erase(savesInProgress.begin() + i);
-                    ret = true;
-                    break;
-                }
-            }
-
-            if (all) {
-                continueCriteria = !savesInProgress.empty();
-            } else {
+    while (continueCriteria) {
+        for (size_t i = 0; i < m_FractalSavesInProgress.size(); i++) {
+            auto &it = m_FractalSavesInProgress[i];
+            if (it->m_Destructable.load(std::memory_order_acquire)) {
+                m_FractalSavesInProgress.erase(m_FractalSavesInProgress.begin() + i);
+                ret = true;
                 break;
             }
         }
-    };
 
-    lambda(m_FractalSavesInProgress);
+        if (all) {
+            continueCriteria = !m_FractalSavesInProgress.empty();
+        } else {
+            break;
+        }
+    }
     return ret;
 }
 
@@ -3051,37 +3023,37 @@ Fractal::GetBenchmark() const
 }
 
 const HighPrecision &
-Fractal::GetMinX(void) const
+Fractal::GetMinX() const
 {
     return m_Ptz.GetMinX();
 }
 
 const HighPrecision &
-Fractal::GetMaxX(void) const
+Fractal::GetMaxX() const
 {
     return m_Ptz.GetMaxX();
 }
 
 const HighPrecision &
-Fractal::GetMinY(void) const
+Fractal::GetMinY() const
 {
     return m_Ptz.GetMinY();
 }
 
 const HighPrecision &
-Fractal::GetMaxY(void) const
+Fractal::GetMaxY() const
 {
     return m_Ptz.GetMaxY();
 }
 
 size_t
-Fractal::GetRenderWidth(void) const
+Fractal::GetRenderWidth() const
 {
     return m_ScrnWidth;
 }
 
 size_t
-Fractal::GetRenderHeight(void) const
+Fractal::GetRenderHeight() const
 {
     return m_ScrnHeight;
 }
@@ -3226,7 +3198,7 @@ Fractal::GetResultsAutosave() const
 // if there are any pixels on the screen that took
 // zero iterations to escape from.
 uint64_t
-Fractal::FindTotalItersUsed(void)
+Fractal::FindTotalItersUsed()
 {
     uint64_t numIters = 0;
     size_t x, y;

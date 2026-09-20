@@ -1,5 +1,10 @@
 #pragma once
 
+#include <cstdint>
+#include <fstream>
+#include <limits>
+#include <memory>
+
 #include "HighPrecision.h"
 #include "ImaginaOrbit.h"
 

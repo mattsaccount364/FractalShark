@@ -6,8 +6,8 @@
 #include <vector>
 
 FractalPalette::FractalPalette()
-    : m_WhichPalette{FractalPaletteType::Default}, m_PaletteRotate{0}, m_PaletteDepthIndex{2},
-      m_PaletteAuxDepth{0}
+    : m_WhichPalette{FractalPaletteType::Default}, m_PaletteRotate{0},
+      m_PaletteDepthIndex{static_cast<int>(DefaultPaletteDepthIndex)}, m_PaletteAuxDepth{0}
 {
 }
 
@@ -15,7 +15,7 @@ void
 FractalPalette::SetDefaults()
 {
     m_PaletteRotate = 0;
-    m_PaletteDepthIndex = 2;
+    m_PaletteDepthIndex = static_cast<int>(DefaultPaletteDepthIndex);
     m_PaletteAuxDepth = 0;
     m_WhichPalette = FractalPaletteType::Default;
 }
@@ -95,45 +95,19 @@ FractalPalette::InitializeAllPalettes()
         m_PalIters[i].resize(NumBitDepths);
     }
 
-    std::vector<std::unique_ptr<std::thread>> threads;
-    threads.push_back(
-        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 0, 5));
-    threads.push_back(
-        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 1, 6));
-    threads.push_back(
-        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 2, 8));
-    threads.push_back(
-        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 3, 12));
-    threads.push_back(
-        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 4, 16));
-    threads.push_back(
-        std::make_unique<std::thread>(DefaultPaletteGen, FractalPaletteType::Default, 5, 20));
-
-    threads.push_back(
-        std::make_unique<std::thread>(PatrioticPaletteGen, FractalPaletteType::Patriotic, 0, 5));
-    threads.push_back(
-        std::make_unique<std::thread>(PatrioticPaletteGen, FractalPaletteType::Patriotic, 1, 6));
-    threads.push_back(
-        std::make_unique<std::thread>(PatrioticPaletteGen, FractalPaletteType::Patriotic, 2, 8));
-    threads.push_back(
-        std::make_unique<std::thread>(PatrioticPaletteGen, FractalPaletteType::Patriotic, 3, 12));
-    threads.push_back(
-        std::make_unique<std::thread>(PatrioticPaletteGen, FractalPaletteType::Patriotic, 4, 16));
-    threads.push_back(
-        std::make_unique<std::thread>(PatrioticPaletteGen, FractalPaletteType::Patriotic, 5, 20));
-
-    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 0, 5));
-    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 1, 6));
-    threads.push_back(std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 2, 8));
-    threads.push_back(
-        std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 3, 12));
-    threads.push_back(
-        std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 4, 16));
-    threads.push_back(
-        std::make_unique<std::thread>(SummerPaletteGen, FractalPaletteType::Summer, 5, 20));
+    std::vector<std::thread> threads;
+    threads.reserve(FractalPaletteType::Num * NumBitDepths);
+    auto launchPaletteGenerators = [&](auto &generator, FractalPaletteType paletteType) {
+        for (size_t paletteIndex = 0; paletteIndex < NumBitDepths; ++paletteIndex) {
+            threads.emplace_back(generator, paletteType, paletteIndex, PaletteDepths[paletteIndex]);
+        }
+    };
+    launchPaletteGenerators(DefaultPaletteGen, FractalPaletteType::Default);
+    launchPaletteGenerators(PatrioticPaletteGen, FractalPaletteType::Patriotic);
+    launchPaletteGenerators(SummerPaletteGen, FractalPaletteType::Summer);
 
     for (auto &it : threads) {
-        it->join();
+        it.join();
     }
 
     // Set up random palette.
@@ -196,56 +170,29 @@ FractalPalette::GetPaletteType() const
 uint32_t
 FractalPalette::GetPaletteDepthFromIndex(size_t index) const
 {
-    switch (index) {
-        case 0:
-            return 5;
-        case 1:
-            return 6;
-        case 2:
-            return 8;
-        case 3:
-            return 12;
-        case 4:
-            return 16;
-        case 5:
-            return 20;
-        default:
-            return 8;
+    if (index < PaletteDepths.size()) {
+        return PaletteDepths[index];
     }
+
+    return DefaultPaletteDepth;
 }
 
 void
 FractalPalette::UsePalette(int depth)
 {
-    switch (depth) {
-        case 5:
-            m_PaletteDepthIndex = 0;
+    m_PaletteDepthIndex = 0;
+    for (size_t i = 0; i < PaletteDepths.size(); ++i) {
+        if (depth >= 0 && PaletteDepths[i] == static_cast<uint32_t>(depth)) {
+            m_PaletteDepthIndex = static_cast<int>(i);
             break;
-        case 6:
-            m_PaletteDepthIndex = 1;
-            break;
-        case 8:
-            m_PaletteDepthIndex = 2;
-            break;
-        case 12:
-            m_PaletteDepthIndex = 3;
-            break;
-        case 16:
-            m_PaletteDepthIndex = 4;
-            break;
-        case 20:
-            m_PaletteDepthIndex = 5;
-            break;
-        default:
-            m_PaletteDepthIndex = 0;
-            break;
+        }
     }
 }
 
 void
 FractalPalette::UseNextPaletteDepth()
 {
-    m_PaletteDepthIndex = (m_PaletteDepthIndex + 1) % 6;
+    m_PaletteDepthIndex = (m_PaletteDepthIndex + 1) % static_cast<int>(PaletteDepths.size());
 }
 
 void
@@ -386,16 +333,14 @@ FractalPalette::CreateNewRandomPalette()
             (uint32_t)m_PalInterleaved[FractalPaletteType::Random][PaletteIndex].size();
     };
 
-    std::vector<std::unique_ptr<std::thread>> threads;
-    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 0, 5));
-    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 1, 6));
-    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 2, 8));
-    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 3, 12));
-    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 4, 16));
-    threads.push_back(std::make_unique<std::thread>(RandomPaletteGen, 5, 20));
+    std::vector<std::thread> threads;
+    threads.reserve(NumBitDepths);
+    for (size_t paletteIndex = 0; paletteIndex < NumBitDepths; ++paletteIndex) {
+        threads.emplace_back(RandomPaletteGen, paletteIndex, PaletteDepths[paletteIndex]);
+    }
 
     for (auto &it : threads) {
-        it->join();
+        it.join();
     }
 
     ++m_PaletteGeneration;

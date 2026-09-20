@@ -1,8 +1,11 @@
 #pragma once
 
 #include <array>
-#include <optional>
-#include <string>
+#include <cstddef>
+#include <cstdint>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 
 #include "HDRFloat.h"
 #include "HighPrecision.h"
@@ -48,11 +51,9 @@ enum class TestViewEnum {
 template <typename Key, typename Value, size_t Size, Value MissingVal> struct ConstexprMap {
     std::array<std::pair<Key, Value>, static_cast<size_t>(Size)> data;
 
-    using ConstExprMap = ConstexprMap<Key, Value, Size, MissingVal>;
-
     constexpr ConstexprMap() = default;
-    constexpr ConstexprMap(const ConstexprMap &other) : data(other.data) {}
-    constexpr ConstexprMap(ConstexprMap &&other) : data(std::move(other.data)) {}
+    constexpr ConstexprMap(const ConstexprMap &) = default;
+    constexpr ConstexprMap(ConstexprMap &&) = default;
     constexpr ConstexprMap &operator=(const ConstexprMap &other) = default;
     constexpr ConstexprMap &operator=(ConstexprMap &&other) = default;
 
@@ -1550,21 +1551,8 @@ public:
     {
     }
 
-    constexpr RenderAlgorithm(const RenderAlgorithm &other)
-        : Algorithm{other.Algorithm}, AlgorithmStr{other.AlgorithmStr},
-          UseLocalColor{other.UseLocalColor}, RequiresCompression{other.RequiresCompression},
-          RequiresReferencePoints{other.RequiresReferencePoints}, Gpu{other.Gpu},
-          TestInclude{other.TestInclude}
-    {
-    }
-
-    constexpr RenderAlgorithm(RenderAlgorithm &&other)
-        : Algorithm{other.Algorithm}, AlgorithmStr{other.AlgorithmStr},
-          UseLocalColor{other.UseLocalColor}, RequiresCompression{other.RequiresCompression},
-          RequiresReferencePoints{other.RequiresReferencePoints}, Gpu{other.Gpu},
-          TestInclude{other.TestInclude}
-    {
-    }
+    constexpr RenderAlgorithm(const RenderAlgorithm &) = default;
+    constexpr RenderAlgorithm(RenderAlgorithm &&) = default;
 
     constexpr bool
     operator==(const RenderAlgorithm &other) const
@@ -1578,8 +1566,8 @@ public:
         return Algorithm == other;
     }
 
-    RenderAlgorithm &operator=(const RenderAlgorithm &other);
-    RenderAlgorithm &operator=(RenderAlgorithm &&other);
+    RenderAlgorithm &operator=(const RenderAlgorithm &);
+    RenderAlgorithm &operator=(RenderAlgorithm &&);
 
     RenderAlgorithmEnum Algorithm;
     const char *AlgorithmStr;

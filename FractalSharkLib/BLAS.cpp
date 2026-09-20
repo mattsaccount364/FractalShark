@@ -6,6 +6,8 @@
 #include "HDRFloat.h"
 #include "PerturbationResults.h"
 
+#include <algorithm>
+#include <bit>
 #include <utility>
 
 template <typename IterType, class T, PerturbExtras PExtras>
@@ -93,12 +95,22 @@ BLAS<IterType, T, PExtras>::CreateOneStep(size_t m, T epsilon)
 
 constexpr size_t WorkThreshholdForThreads = 5000;
 
+namespace {
+
+size_t
+ChooseThreadCount(size_t elements)
+{
+    const size_t requestedThreads = std::max<size_t>(1, elements / WorkThreshholdForThreads);
+    const size_t availableThreads = std::max<size_t>(1, std::thread::hardware_concurrency());
+    return std::min(requestedThreads, availableThreads);
+}
+
+} // namespace
+
 template <typename IterType, class T, PerturbExtras PExtras>
 void
 BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon)
 {
-
-    std::vector<std::unique_ptr<std::thread>> threads;
 
     auto RunInit = [&](size_t firstLevel, size_t mStart, size_t mEnd, T blaSize, T epsilon) {
         Environment::SetCurrentThreadName(L"BLAS::InitInternal");
@@ -108,28 +120,23 @@ BLAS<IterType, T, PExtras>::InitInternal(T blaSize, T epsilon)
     };
 
     size_t elements = m_ElementsPerLevel[m_FirstLevel] + 1;
-    size_t optThreads = elements / WorkThreshholdForThreads;
-    if (optThreads > std::thread::hardware_concurrency()) {
-        optThreads = std::thread::hardware_concurrency();
-    } else if (optThreads == 0) {
-        optThreads = 1;
-    }
+    const size_t optThreads = ChooseThreadCount(elements);
+    std::vector<std::thread> threads;
+    threads.reserve(optThreads);
 
     size_t mDelta = elements / optThreads;
     size_t mConsumed = 1;
 
     if (mDelta > WorkThreshholdForThreads && optThreads > 1) {
         for (size_t i = 0; i < optThreads - 1; i++) {
-            threads.push_back(std::make_unique<std::thread>(
-                RunInit, m_FirstLevel, mConsumed, mConsumed + mDelta, blaSize, epsilon));
+            threads.emplace_back(RunInit, m_FirstLevel, mConsumed, mConsumed + mDelta, blaSize, epsilon);
             mConsumed += mDelta;
         }
 
-        threads.push_back(
-            std::make_unique<std::thread>(RunInit, m_FirstLevel, mConsumed, elements, blaSize, epsilon));
+        threads.emplace_back(RunInit, m_FirstLevel, mConsumed, elements, blaSize, epsilon);
 
-        for (size_t i = 0; i < threads.size(); i++) {
-            threads[i]->join();
+        for (auto &thread : threads) {
+            thread.join();
         }
     } else {
         RunInit(m_FirstLevel, 1, elements, blaSize, epsilon);
@@ -162,18 +169,13 @@ BLAS<IterType, T, PExtras>::Merge(T blaSize)
     size_t src = m_FirstLevel;
     size_t maxLevel = m_ElementsPerLevel.size() - 1;
     for (size_t elementsSrc = m_ElementsPerLevel[src]; src < maxLevel && elementsSrc > 1; src++) {
-        std::vector<std::unique_ptr<std::thread>> threads;
-
         size_t srcp1 = src + 1;
         elementsDst = m_ElementsPerLevel[srcp1];
         size_t dst = srcp1;
 
-        size_t optThreads = elementsDst / WorkThreshholdForThreads;
-        if (optThreads > std::thread::hardware_concurrency()) {
-            optThreads = std::thread::hardware_concurrency();
-        } else if (optThreads == 0) {
-            optThreads = 1;
-        }
+        const size_t optThreads = ChooseThreadCount(elementsDst);
+        std::vector<std::thread> threads;
+        threads.reserve(optThreads);
 
         const size_t elementsSrcFinal = elementsSrc;
         const size_t srcFinal = src;
@@ -191,15 +193,14 @@ BLAS<IterType, T, PExtras>::Merge(T blaSize)
 
         if (mDelta > WorkThreshholdForThreads && optThreads > 1) {
             for (size_t i = 0; i < optThreads - 1; i++) {
-                threads.push_back(
-                    std::make_unique<std::thread>(SubMerge, mConsumed, mConsumed + mDelta));
+                threads.emplace_back(SubMerge, mConsumed, mConsumed + mDelta);
                 mConsumed += mDelta;
             }
 
-            threads.push_back(std::make_unique<std::thread>(SubMerge, mConsumed, elementsDst));
+            threads.emplace_back(SubMerge, mConsumed, elementsDst);
 
-            for (size_t i = 0; i < threads.size(); i++) {
-                threads[i]->join();
+            for (auto &thread : threads) {
+                thread.join();
             }
         } else {
             SubMerge(0, elementsDst);
@@ -217,11 +218,11 @@ BLAS<IterType, T, PExtras>::Init(size_t InM, T blaSize)
 
     this->m_M = InM;
 
-    size_t m = m_M - 1;
-
-    if (m <= 0) {
+    if (m_M <= 1) {
         return;
     }
+
+    size_t m = m_M - 1;
 
     m_ElementsPerLevel.clear();
 
@@ -290,7 +291,7 @@ BLAS<IterType, T, PExtras>::LookupBackwards(size_t m, T z2)
         ix = 0;
     } else {
         float v = (float)(k & -k);
-        uint32_t bits = *reinterpret_cast<uint32_t *>(&v);
+        uint32_t bits = std::bit_cast<uint32_t>(v);
         zeros = (bits >> 23) - 0x7f;
         ix = k >> zeros;
     }

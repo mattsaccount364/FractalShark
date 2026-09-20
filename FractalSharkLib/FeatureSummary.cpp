@@ -1,6 +1,5 @@
 #include "stdafx.h"
 
-#include "FeatureFinderMode.h" // (or whatever header defines FeatureFinderMode)
 #include "FeatureSummary.h"
 #include "Fractal.h" // needed for EstablishScreenCoordinates()
 #include "PointZoomBBConverter.h"
@@ -43,7 +42,7 @@ FeatureSummary::ClearCandidate()
 bool
 FeatureSummary::HasCandidate() const
 {
-    return (bool)m_candidate;
+    return m_candidate != nullptr;
 }
 
 void

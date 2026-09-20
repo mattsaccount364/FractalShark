@@ -5,6 +5,7 @@
 #include "Environment.h"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 
 std::wstring
@@ -241,7 +242,7 @@ ItersMemoryContainer::operator=(ItersMemoryContainer &&other) noexcept
     return *this;
 }
 
-ItersMemoryContainer::~ItersMemoryContainer() { m_RoundedOutputColorMemory = nullptr; }
+ItersMemoryContainer::~ItersMemoryContainer() = default;
 
 IterTypeFull
 ItersMemoryContainer::GetItersArrayValSlow(size_t x, size_t y) const
@@ -271,21 +272,19 @@ ItersMemoryContainer::GetReductionResults(ReductionResults &results) const
     results.Max = 0;
     results.Sum = 0;
 
+    auto accumulate = [&]<typename IterType>(const std::vector<IterType *> &iters) {
+        for (size_t i = 0; i < m_Height; i++) {
+            for (size_t j = 0; j < m_Width; j++) {
+                results.Max = std::max(results.Max, static_cast<uint64_t>(iters[i][j]));
+                results.Min = std::min(results.Min, static_cast<uint64_t>(iters[i][j]));
+                results.Sum += iters[i][j];
+            }
+        }
+    };
+
     if (m_IterType == IterTypeEnum::Bits32) {
-        for (size_t i = 0; i < m_Height; i++) {
-            for (size_t j = 0; j < m_Width; j++) {
-                results.Max = std::max(results.Max, static_cast<uint64_t>(m_ItersArray32[i][j]));
-                results.Min = std::min(results.Min, static_cast<uint64_t>(m_ItersArray32[i][j]));
-                results.Sum += m_ItersArray32[i][j];
-            }
-        }
+        accumulate(m_ItersArray32);
     } else {
-        for (size_t i = 0; i < m_Height; i++) {
-            for (size_t j = 0; j < m_Width; j++) {
-                results.Max = std::max(results.Max, m_ItersArray64[i][j]);
-                results.Min = std::min(results.Min, m_ItersArray64[i][j]);
-                results.Sum += m_ItersArray64[i][j];
-            }
-        }
+        accumulate(m_ItersArray64);
     }
 }

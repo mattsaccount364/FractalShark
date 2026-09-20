@@ -18,6 +18,7 @@
 #include <climits>
 #include <cstddef>
 #include <iostream>
+#include <string>
 
 namespace FractalShark {
 
@@ -705,24 +706,50 @@ PortableCommandHandlers::OnAutoZoomFilament()
     GetFractal().AutoZoom<Fractal::AutoZoomHeuristic::FilamentTip>();
 }
 
-#define LINUXSHARK_DEFINE_FEATURE_FINDER(Suffix, Mode)                                                  \
-    void PortableCommandHandlers::OnFeatureFinder##Suffix()                                             \
-    {                                                                                                   \
-        const MenuPoint pt = GetMenuMousePos();                                                         \
-        const int x = pt.X;                                                                             \
-        const int y = pt.Y;                                                                             \
-        GetFractal().EnqueueCommand("find periodic point",                                              \
-                                    [x, y](Fractal &f) { f.TryFindPeriodicPoint(x, y, Mode); });        \
-    }
+void
+PortableCommandHandlers::OnFeatureFinder(FeatureFinderMode mode)
+{
+    const MenuPoint pt = GetMenuMousePos();
+    GetFractal().EnqueueCommand("find periodic point", [x = pt.X, y = pt.Y, mode](Fractal &f) {
+        f.TryFindPeriodicPoint(x, y, mode);
+    });
+}
 
-LINUXSHARK_DEFINE_FEATURE_FINDER(Direct, FeatureFinderMode::Direct)
-LINUXSHARK_DEFINE_FEATURE_FINDER(DirectScan, FeatureFinderMode::DirectScan)
-LINUXSHARK_DEFINE_FEATURE_FINDER(Pt, FeatureFinderMode::PT)
-LINUXSHARK_DEFINE_FEATURE_FINDER(PtScan, FeatureFinderMode::PTScan)
-LINUXSHARK_DEFINE_FEATURE_FINDER(La, FeatureFinderMode::LA)
-LINUXSHARK_DEFINE_FEATURE_FINDER(LaScan, FeatureFinderMode::LAScan)
+void
+PortableCommandHandlers::OnFeatureFinderDirect()
+{
+    OnFeatureFinder(FeatureFinderMode::Direct);
+}
 
-#undef LINUXSHARK_DEFINE_FEATURE_FINDER
+void
+PortableCommandHandlers::OnFeatureFinderDirectScan()
+{
+    OnFeatureFinder(FeatureFinderMode::DirectScan);
+}
+
+void
+PortableCommandHandlers::OnFeatureFinderPt()
+{
+    OnFeatureFinder(FeatureFinderMode::PT);
+}
+
+void
+PortableCommandHandlers::OnFeatureFinderPtScan()
+{
+    OnFeatureFinder(FeatureFinderMode::PTScan);
+}
+
+void
+PortableCommandHandlers::OnFeatureFinderLa()
+{
+    OnFeatureFinder(FeatureFinderMode::LA);
+}
+
+void
+PortableCommandHandlers::OnFeatureFinderLaScan()
+{
+    OnFeatureFinder(FeatureFinderMode::LAScan);
+}
 
 void
 PortableCommandHandlers::OnFeatureFinderZoom()
@@ -784,29 +811,32 @@ PortableCommandHandlers::OnSelectBuiltInView(size_t oneBasedIndex)
 void
 PortableCommandHandlers::OnGpuAntialiasing1x()
 {
-    GetFractal().EnqueueMutation("set 1x antialiasing",
-                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 1); });
+    SetGpuAntialiasing("set 1x antialiasing", 1);
 }
 
 void
 PortableCommandHandlers::OnGpuAntialiasing4x()
 {
-    GetFractal().EnqueueMutation("set 4x antialiasing",
-                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 2); });
+    SetGpuAntialiasing("set 4x antialiasing", 2);
 }
 
 void
 PortableCommandHandlers::OnGpuAntialiasing9x()
 {
-    GetFractal().EnqueueMutation("set 9x antialiasing",
-                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 3); });
+    SetGpuAntialiasing("set 9x antialiasing", 3);
 }
 
 void
 PortableCommandHandlers::OnGpuAntialiasing16x()
 {
-    GetFractal().EnqueueMutation("set 16x antialiasing",
-                                 [](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, 4); });
+    SetGpuAntialiasing("set 16x antialiasing", 4);
+}
+
+void
+PortableCommandHandlers::SetGpuAntialiasing(std::string_view operationName, uint32_t factor)
+{
+    GetFractal().EnqueueMutation(
+        operationName, [factor](Fractal &f) { f.ResetDimensions(SIZE_MAX, SIZE_MAX, factor); });
 }
 
 // ---- Iterations -----------------------------------------------------------
@@ -878,29 +908,32 @@ PortableCommandHandlers::OnIterations64Bit()
 void
 PortableCommandHandlers::OnIterationPrecision1x()
 {
-    GetFractal().EnqueueMutation("set iteration precision 1x",
-                                 [](Fractal &f) { f.SetIterationPrecision(1); });
+    SetIterationPrecision("set iteration precision 1x", 1);
 }
 
 void
 PortableCommandHandlers::OnIterationPrecision2x()
 {
-    GetFractal().EnqueueMutation("set iteration precision 2x",
-                                 [](Fractal &f) { f.SetIterationPrecision(4); });
+    SetIterationPrecision("set iteration precision 2x", 4);
 }
 
 void
 PortableCommandHandlers::OnIterationPrecision3x()
 {
-    GetFractal().EnqueueMutation("set iteration precision 3x",
-                                 [](Fractal &f) { f.SetIterationPrecision(8); });
+    SetIterationPrecision("set iteration precision 3x", 8);
 }
 
 void
 PortableCommandHandlers::OnIterationPrecision4x()
 {
-    GetFractal().EnqueueMutation("set iteration precision 4x",
-                                 [](Fractal &f) { f.SetIterationPrecision(16); });
+    SetIterationPrecision("set iteration precision 4x", 16);
+}
+
+void
+PortableCommandHandlers::SetIterationPrecision(std::string_view operationName, uint32_t precision)
+{
+    GetFractal().EnqueueMutation(operationName,
+                                 [precision](Fractal &f) { f.SetIterationPrecision(precision); });
 }
 
 // ---- Perturbation ---------------------------------------------------------
@@ -1069,7 +1102,7 @@ applyPaletteType(Fractal &f, FractalPaletteType type)
 {
     f.UsePaletteType(type);
     if (type == FractalPaletteType::Default) {
-        f.UsePalette(8);
+        f.UsePalette(static_cast<int>(FractalPalette::DefaultPaletteDepth));
         f.SetPaletteAuxDepth(0);
     }
 }
@@ -1120,39 +1153,48 @@ PortableCommandHandlers::OnCreateNewPalette()
 }
 
 void
+PortableCommandHandlers::SetPaletteDepth(size_t paletteDepthIndex)
+{
+    const int paletteDepth = static_cast<int>(FractalPalette::PaletteDepths[paletteDepthIndex]);
+    const std::string operationName = "use palette depth " + std::to_string(paletteDepth);
+    GetFractal().EnqueueCommand(operationName,
+                                [paletteDepth](Fractal &f) { f.UsePalette(paletteDepth); });
+}
+
+void
 PortableCommandHandlers::OnPalette5()
 {
-    GetFractal().EnqueueCommand("use palette depth 5", [](Fractal &f) { f.UsePalette(5); });
+    SetPaletteDepth(0);
 }
 
 void
 PortableCommandHandlers::OnPalette6()
 {
-    GetFractal().EnqueueCommand("use palette depth 6", [](Fractal &f) { f.UsePalette(6); });
+    SetPaletteDepth(1);
 }
 
 void
 PortableCommandHandlers::OnPalette8()
 {
-    GetFractal().EnqueueCommand("use palette depth 8", [](Fractal &f) { f.UsePalette(8); });
+    SetPaletteDepth(2);
 }
 
 void
 PortableCommandHandlers::OnPalette12()
 {
-    GetFractal().EnqueueCommand("use palette depth 12", [](Fractal &f) { f.UsePalette(12); });
+    SetPaletteDepth(3);
 }
 
 void
 PortableCommandHandlers::OnPalette16()
 {
-    GetFractal().EnqueueCommand("use palette depth 16", [](Fractal &f) { f.UsePalette(16); });
+    SetPaletteDepth(4);
 }
 
 void
 PortableCommandHandlers::OnPalette20()
 {
-    GetFractal().EnqueueCommand("use palette depth 20", [](Fractal &f) { f.UsePalette(20); });
+    SetPaletteDepth(5);
 }
 
 void

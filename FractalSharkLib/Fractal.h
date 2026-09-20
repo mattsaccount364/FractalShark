@@ -200,6 +200,7 @@ public:
     // Palette functions
     uint32_t GetPaletteDepthFromIndex(size_t index) const;
     uint32_t GetPaletteDepth() const;
+    int GetPaletteDepthIndex() const;
     void UsePalette(int depth);
     void UseNextPaletteDepth();
     void SetPaletteAuxDepth(int32_t aux_depth);

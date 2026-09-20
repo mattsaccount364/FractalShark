@@ -5,7 +5,7 @@
 #include "RecommendedSettings.h"
 
 RecommendedSettings::RecommendedSettings()
-    : m_PointZoomBBConverter{}, RenderAlg{}, IterType{}, NumIterations{}
+    : PrecisionInBits{}, m_PointZoomBBConverter{}, RenderAlg{}, IterType{}, NumIterations{}
 {
 }
 
@@ -44,12 +44,7 @@ RecommendedSettings::RecommendedSettings(uint64_t precisionInBits,
           orbitX, orbitY, zoomFactor, PointZoomBBConverter::TestMode::Enabled)},
       RenderAlg(renderAlg), NumIterations(numIterations)
 {
-
-    if (NumIterations <= Fractal::GetMaxIterations<uint32_t>()) {
-        IterType = IterTypeEnum::Bits32;
-    } else {
-        IterType = IterTypeEnum::Bits64;
-    }
+    SetIterTypeFromNumIterations();
 }
 
 RecommendedSettings::RecommendedSettings(uint64_t precisionInBits,
@@ -64,12 +59,14 @@ RecommendedSettings::RecommendedSettings(uint64_t precisionInBits,
           minX, minY, maxX, maxY, PointZoomBBConverter::TestMode::Enabled)},
       RenderAlg(renderAlg), NumIterations(numIterations)
 {
+    SetIterTypeFromNumIterations();
+}
 
-    if (NumIterations <= Fractal::GetMaxIterations<uint32_t>()) {
-        IterType = IterTypeEnum::Bits32;
-    } else {
-        IterType = IterTypeEnum::Bits64;
-    }
+void
+RecommendedSettings::SetIterTypeFromNumIterations()
+{
+    IterType = NumIterations <= Fractal::GetMaxIterations<uint32_t>() ? IterTypeEnum::Bits32
+                                                                      : IterTypeEnum::Bits64;
 }
 
 uint64_t

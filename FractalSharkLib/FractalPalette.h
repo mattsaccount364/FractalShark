@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+
 #include "GPU_Types.h"
 #include "PngParallelSave.h"
 
@@ -9,6 +11,11 @@
 class FractalPalette {
 public:
     FractalPalette();
+
+    static constexpr auto PaletteDepths =
+        std::array{uint32_t{5}, uint32_t{6}, uint32_t{8}, uint32_t{12}, uint32_t{16}, uint32_t{20}};
+    static constexpr size_t DefaultPaletteDepthIndex = 2;
+    static constexpr uint32_t DefaultPaletteDepth = PaletteDepths[DefaultPaletteDepthIndex];
 
     void InitializeAllPalettes();
     void CreateNewRandomPalette();
@@ -43,7 +50,7 @@ public:
 private:
     void PalTransition(size_t WhichPalette, size_t paletteIndex, int length, int r, int g, int b);
 
-    static constexpr size_t NumBitDepths = 6;
+    static constexpr size_t NumBitDepths = PaletteDepths.size();
 
     std::vector<Color16> m_PalInterleaved[FractalPaletteType::Num][NumBitDepths];
     std::vector<uint32_t> m_PalIters[FractalPaletteType::Num];

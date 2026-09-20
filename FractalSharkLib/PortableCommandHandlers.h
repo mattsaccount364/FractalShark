@@ -5,9 +5,14 @@
 // that require platform UI services.
 #pragma once
 
+#include <cstddef>
+#include <cstdint>
+#include <string_view>
+
 #include "CommandCatalog.h"
 
 class Fractal;
+enum class FeatureFinderMode;
 enum class RenderAlgorithmEnum : uint32_t;
 
 namespace FractalShark {
@@ -90,6 +95,7 @@ private:
     void OnFeatureFinderPtScan();
     void OnFeatureFinderLa();
     void OnFeatureFinderLaScan();
+    void OnFeatureFinder(FeatureFinderMode mode);
     void OnFeatureFinderZoom();
     void OnFeatureFinderClear();
     void OnFeatureFinderResume();
@@ -104,6 +110,7 @@ private:
     void OnGpuAntialiasing4x();
     void OnGpuAntialiasing9x();
     void OnGpuAntialiasing16x();
+    void SetGpuAntialiasing(std::string_view operationName, uint32_t factor);
 
     void OnResetIterations();
     void OnIncreaseIterations1p5x();
@@ -117,6 +124,7 @@ private:
     void OnIterationPrecision2x();
     void OnIterationPrecision3x();
     void OnIterationPrecision4x();
+    void SetIterationPrecision(std::string_view operationName, uint32_t precision);
 
     void OnPerturbClearAll();
     void OnPerturbClearMed();
@@ -146,6 +154,7 @@ private:
     void OnPaletteType3();
     void OnPaletteType4();
     void OnCreateNewPalette();
+    void SetPaletteDepth(size_t paletteDepthIndex);
     void OnPalette5();
     void OnPalette6();
     void OnPalette8();

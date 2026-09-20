@@ -145,7 +145,7 @@ PngParallelSave::Run()
             ext = L".txt";
         }
 
-        if (m_FilenameBase != L"") {
+        if (!m_FilenameBase.empty()) {
             final_filename = m_FilenameBase;
             if (!PathHasFilenameExtension(final_filename)) {
                 final_filename += ext;

@@ -8,9 +8,6 @@
 #include "HDRFloat.h"
 #include "HighPrecision.h"
 
-// wherever IterTypeFull lives; include that instead if different
-#include "Vectors.h" // (or your real header that defines IterTypeFull)
-
 class Fractal;
 class PointZoomBBConverter;
 

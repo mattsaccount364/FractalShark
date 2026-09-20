@@ -8,6 +8,8 @@
 #include "LAParameters.h"
 #include "RefOrbitCalc.h"
 
+#include <array>
+#include <cstddef>
 #include <filesystem>
 
 namespace FractalShark {
@@ -24,6 +26,15 @@ FindCommandForAlgorithm(::RenderAlgorithmEnum algorithm) noexcept
     }
     return -1;
 }
+
+constexpr std::array<int, FractalPalette::PaletteDepths.size()> kPaletteDepthCommands{
+    IDM_PALETTE_5,
+    IDM_PALETTE_6,
+    IDM_PALETTE_8,
+    IDM_PALETTE_12,
+    IDM_PALETTE_16,
+    IDM_PALETTE_20,
+};
 
 } // namespace
 
@@ -164,23 +175,15 @@ MenuState::GetRadioSelection(RadioGroup group) const
             }
             throw FractalSharkSeriousException("Unknown FractalPaletteType selection");
 
-        case RG::PaletteBitDepth:
-            switch (m_Fractal.GetPaletteDepth()) {
-                case 5:
-                    return IDM_PALETTE_5;
-                case 6:
-                    return IDM_PALETTE_6;
-                case 8:
-                    return IDM_PALETTE_8;
-                case 12:
-                    return IDM_PALETTE_12;
-                case 16:
-                    return IDM_PALETTE_16;
-                case 20:
-                    return IDM_PALETTE_20;
-                default:
-                    return IDM_PALETTE_8;
+        case RG::PaletteBitDepth: {
+            const int paletteDepthIndex = m_Fractal.GetPaletteDepthIndex();
+            if (paletteDepthIndex >= 0 &&
+                static_cast<size_t>(paletteDepthIndex) < kPaletteDepthCommands.size()) {
+                return kPaletteDepthCommands[static_cast<size_t>(paletteDepthIndex)];
             }
+
+            return kPaletteDepthCommands[FractalPalette::DefaultPaletteDepthIndex];
+        }
 
         case RG::MemoryAutosave:
             switch (m_Fractal.GetResultsAutosave()) {

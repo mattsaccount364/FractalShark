@@ -581,15 +581,6 @@ FeatureFinderOrchestrator::ZoomToFoundFeature(FeatureSummary &feature,
 
         auto featureFinder = std::make_unique<FeatureFinder<IterType, T, PExtras>>();
 
-        // Acquire PT data if possible (same logic as TryFindPeriodicPoint)
-        // TODO: 'extras' is computed here but never passed to RefinePeriodicPoint_HighPrecision.
-        // Likely a refactor leftover; review whether this needs to be threaded through.
-        [[maybe_unused]] auto extras = RefOrbitCalc::Extras::None;
-        if (auto *cand = feature.GetCandidate()) {
-            if (cand->modeFoundBy == FeatureFinderMode::LA)
-                extras = RefOrbitCalc::Extras::IncludeLAv2;
-        }
-
         if (!featureFinder->RefinePeriodicPoint_HighPrecision(
                 feature, m_NRInnerLoopBackend, checkpointSavePolicy)) {
             return false;

@@ -92,8 +92,7 @@ public:
 
     ~LAReference()
     requires(Introspection::TestPExtras<PExtras>::value)
-    {
-    }
+    = default;
 
     bool
     WriteMetadata(std::ofstream &metafile) const

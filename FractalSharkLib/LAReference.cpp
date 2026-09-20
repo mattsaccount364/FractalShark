@@ -7,6 +7,7 @@
 #include "PerturbationResults.h"
 #include "RefOrbitCalc.h"
 
+#include <algorithm>
 #include <deque>
 #include <future>
 
@@ -240,12 +241,9 @@ requires(PExtras != PerturbExtras::MaxCompression)
     // The work is expected to be large if the number of iterations is large.
     constexpr size_t WorkThreshholdForThreads = 50000;
 
-    size_t ThreadCount = maxRefIteration / WorkThreshholdForThreads;
-    if (ThreadCount > std::thread::hardware_concurrency()) {
-        ThreadCount = std::thread::hardware_concurrency();
-    } else if (ThreadCount == 0) {
-        ThreadCount = 1;
-    }
+    const size_t availableThreads = std::max<size_t>(1, std::thread::hardware_concurrency());
+    size_t ThreadCount = std::max<size_t>(1, maxRefIteration / WorkThreshholdForThreads);
+    ThreadCount = std::min(ThreadCount, availableThreads);
 
     if (ThreadCount == 1) {
         // If we only have one thread, then we don't need to do any
@@ -704,14 +702,15 @@ requires(PExtras != PerturbExtras::MaxCompression)
         LastLAPerThread[ThreadID] = LA_;
     };
 
-    std::vector<std::unique_ptr<std::thread>> threads;
-    threads.push_back(std::make_unique<std::thread>(Starter));
+    std::vector<std::thread> threads;
+    threads.reserve(ThreadCount);
+    threads.emplace_back(Starter);
     for (size_t t = 1; t < ThreadCount; t++) {
-        threads.push_back(std::make_unique<std::thread>(Worker, t));
+        threads.emplace_back(Worker, t);
     }
 
-    for (size_t t = 0; t < ThreadCount; t++) {
-        threads[t]->join();
+    for (auto &thread : threads) {
+        thread.join();
     }
 
     {

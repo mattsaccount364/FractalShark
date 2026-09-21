@@ -76,6 +76,7 @@ Write(std::string_view message, const char *file, int line) noexcept
         std::lock_guard lock{LogMutex()};
         std::cerr << '[' << sourceFile << ':' << line << "] " << message << '\n';
     } catch (...) {
+        // Logging is a noexcept sink and must not replace the failure it is reporting.
     }
 }
 
@@ -94,6 +95,7 @@ WriteException(std::string_view context,
         message += what == nullptr ? "<unknown exception>" : what;
         Write(message, file, line);
     } catch (...) {
+        // Message construction can allocate while another exception is already being handled.
     }
 }
 
@@ -104,6 +106,7 @@ ConsoleLogLine::~ConsoleLogLine() noexcept
     try {
         Write(m_Message.str(), m_File, m_Line);
     } catch (...) {
+        // A logging temporary must never throw from a destructor.
     }
 }
 

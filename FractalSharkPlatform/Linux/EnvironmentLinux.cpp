@@ -8,6 +8,7 @@
 #include <X11/keysym.h>
 
 #include <cerrno>
+#include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

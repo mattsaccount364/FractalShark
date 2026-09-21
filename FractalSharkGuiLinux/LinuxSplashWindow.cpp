@@ -445,21 +445,23 @@ SplashWindow::Stop()
 void
 SplashWindow::ThreadMain(std::stop_token stopToken)
 {
-    SplashSession session;
+    bool startupComplete = false;
     try {
+        SplashSession session;
         session.Create();
         m_Running.store(true, std::memory_order_release);
         SignalStarted(nullptr);
-    } catch (...) {
-        SignalStarted(std::current_exception());
-        return;
-    }
-
-    try {
+        startupComplete = true;
         session.Run(stopToken);
     } catch (...) {
-        std::lock_guard<std::mutex> lock(m_StartMutex);
-        m_WorkerException = std::current_exception();
+        // The jthread entry point must contain every exception and hand it back to its owner.
+        auto exception = std::current_exception();
+        if (!startupComplete) {
+            SignalStarted(std::move(exception));
+        } else {
+            std::lock_guard<std::mutex> lock(m_StartMutex);
+            m_WorkerException = std::move(exception);
+        }
     }
     m_Running.store(false, std::memory_order_release);
 }

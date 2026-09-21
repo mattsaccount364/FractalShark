@@ -41,7 +41,6 @@
 #include <unistd.h>
 
 #include <algorithm>
-#include <atomic>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -49,8 +48,8 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
-#include <exception>
 #include <filesystem>
+#include <future>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -852,23 +851,17 @@ LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
             "Feature autozoom requires an initialized fractal and GL context");
     }
 
-    std::atomic<bool> finished = false;
-    std::exception_ptr autoZoomException;
-    std::thread autoZoomThread([&, mouseX, mouseY] {
-        try {
-            fractal->AutoZoom<h>(mouseX, mouseY);
-        } catch (...) {
-            autoZoomException = std::current_exception();
-        }
-        finished.store(true, std::memory_order_release);
-    });
+    std::future<void> autoZoomFuture =
+        std::async(std::launch::async, [&, mouseX, mouseY] { fractal->AutoZoom<h>(mouseX, mouseY); });
 
     for (;;) {
         const auto presentation = PresentRenderTick();
         const auto *pool = fractal->GetRenderPool();
         const auto pacingDelay =
             pool ? pool->GetTimeUntilNextPresentation() : std::optional<std::chrono::milliseconds>{};
-        if (finished.load(std::memory_order_acquire) && !presentation.FreshFrame && !pacingDelay) {
+        const bool finished =
+            autoZoomFuture.wait_for(std::chrono::milliseconds{0}) == std::future_status::ready;
+        if (finished && !presentation.FreshFrame && !pacingDelay) {
             break;
         }
 
@@ -876,10 +869,7 @@ LinuxMainWindow::RunFeatureAutoZoomSynchronously(int mouseX, int mouseY)
             std::chrono::milliseconds(GetPresentationPollTimeoutMs(presentation.NeedsTick)));
     }
 
-    autoZoomThread.join();
-    if (autoZoomException) {
-        std::rethrow_exception(autoZoomException);
-    }
+    autoZoomFuture.get();
 }
 
 void

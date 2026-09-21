@@ -68,6 +68,7 @@ RunAllTests()
                       << "        Unhandled exception: " << e.what() << "\n";
             ++failed;
         } catch (...) {
+            // Unknown exception types still fail only this test and keep the suite running.
             std::cerr << "  FAIL: " << test.name << "\n"
                       << "        Unknown exception\n";
             ++failed;
@@ -154,6 +155,7 @@ RunAllTests()
         } catch (const extype &) {                                                                      \
             tf_caught_ = true;                                                                          \
         } catch (...) {                                                                                 \
+            /* A different exception type is a failed ASSERT_THROWS expectation. */                     \
         }                                                                                               \
         if (!tf_caught_) {                                                                              \
             TestFramework::Fail(                                                                        \

@@ -10,38 +10,57 @@
 #include <cstdint>
 #include <memory>
 #include <sstream>
+#include <utility>
 
 namespace HpShark {
+
+struct CudaDeviceDeleter {
+    template <typename T>
+    void
+    operator()(T *pointer) const noexcept
+    {
+        if (pointer != nullptr)
+            cudaFree(pointer);
+    }
+};
+
+template <typename T> using CudaDevicePtr = std::unique_ptr<T, CudaDeviceDeleter>;
 
 template <class SharkFloatParams> class ReferencePreparedTables {
 public:
     using Workspace = HpSharkReferenceWorkspace<SharkFloatParams>;
+    using DescriptorPtr = CudaDevicePtr<Workspace>;
+    using StoragePtr = CudaDevicePtr<void>;
 
 private:
-    Workspace *m_Descriptor{};
-    void *m_Storage{};
+    DescriptorPtr m_Descriptor;
+    StoragePtr m_Storage;
     size_t m_StorageBytes{};
     Workspace m_HostDescriptor{};
     uint64_t m_Id{};
     inline static std::atomic<uint64_t> s_NextId{1};
 
 public:
+    ReferencePreparedTables(DescriptorPtr descriptor,
+                            StoragePtr storage,
+                            size_t storageBytes,
+                            const Workspace &hostDescriptor)
+        : m_Descriptor{std::move(descriptor)}, m_Storage{std::move(storage)},
+          m_StorageBytes{storageBytes}, m_HostDescriptor{hostDescriptor},
+          m_Id{s_NextId.fetch_add(1, std::memory_order_relaxed)}
+    {
+    }
+
     ReferencePreparedTables(Workspace *descriptor,
                             void *storage,
                             size_t storageBytes,
                             const Workspace &hostDescriptor)
-        : m_Descriptor{descriptor}, m_Storage{storage}, m_StorageBytes{storageBytes},
-          m_HostDescriptor{hostDescriptor}, m_Id{s_NextId.fetch_add(1, std::memory_order_relaxed)}
+        : ReferencePreparedTables{
+              DescriptorPtr{descriptor}, StoragePtr{storage}, storageBytes, hostDescriptor}
     {
     }
 
-    ~ReferencePreparedTables()
-    {
-        if (m_Descriptor != nullptr)
-            cudaFree(m_Descriptor);
-        if (m_Storage != nullptr)
-            cudaFree(m_Storage);
-    }
+    ~ReferencePreparedTables() = default;
 
     ReferencePreparedTables(const ReferencePreparedTables &) = delete;
     ReferencePreparedTables &operator=(const ReferencePreparedTables &) = delete;
@@ -51,7 +70,7 @@ public:
     Workspace *
     GetDeviceDescriptor() const
     {
-        return m_Descriptor;
+        return m_Descriptor.get();
     }
 
     const Workspace &
@@ -81,16 +100,13 @@ public:
     Workspace *
     ReleaseDescriptor()
     {
-        Workspace *result = m_Descriptor;
-        m_Descriptor = nullptr;
-        return result;
+        return m_Descriptor.release();
     }
 
     void *
     ReleaseStorage()
     {
-        void *result = m_Storage;
-        m_Storage = nullptr;
+        void *result = m_Storage.release();
         m_StorageBytes = 0;
         return result;
     }
@@ -120,6 +136,15 @@ CheckCuda(cudaError_t error, const char *operation)
     message << operation << " failed: " << cudaGetErrorString(error) << " (code "
             << static_cast<int>(error) << ")";
     throw FractalSharkSeriousException(message.str());
+}
+
+template <class T>
+CudaDevicePtr<T>
+AllocateDevice(size_t bytes, const char *operation)
+{
+    void *devicePointer = nullptr;
+    CheckCuda(cudaMalloc(&devicePointer, bytes), operation);
+    return CudaDevicePtr<T>{static_cast<T *>(devicePointer)};
 }
 
 template <class SharkFloatParams>
@@ -170,121 +195,111 @@ AllocatePreparedTables(uint32_t actualPrecisionLimbs, uint32_t minFusedStages, u
     addAllocation(1u, maxFusedStages * sizeof(uint64_t), WorkspaceAlignment);
     addAllocation(2u, activeMaxFusedN * sizeof(uint64_t), WorkspaceAlignment);
 
-    void *workspaceStorage = nullptr;
-    Workspace *workspaceGpu = nullptr;
-    try {
-        CheckCuda(cudaMalloc(&workspaceStorage, workspaceBytes),
-                  "cudaMalloc(Reference workspace storage)");
-        CheckCuda(cudaMemset(workspaceStorage, 0, workspaceBytes),
-                  "cudaMemset(Reference workspace storage)");
+    auto workspaceStorage =
+        AllocateDevice<void>(workspaceBytes, "cudaMalloc(Reference workspace storage)");
+    auto workspaceGpu =
+        AllocateDevice<Workspace>(sizeof(Workspace), "cudaMalloc(Reference workspace descriptor)");
+    CheckCuda(cudaMemset(workspaceStorage.get(), 0, workspaceBytes),
+              "cudaMemset(Reference workspace storage)");
 
-        auto *workspaceBase = static_cast<uint8_t *>(workspaceStorage);
-        size_t workspaceOffset = 0;
-        const auto allocateWorkspace = [&](size_t count, size_t elementSize, size_t alignment) {
-            workspaceOffset = alignWorkspace(workspaceOffset, alignment);
-            void *result = workspaceBase + workspaceOffset;
-            workspaceOffset += count * elementSize;
-            return result;
-        };
-        const auto allocateSpectrum = [&] {
-            return static_cast<uint64_t *>(
-                allocateWorkspace(activeMaxFusedN, sizeof(uint64_t), WorkspaceAlignment));
-        };
-        const auto allocateLimbs = [&] {
-            return static_cast<int64_t *>(
-                allocateWorkspace(activeMaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
-        };
+    auto *workspaceBase = static_cast<uint8_t *>(workspaceStorage.get());
+    size_t workspaceOffset = 0;
+    const auto allocateWorkspace = [&](size_t count, size_t elementSize, size_t alignment) {
+        workspaceOffset = alignWorkspace(workspaceOffset, alignment);
+        void *result = workspaceBase + workspaceOffset;
+        workspaceOffset += count * elementSize;
+        return result;
+    };
+    const auto allocateSpectrum = [&] {
+        return static_cast<uint64_t *>(
+            allocateWorkspace(activeMaxFusedN, sizeof(uint64_t), WorkspaceAlignment));
+    };
+    const auto allocateLimbs = [&] {
+        return static_cast<int64_t *>(
+            allocateWorkspace(activeMaxFusedLimbs, sizeof(int64_t), WorkspaceAlignment));
+    };
 
-        // Keep this assignment sequence in exact lockstep with the workspaceBytes sequence above.
-        Workspace workspace{};
-        workspace.ZReal = allocateSpectrum();
-        workspace.ZImag = allocateSpectrum();
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            workspace.DzdcReal = allocateSpectrum();
-            workspace.DzdcImag = allocateSpectrum();
-        }
-        workspace.RealOutput = allocateSpectrum();
-        workspace.ImagOutput = allocateSpectrum();
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            workspace.DzdcRealOutput = allocateSpectrum();
-            workspace.DzdcImagOutput = allocateSpectrum();
-        }
-        workspace.CarryPrefixDescriptors = static_cast<HpSharkReferencePackedCarryPrefixDescriptor *>(
-            allocateWorkspace(activeMaxCarryPrefixParts,
-                              sizeof(HpSharkReferencePackedCarryPrefixDescriptor),
-                              WorkspaceAlignment));
-        workspace.RealLimbs = allocateLimbs();
-        workspace.ImagLimbs = allocateLimbs();
-        if constexpr (SharkFloatParams::EnableNewtonRaphson) {
-            workspace.DzdcRealLimbs = allocateLimbs();
-            workspace.DzdcImagLimbs = allocateLimbs();
-        }
-        workspace.MagnitudeDigits = static_cast<uint32_t *>(
-            allocateWorkspace(activeMaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
-        workspace.Magnitude = static_cast<uint32_t *>(
-            allocateWorkspace(activeMaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
-        workspace.StageOmegas = static_cast<uint64_t *>(
-            allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
-        workspace.StageOmegasInverse = static_cast<uint64_t *>(
-            allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
-        workspace.ForwardTwiddles = allocateSpectrum();
-        workspace.InverseTwiddles = allocateSpectrum();
-        workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
-        workspace.IgnoredPrecisionBits = (StoragePrecisionLimbs - actualPrecisionLimbs) * 32u;
-        workspace.ActiveMinFusedN = activeMinFusedN;
-        workspace.ActiveMaxFusedN = activeMaxFusedN;
-        workspace.ActiveMinFusedStages = minFusedStages;
-        workspace.ActiveMaxFusedStages = maxFusedStages;
-        workspace.ActiveMaxFusedLimbs = activeMaxFusedLimbs;
-        workspace.ActiveMaxCarryPrefixParts = activeMaxCarryPrefixParts;
-        workspace.ActivePlanCacheEntryCount = activePlanCacheEntryCount;
-        workspace.GeneratedStages = 0u;
-
-        workspace.Plans[0] = {precisionPlan.n32,
-                              precisionPlan.b,
-                              precisionPlan.L,
-                              static_cast<int>(Workspace::MinFusedN),
-                              static_cast<int>(Workspace::MinFusedStages),
-                              precisionPlan.ok};
-
-        for (uint32_t stages = minFusedStages; stages <= maxFusedStages; ++stages) {
-            const uint32_t slot = stages - Workspace::MinFusedStages;
-            const uint32_t n = 1u << stages;
-            workspace.Plans[slot] = {precisionPlan.n32,
-                                     precisionPlan.b,
-                                     precisionPlan.L,
-                                     static_cast<int>(n),
-                                     static_cast<int>(stages),
-                                     precisionPlan.ok};
-            workspace.PlanRoots[slot] = {static_cast<int32_t>(stages),
-                                         workspace.StageOmegas,
-                                         workspace.StageOmegasInverse,
-                                         static_cast<int32_t>(n),
-                                         nullptr,
-                                         0,
-                                         0,
-                                         workspace.ForwardTwiddles,
-                                         workspace.InverseTwiddles,
-                                         n - 1u,
-                                         SharkNTT::ReferenceInputScaleR(stages)};
-        }
-
-        if (workspaceOffset != workspaceBytes)
-            throw FractalSharkSeriousException("Reference workspace size does not match its layout");
-
-        CheckCuda(cudaMalloc(&workspaceGpu, sizeof(Workspace)),
-                  "cudaMalloc(Reference workspace descriptor)");
-        CheckCuda(cudaMemcpy(workspaceGpu, &workspace, sizeof(Workspace), cudaMemcpyHostToDevice),
-                  "cudaMemcpy(Reference workspace descriptor H2D)");
-        return std::make_unique<PreparedTables>(
-            workspaceGpu, workspaceStorage, workspaceBytes, workspace);
-    } catch (...) {
-        if (workspaceGpu != nullptr)
-            cudaFree(workspaceGpu);
-        if (workspaceStorage != nullptr)
-            cudaFree(workspaceStorage);
-        throw;
+    // Keep this assignment sequence in exact lockstep with the workspaceBytes sequence above.
+    Workspace workspace{};
+    workspace.ZReal = allocateSpectrum();
+    workspace.ZImag = allocateSpectrum();
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        workspace.DzdcReal = allocateSpectrum();
+        workspace.DzdcImag = allocateSpectrum();
     }
+    workspace.RealOutput = allocateSpectrum();
+    workspace.ImagOutput = allocateSpectrum();
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        workspace.DzdcRealOutput = allocateSpectrum();
+        workspace.DzdcImagOutput = allocateSpectrum();
+    }
+    workspace.CarryPrefixDescriptors = static_cast<HpSharkReferencePackedCarryPrefixDescriptor *>(
+        allocateWorkspace(activeMaxCarryPrefixParts,
+                          sizeof(HpSharkReferencePackedCarryPrefixDescriptor),
+                          WorkspaceAlignment));
+    workspace.RealLimbs = allocateLimbs();
+    workspace.ImagLimbs = allocateLimbs();
+    if constexpr (SharkFloatParams::EnableNewtonRaphson) {
+        workspace.DzdcRealLimbs = allocateLimbs();
+        workspace.DzdcImagLimbs = allocateLimbs();
+    }
+    workspace.MagnitudeDigits = static_cast<uint32_t *>(
+        allocateWorkspace(activeMaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
+    workspace.Magnitude = static_cast<uint32_t *>(
+        allocateWorkspace(activeMaxFusedLimbs, sizeof(uint32_t), WorkspaceAlignment));
+    workspace.StageOmegas =
+        static_cast<uint64_t *>(allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
+    workspace.StageOmegasInverse =
+        static_cast<uint64_t *>(allocateWorkspace(maxFusedStages, sizeof(uint64_t), WorkspaceAlignment));
+    workspace.ForwardTwiddles = allocateSpectrum();
+    workspace.InverseTwiddles = allocateSpectrum();
+    workspace.ActualPrecisionLimbs = actualPrecisionLimbs;
+    workspace.IgnoredPrecisionBits = (StoragePrecisionLimbs - actualPrecisionLimbs) * 32u;
+    workspace.ActiveMinFusedN = activeMinFusedN;
+    workspace.ActiveMaxFusedN = activeMaxFusedN;
+    workspace.ActiveMinFusedStages = minFusedStages;
+    workspace.ActiveMaxFusedStages = maxFusedStages;
+    workspace.ActiveMaxFusedLimbs = activeMaxFusedLimbs;
+    workspace.ActiveMaxCarryPrefixParts = activeMaxCarryPrefixParts;
+    workspace.ActivePlanCacheEntryCount = activePlanCacheEntryCount;
+    workspace.GeneratedStages = 0u;
+
+    workspace.Plans[0] = {precisionPlan.n32,
+                          precisionPlan.b,
+                          precisionPlan.L,
+                          static_cast<int>(Workspace::MinFusedN),
+                          static_cast<int>(Workspace::MinFusedStages),
+                          precisionPlan.ok};
+
+    for (uint32_t stages = minFusedStages; stages <= maxFusedStages; ++stages) {
+        const uint32_t slot = stages - Workspace::MinFusedStages;
+        const uint32_t n = 1u << stages;
+        workspace.Plans[slot] = {precisionPlan.n32,
+                                 precisionPlan.b,
+                                 precisionPlan.L,
+                                 static_cast<int>(n),
+                                 static_cast<int>(stages),
+                                 precisionPlan.ok};
+        workspace.PlanRoots[slot] = {static_cast<int32_t>(stages),
+                                     workspace.StageOmegas,
+                                     workspace.StageOmegasInverse,
+                                     static_cast<int32_t>(n),
+                                     nullptr,
+                                     0,
+                                     0,
+                                     workspace.ForwardTwiddles,
+                                     workspace.InverseTwiddles,
+                                     n - 1u,
+                                     SharkNTT::ReferenceInputScaleR(stages)};
+    }
+
+    if (workspaceOffset != workspaceBytes)
+        throw FractalSharkSeriousException("Reference workspace size does not match its layout");
+
+    CheckCuda(cudaMemcpy(workspaceGpu.get(), &workspace, sizeof(Workspace), cudaMemcpyHostToDevice),
+              "cudaMemcpy(Reference workspace descriptor H2D)");
+    return std::make_unique<PreparedTables>(
+        std::move(workspaceGpu), std::move(workspaceStorage), workspaceBytes, workspace);
 }
 
 template <class SharkFloatParams>
@@ -311,27 +326,22 @@ PrepareHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
     (void)cImag;
     auto prepared = ReferenceSetupDetail::AllocatePreparedTables<SharkFloatParams>(
         actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    uint64_t *tempData = nullptr;
-    try {
-        constexpr size_t TempBytes = HpShark::AdditionalUInt64Global * sizeof(uint64_t);
-        ReferenceSetupDetail::CheckCuda(cudaMalloc(&tempData, TempBytes),
-                                        "cudaMalloc(Reference setup debug scratch)");
-        ReferenceSetupDetail::CheckCuda(cudaMemset(tempData, 0, TempBytes),
-                                        "cudaMemset(Reference setup debug scratch)");
+    constexpr size_t TempBytes = HpShark::AdditionalUInt64Global * sizeof(uint64_t);
+    auto tempDataOwner = ReferenceSetupDetail::AllocateDevice<uint64_t>(
+        TempBytes, "cudaMalloc(Reference setup debug scratch)");
+    auto *tempData = tempDataOwner.get();
+    ReferenceSetupDetail::CheckCuda(cudaMemset(tempData, 0, TempBytes),
+                                    "cudaMemset(Reference setup debug scratch)");
 
-        auto *workspace = prepared->GetDeviceDescriptor();
-        void *kernelArgs[] = {&workspace, &tempData};
-        cudaStream_t stream{};
-        ComputeHpSharkReferenceSetup<SharkFloatParams>(launchParams, stream, kernelArgs);
+    auto *workspace = prepared->GetDeviceDescriptor();
+    void *kernelArgs[] = {&workspace, &tempData};
+    cudaStream_t stream{};
+    ComputeHpSharkReferenceSetup<SharkFloatParams>(launchParams, stream, kernelArgs);
 
-        ReferenceSetupDetail::CheckCuda(cudaFree(tempData), "cudaFree(Reference setup debug scratch)");
-        tempData = nullptr;
-        return prepared;
-    } catch (...) {
-        if (tempData != nullptr)
-            cudaFree(tempData);
-        throw;
-    }
+    ReferenceSetupDetail::CheckCuda(cudaFree(tempDataOwner.get()),
+                                    "cudaFree(Reference setup debug scratch)");
+    tempDataOwner.release();
+    return prepared;
 }
 
 template <class SharkFloatParams>

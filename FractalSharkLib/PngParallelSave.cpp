@@ -260,6 +260,7 @@ PngParallelSave::Run()
     } catch (const std::exception &ex) {
         FractalSharkLog::WriteException("PngParallelSave failed", ex, __FILE__, __LINE__);
     } catch (...) {
+        // This thread boundary preserves the asynchronous log-only save contract for unknown types.
         FractalSharkLog::LogLine(__FILE__, __LINE__)
             << "PngParallelSave failed with an unknown exception";
     }

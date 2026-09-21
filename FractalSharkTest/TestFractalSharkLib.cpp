@@ -408,6 +408,26 @@ TEST(FractalSharkLib_RenderToConsoleProducesTextAndColorModes)
                 color.str().find("All pixels are set-interior") != std::string::npos);
 }
 
+TEST(FractalSharkLib_AsyncPngSaveReclaimsWorkerBeforeCleanup)
+{
+    const auto output = std::filesystem::temp_directory_path() / "fractalshark-async-save-test.png";
+    std::error_code error;
+    std::filesystem::remove(output, error);
+
+    Fractal fractal(
+        16, 16, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
+    fractal.SetNumIterations<uint32_t>(64);
+    fractal.CalcFractal(true);
+
+    ASSERT_EQ(fractal.SaveCurrentFractal(output.wstring(), true), 0);
+    ASSERT_TRUE(fractal.CleanupThreads(true));
+    ASSERT_TRUE(std::filesystem::is_regular_file(output));
+
+    std::filesystem::remove(output, error);
+    ASSERT_FALSE(static_cast<bool>(error));
+}
+
 TEST(FractalSharkLib_RenderToPngRejectsMissingViewSource)
 {
     RenderRequest request;

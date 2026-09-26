@@ -33,6 +33,7 @@
 #include "RefOrbitDetails.h"
 
 #include <deque>
+#include <filesystem>
 #include <string>
 
 template <typename IterType, class T, class SubType, PerturbExtras PExtras> class LAReference;
@@ -210,6 +211,8 @@ public:
     void UseNextPaletteAuxDepth(int32_t inc);
     void UsePaletteType(FractalPaletteType type);
     FractalPaletteType GetPaletteType() const;
+    void LoadCustomPalette(const std::filesystem::path &path);
+    bool HasCustomPalette() const;
 
     void ResetFractalPalette();
     void RotateFractalPalette(int delta);

@@ -6,6 +6,7 @@
 #include "PngParallelSave.h"
 
 #include <cstdint>
+#include <filesystem>
 #include <vector>
 
 class FractalPalette {
@@ -19,9 +20,11 @@ public:
 
     void InitializeAllPalettes();
     void CreateNewRandomPalette();
+    void LoadCustomPalette(const std::filesystem::path &path);
 
     void UsePaletteType(FractalPaletteType type);
     FractalPaletteType GetPaletteType() const;
+    bool HasCustomPalette() const;
     void UsePalette(int depth);
     void UseNextPaletteDepth();
     uint32_t GetPaletteDepth() const;
@@ -60,4 +63,5 @@ private:
     int m_PaletteDepthIndex;
     int m_PaletteAuxDepth;
     uint64_t m_PaletteGeneration = 0;
+    bool m_HasCustomPalette = false;
 };

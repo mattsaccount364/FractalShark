@@ -57,6 +57,7 @@ protected:
     virtual void OnLoadEnterLocation() = 0;
     virtual void OnLoadRefOrbitImagMax() = 0;
     virtual void OnLoadRefOrbitImagMaxSaved() = 0;
+    virtual void OnLoadCustomPalette() = 0;
 
 private:
     void OnSetAlgorithm(::RenderAlgorithmEnum alg);
@@ -153,6 +154,7 @@ private:
     void OnPaletteType2();
     void OnPaletteType3();
     void OnPaletteType4();
+    void OnPaletteType5();
     void OnCreateNewPalette();
     void SetPaletteDepth(size_t paletteDepthIndex);
     void OnPalette5();

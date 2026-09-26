@@ -11,7 +11,7 @@
 class Fractal;
 
 // The palette!
-enum FractalPaletteType : size_t { Basic = 0, Default, Patriotic, Summer, Random, Num };
+enum FractalPaletteType : size_t { Basic = 0, Default, Patriotic, Summer, Random, Custom, Num };
 
 class PngParallelSave {
 public:

@@ -1585,6 +1585,19 @@ Fractal::GetPaletteType() const
     return m_Palette.GetPaletteType();
 }
 
+void
+Fractal::LoadCustomPalette(const std::filesystem::path &path)
+{
+    m_Palette.LoadCustomPalette(path);
+    UsePaletteType(FractalPaletteType::Custom);
+}
+
+bool
+Fractal::HasCustomPalette() const
+{
+    return m_Palette.HasCustomPalette();
+}
+
 uint32_t
 Fractal::GetPaletteDepthFromIndex(size_t index) const
 {

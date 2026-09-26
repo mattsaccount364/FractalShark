@@ -32,6 +32,7 @@ constexpr DWORD forceStartHeight = 0;
 constexpr const wchar_t *kOrbitFileFilter = L"All\0*.*\0Imagina\0*.im\0";
 constexpr const wchar_t *kPngFileFilter = L"PNG Image\0*.png\0All\0*.*\0";
 constexpr const wchar_t *kTextFileFilter = L"Text File\0*.txt\0All\0*.*\0";
+constexpr const wchar_t *kPaletteMapFileFilter = L"Palette Map (*.map)\0*.map\0All Files (*.*)\0*.*\0";
 
 bool
 IsNumpadAddSubtractCharacter(WPARAM wParam, LPARAM lParam) noexcept
@@ -216,6 +217,18 @@ void
 MainWindow::OnLoadRefOrbitImagMaxSaved()
 {
     MenuLoadImagDyn(ImaginaSettings::UseSaved);
+}
+
+void
+MainWindow::OnLoadCustomPalette()
+{
+    const std::wstring filename = OpenFileDialog(OpenBoxType::Open, kPaletteMapFileFilter, L"map");
+    if (filename.empty()) {
+        return;
+    }
+
+    gFractal->EnqueueCommand("load custom palette",
+                             [filename](Fractal &fractal) { fractal.LoadCustomPalette(filename); });
 }
 
 //

@@ -79,6 +79,7 @@ public:
     void OnLoadEnterLocation() override;
     void OnLoadRefOrbitImagMax() override;
     void OnLoadRefOrbitImagMaxSaved() override;
+    void OnLoadCustomPalette() override;
 
     // Tests / Benchmarks
 

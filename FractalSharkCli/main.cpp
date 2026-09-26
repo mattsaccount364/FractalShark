@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -67,6 +68,7 @@ struct CliArgs {
 
     std::string RenderAlgorithm;
     std::string PerturbationAlg; // empty => unspecified
+    std::string PaletteMapFile;
 
     std::string OutFile;
 
@@ -80,41 +82,45 @@ struct CliArgs {
 void
 PrintUsage()
 {
-    std::cout << "FractalSharkCli — headless Mandelbrot renderer\n"
-                 "\n"
-                 "Usage:\n"
-                 "  FractalSharkCli --render-algorithm NAME [--out FILE.png] [--console] [--color]\n"
-                 "                  [--width W --height H]\n"
-                 "                  {--builtin-view N |\n"
-                 "                   --locations FILE [--location-index N] |\n"
-                 "                   --center-x X --center-y Y --zoom Z}\n"
-                 "                  [--iterations N] [--antialiasing N]\n"
-                 "                  [--perturbation-alg NAME] [--commit-cap-bytes N]\n"
-                 "                  [--no-gpu]\n"
-                 "                  [--quiet]\n"
-                 "\n"
-                 "  FractalSharkCli --server [--endpoint NAME] [--width W --height H]\n"
-                 "                   [--commit-cap-bytes N] [--no-gpu]\n"
-                 "  FractalSharkCli --connect [--endpoint NAME] <the render arguments above>\n"
-                 "  FractalSharkCli --connect --endpoint NAME --shutdown\n"
-                 "\n"
-                 "  FractalSharkCli --list-render-algorithms\n"
-                 "  FractalSharkCli --help\n"
-                 "\n"
-                 "The default endpoint is per-user: a Windows named pipe or a Unix-domain\n"
-                 "socket. Use --endpoint to select a different local endpoint. The server\n"
-                 "process stays in the foreground and handles requests in FIFO order.\n"
-                 "\n"
-                 "Output:\n"
-                 "  --out FILE.png    Write a PNG image (required unless --console is given)\n"
-                 "  --console         Print ASCII art to stdout (can combine with --out)\n"
-                 "  --color           Use ANSI 256-color for console output (implies --console)\n"
-                 "  --quiet           Suppress progress and rendering details\n"
-                 "  Successful renders print the GUI rendering-details report.\n"
-                 "\n"
-                 "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
-                 "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
-                 "Run with --list-render-algorithms for the full list.\n";
+    std::cout
+        << "FractalSharkCli — headless Mandelbrot renderer\n"
+           "\n"
+           "Usage:\n"
+           "  FractalSharkCli --render-algorithm NAME [--out FILE.png] [--console] [--color]\n"
+           "                  [--width W --height H]\n"
+           "                  {--builtin-view N |\n"
+           "                   --locations FILE [--location-index N] |\n"
+           "                   --center-x X --center-y Y --zoom Z}\n"
+           "                  [--iterations N] [--antialiasing N]\n"
+           "                  [--perturbation-alg NAME] [--palette-map FILE] [--commit-cap-bytes N]\n"
+           "                  [--no-gpu]\n"
+           "                  [--quiet]\n"
+           "\n"
+           "  FractalSharkCli --server [--endpoint NAME] [--width W --height H]\n"
+           "                   [--commit-cap-bytes N] [--no-gpu]\n"
+           "  FractalSharkCli --connect [--endpoint NAME] <the render arguments above>\n"
+           "  FractalSharkCli --connect --endpoint NAME --shutdown\n"
+           "\n"
+           "  FractalSharkCli --list-render-algorithms\n"
+           "  FractalSharkCli --help\n"
+           "\n"
+           "The default endpoint is per-user: a Windows named pipe or a Unix-domain\n"
+           "socket. Use --endpoint to select a different local endpoint. The server\n"
+           "process stays in the foreground and handles requests in FIFO order.\n"
+           "\n"
+           "Output:\n"
+           "  --out FILE.png    Write a PNG image (required unless --console is given)\n"
+           "  --console         Print ASCII art to stdout (can combine with --out)\n"
+           "  --color           Use ANSI 256-color for console output (implies --console)\n"
+           "  --palette-map FILE\n"
+           "                    Load Fractal Zoomer RGB8 triplets; blank, #, and // lines are ignored\n"
+           "                    (the first three values per row are clamped to 0-255)\n"
+           "  --quiet           Suppress progress and rendering details\n"
+           "  Successful renders print the GUI rendering-details report.\n"
+           "\n"
+           "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
+           "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
+           "Run with --list-render-algorithms for the full list.\n";
 }
 
 void
@@ -351,6 +357,11 @@ ParseArgs(int argc, char *argv[], CliArgs &a, std::ostream &errorOut)
             if (!v)
                 return false;
             a.PerturbationAlg = v;
+        } else if (arg == "--palette-map") {
+            auto v = expectValue(i, "--palette-map");
+            if (!v)
+                return false;
+            a.PaletteMapFile = v;
         } else {
             errorOut << "error: unknown argument: " << arg << "\n";
             return false;
@@ -528,7 +539,8 @@ ValidateServerArgs(const CliArgs &args, std::string &error)
     }
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
         args.Console || args.Color || args.Iterations != 0 || args.Antialiasing != 0 ||
-        !args.PerturbationAlg.empty() || args.LocationIndex != SIZE_MAX) {
+        !args.PerturbationAlg.empty() || !args.PaletteMapFile.empty() ||
+        args.LocationIndex != SIZE_MAX) {
         error = "server accepts only --endpoint, --width, --height, --commit-cap-bytes, --no-gpu, and "
                 "--quiet";
         return false;
@@ -550,7 +562,7 @@ ValidateShutdownArgs(const CliArgs &args, std::string &error)
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
         args.Console || args.Color || args.WidthSet || args.HeightSet || args.Iterations != 0 ||
         args.Antialiasing != 0 || args.CommitCapBytes != UINT64_MAX || !args.PerturbationAlg.empty() ||
-        args.LocationIndex != SIZE_MAX) {
+        !args.PaletteMapFile.empty() || args.LocationIndex != SIZE_MAX) {
         error = "--shutdown cannot be combined with render arguments";
         return false;
     }
@@ -693,6 +705,15 @@ ExecuteRenderRequest(const CliArgs &args,
     // Single-shot construction of Fractal initializes its default view after
     // parsing the request, which also lowers the MPIR default precision.
     HighPrecision::defaultPrecisionInBits(FractalLimits::MaxPrecisionLame);
+
+    if (!args.PaletteMapFile.empty()) {
+        try {
+            fractal.LoadCustomPalette(std::filesystem::path(args.PaletteMapFile));
+        } catch (const std::exception &exception) {
+            errorOut << "error: " << exception.what() << "\n";
+            return 1;
+        }
+    }
 
     std::string error;
     int rc = RenderToPng(req, fractal, &error, out);

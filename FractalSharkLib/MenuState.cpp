@@ -64,6 +64,9 @@ MenuState::IsEnabled(Rule rule) const noexcept
             return std::filesystem::exists("nr_checkpoint.txt", error);
         }
 
+        case Rule::EnableIfCustomPaletteLoaded:
+            return m_Fractal.HasCustomPalette();
+
         default:
             return true;
     }
@@ -169,6 +172,8 @@ MenuState::GetRadioSelection(RadioGroup group) const
                     return IDM_PALETTE_TYPE_3;
                 case FractalPaletteType::Random:
                     return IDM_PALETTE_TYPE_4;
+                case FractalPaletteType::Custom:
+                    return IDM_PALETTE_TYPE_5;
                 case FractalPaletteType::Num:
                     throw FractalSharkSeriousException(
                         "FractalPaletteType::Num is not a valid palette selection");

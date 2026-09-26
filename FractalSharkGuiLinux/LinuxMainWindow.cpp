@@ -325,6 +325,7 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     void OnLoadEnterLocation() override;
     void OnLoadRefOrbitImagMax() override;
     void OnLoadRefOrbitImagMaxSaved() override;
+    void OnLoadCustomPalette() override;
 
 private:
     using FileDialogCallback = FractalShark::Linux::ImGuiOverlay::FileDialogCallback;
@@ -1088,6 +1089,12 @@ TextFileFilters()
     return {{"Text File (*.txt)", ".txt"}, {"All (*.*)", ""}};
 }
 
+std::vector<LinuxFileDialogFilter>
+PaletteMapFileFilters()
+{
+    return {{"Palette Map (*.map)", ".map"}, {"All (*.*)", ""}};
+}
+
 } // namespace
 
 void
@@ -1319,6 +1326,23 @@ LinuxMainWindow::OnLoadLocation()
             }
             FractalShark::EnqueueSavedLocation(*fractal, locations[index]);
         });
+}
+
+void
+LinuxMainWindow::OnLoadCustomPalette()
+{
+    RequireUiState(fractal && overlay, "Loading a custom palette");
+    RequestOpenFile("Loading a custom palette",
+                    "Load Custom Palette (.map)",
+                    PaletteMapFileFilters(),
+                    [this](std::string filename) {
+                        RequireUiState(fractal != nullptr, "Loading a custom palette");
+                        fractal->EnqueueCommand(
+                            "load custom palette",
+                            [path = std::filesystem::path{std::move(filename)}](Fractal &target) {
+                                target.LoadCustomPalette(path);
+                            });
+                    });
 }
 
 void

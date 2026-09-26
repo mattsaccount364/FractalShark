@@ -347,8 +347,14 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
         case FractalCommand::PaletteType4:
             OnPaletteType4();
             return;
+        case FractalCommand::PaletteType5:
+            OnPaletteType5();
+            return;
         case FractalCommand::CreateNewPalette:
             OnCreateNewPalette();
+            return;
+        case FractalCommand::LoadCustomPalette:
+            OnLoadCustomPalette();
             return;
         case FractalCommand::Palette5:
             OnPalette5();
@@ -1141,6 +1147,13 @@ PortableCommandHandlers::OnPaletteType4()
 {
     GetFractal().EnqueueCommand("use random palette",
                                 [](Fractal &f) { applyPaletteType(f, FractalPaletteType::Random); });
+}
+
+void
+PortableCommandHandlers::OnPaletteType5()
+{
+    GetFractal().EnqueueCommand("use custom palette",
+                                [](Fractal &f) { applyPaletteType(f, FractalPaletteType::Custom); });
 }
 
 void

@@ -470,35 +470,38 @@ static const Node menu[] = {
 
     Sep(),
 
-    FS_POPUP(L"Palette Color Depth",
-             R::Always,
-             /*adornment*/ RG::PaletteBitDepth,
+    FS_POPUP(
+        L"Palette Color Depth",
+        R::Always,
+        /*adornment*/ RG::PaletteBitDepth,
 
-             Radio(L"Basic", FractalCommand::PaletteType0, RG::PaletteType),
-             Radio(L"Default", FractalCommand::PaletteType1, RG::PaletteType),
+        Radio(L"Basic", FractalCommand::PaletteType0, RG::PaletteType),
+        Radio(L"Default", FractalCommand::PaletteType1, RG::PaletteType),
 
-             Sep(),
+        Sep(),
 
-             Radio(L"Patriotic", FractalCommand::PaletteType2, RG::PaletteType),
-             Radio(L"Summer", FractalCommand::PaletteType3, RG::PaletteType),
-             Radio(L"Random", FractalCommand::PaletteType4, RG::PaletteType),
+        Radio(L"Patriotic", FractalCommand::PaletteType2, RG::PaletteType),
+        Radio(L"Summer", FractalCommand::PaletteType3, RG::PaletteType),
+        Radio(L"Random", FractalCommand::PaletteType4, RG::PaletteType),
+        Radio(L"Custom", FractalCommand::PaletteType5, RG::PaletteType, R::EnableIfCustomPaletteLoaded),
 
-             Sep(),
+        Sep(),
 
-             Item(L"&Create Random Palette", FractalCommand::CreateNewPalette),
+        Item(L"&Create Random Palette", FractalCommand::CreateNewPalette),
+        Item(L"&Load Custom Palette...", FractalCommand::LoadCustomPalette),
 
-             Sep(),
+        Sep(),
 
-             Radio(L"5-bit", FractalCommand::Palette5, RG::PaletteBitDepth),
-             Radio(L"6-bit", FractalCommand::Palette6, RG::PaletteBitDepth),
-             Radio(L"8-bit", FractalCommand::Palette8, RG::PaletteBitDepth),
-             Radio(L"12-bit", FractalCommand::Palette12, RG::PaletteBitDepth),
-             Radio(L"16-bit", FractalCommand::Palette16, RG::PaletteBitDepth),
-             Radio(L"20-bit", FractalCommand::Palette20, RG::PaletteBitDepth),
+        Radio(L"5-bit", FractalCommand::Palette5, RG::PaletteBitDepth),
+        Radio(L"6-bit", FractalCommand::Palette6, RG::PaletteBitDepth),
+        Radio(L"8-bit", FractalCommand::Palette8, RG::PaletteBitDepth),
+        Radio(L"12-bit", FractalCommand::Palette12, RG::PaletteBitDepth),
+        Radio(L"16-bit", FractalCommand::Palette16, RG::PaletteBitDepth),
+        Radio(L"20-bit", FractalCommand::Palette20, RG::PaletteBitDepth),
 
-             Sep(),
+        Sep(),
 
-             Item(L"Pa&lette Rotation", FractalCommand::PaletteRotate)),
+        Item(L"Pa&lette Rotation", FractalCommand::PaletteRotate)),
 
     Sep(),
 

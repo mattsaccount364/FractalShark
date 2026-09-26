@@ -129,6 +129,34 @@ TEST(MenuState_RadioGroupsFollowFractalState)
     ASSERT_EQ(state.GetRadioSelection(FractalShark::RadioGroup::None), 0u);
 }
 
+TEST(MenuState_CustomPaletteRequiresSuccessfulLoad)
+{
+    Fractal fractal(
+        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+    FractalShark::MenuState state(fractal);
+
+    ASSERT_FALSE(state.IsEnabled(FractalShark::Rule::EnableIfCustomPaletteLoaded));
+
+    const std::filesystem::path palettePath =
+        std::filesystem::temp_directory_path() / "fractalshark-menu-custom-palette-test.map";
+    std::error_code error;
+    std::filesystem::remove(palettePath, error);
+    ASSERT_FALSE(static_cast<bool>(error));
+    {
+        std::ofstream output(palettePath);
+        ASSERT_TRUE(static_cast<bool>(output));
+        output << "0 0 0\n255 255 255\n";
+    }
+
+    fractal.LoadCustomPalette(palettePath);
+    ASSERT_TRUE(state.IsEnabled(FractalShark::Rule::EnableIfCustomPaletteLoaded));
+    ASSERT_EQ(state.GetRadioSelection(FractalShark::RadioGroup::PaletteType),
+              static_cast<uint32_t>(IDM_PALETTE_TYPE_5));
+
+    std::filesystem::remove(palettePath, error);
+    ASSERT_FALSE(static_cast<bool>(error));
+}
+
 TEST(MenuState_WindowSizeCommandsAreActions)
 {
     using FractalShark::FractalCommand;

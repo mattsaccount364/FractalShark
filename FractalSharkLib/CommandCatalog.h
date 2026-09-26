@@ -179,8 +179,10 @@ enum class FractalCommand : uint32_t {
     PaletteType2 = 40602,
     PaletteType3 = 40603,
     PaletteType4 = 40604,
+    PaletteType5 = 40605,
 
     CreateNewPalette = 40610,
+    LoadCustomPalette = 40611,
 
     Palette5 = 40620,
     Palette6 = 40621,

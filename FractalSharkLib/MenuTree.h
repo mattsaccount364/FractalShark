@@ -71,6 +71,7 @@ enum class Rule : uint16_t {
     EnableIfCpuActive,
     EnableIfPerturbationAvailable,
     EnableIfNRCheckpointExists,
+    EnableIfCustomPaletteLoaded,
 };
 
 struct IMenuState {

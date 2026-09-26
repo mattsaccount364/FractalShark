@@ -36,6 +36,25 @@ SetComplex(mpf_complex &value, double real, double imaginary)
     mpf_set_d(value.im, imaginary);
 }
 
+std::filesystem::path
+FindTestMap()
+{
+    std::filesystem::path directory = std::filesystem::current_path();
+    while (true) {
+        const std::filesystem::path candidate = directory / "test.map";
+        std::error_code error;
+        if (std::filesystem::is_regular_file(candidate, error)) {
+            return candidate;
+        }
+
+        const std::filesystem::path parent = directory.parent_path();
+        if (parent == directory) {
+            return {};
+        }
+        directory = parent;
+    }
+}
+
 } // namespace
 
 TEST(FractalSharkLib_ItersMemoryContainerStores32BitValues)
@@ -109,6 +128,86 @@ TEST(FractalSharkLib_PaletteInitializationAndStateTransitions)
     ASSERT_EQ(palette.GetPaletteRotation(), IterTypeFull{3});
     palette.RotatePalette(7, 10);
     ASSERT_EQ(palette.GetPaletteRotation(), IterTypeFull{0});
+}
+
+TEST(FractalSharkLib_CustomPaletteLoadsRgb8MapsTransactionally)
+{
+    const std::filesystem::path suppliedPalettePath = FindTestMap();
+    ASSERT_FALSE(suppliedPalettePath.empty());
+
+    const std::filesystem::path palettePath =
+        std::filesystem::temp_directory_path() / "fractalshark-custom-palette-test.map";
+    std::error_code error;
+    std::filesystem::remove(palettePath, error);
+    ASSERT_FALSE(static_cast<bool>(error));
+
+    FractalPalette palette;
+    palette.InitializeAllPalettes();
+    const uint64_t generationBeforeLoad = palette.GetPaletteGeneration();
+    palette.LoadCustomPalette(suppliedPalettePath);
+
+    ASSERT_TRUE(palette.HasCustomPalette());
+    ASSERT_TRUE(palette.GetPaletteGeneration() > generationBeforeLoad);
+
+    const auto *customPalettes = palette.GetPalInterleaved(FractalPaletteType::Custom);
+    const auto &customCounts = palette.GetPalIters(FractalPaletteType::Custom);
+    for (size_t paletteIndex = 0; paletteIndex < FractalPalette::PaletteDepths.size(); ++paletteIndex) {
+        const size_t expectedCount = size_t{1} << FractalPalette::PaletteDepths[paletteIndex];
+        ASSERT_EQ(customPalettes[paletteIndex].size(), expectedCount);
+        ASSERT_EQ(customCounts[paletteIndex], static_cast<uint32_t>(expectedCount));
+    }
+
+    const auto &eightBitPalette = customPalettes[FractalPalette::DefaultPaletteDepthIndex];
+    ASSERT_EQ(eightBitPalette.size(), size_t{256});
+    ASSERT_EQ(eightBitPalette[0].r, uint16_t{65535});
+    ASSERT_EQ(eightBitPalette[0].g, uint16_t{16962});
+    ASSERT_EQ(eightBitPalette[0].b, uint16_t{15163});
+    ASSERT_EQ(eightBitPalette[127].r, uint16_t{0});
+    ASSERT_EQ(eightBitPalette[127].g, uint16_t{47802});
+    ASSERT_EQ(eightBitPalette[127].b, uint16_t{50886});
+    ASSERT_EQ(eightBitPalette[255].r, uint16_t{65535});
+    ASSERT_EQ(eightBitPalette[255].g, uint16_t{17733});
+    ASSERT_EQ(eightBitPalette[255].b, uint16_t{14649});
+
+    palette.UsePaletteType(FractalPaletteType::Custom);
+    palette.UsePalette(static_cast<int>(FractalPalette::DefaultPaletteDepth));
+    ASSERT_EQ(palette.GetCurrentNumColors(), uint32_t{256});
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[0].r, uint16_t{65535});
+
+    {
+        std::ofstream output(palettePath);
+        ASSERT_TRUE(static_cast<bool>(output));
+        output << "# comment\n";
+        output << "\n";
+        output << "  // another comment\n";
+        output << "-1 256 42 ignored trailing components\n";
+        output << "+1 2 3\n";
+    }
+
+    const uint64_t generationBeforeReplacement = palette.GetPaletteGeneration();
+    palette.LoadCustomPalette(palettePath);
+    ASSERT_EQ(palette.GetPaletteGeneration(), generationBeforeReplacement + 1);
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[0].r, uint16_t{0});
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[0].g, uint16_t{65535});
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[0].b, uint16_t{10794});
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[128].r, uint16_t{257});
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[128].g, uint16_t{514});
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[128].b, uint16_t{771});
+
+    {
+        std::ofstream output(palettePath, std::ios::trunc);
+        ASSERT_TRUE(static_cast<bool>(output));
+        output << "1 2\n";
+    }
+
+    ASSERT_THROWS(palette.LoadCustomPalette(palettePath), FractalSharkSeriousException);
+    ASSERT_TRUE(palette.HasCustomPalette());
+    ASSERT_EQ(palette.GetPaletteGeneration(), generationBeforeReplacement + 1);
+    ASSERT_EQ(palette.GetCurrentNumColors(), uint32_t{256});
+    ASSERT_EQ(palette.GetCurrentPalInterleaved()[0].r, uint16_t{0});
+
+    std::filesystem::remove(palettePath, error);
+    ASSERT_FALSE(static_cast<bool>(error));
 }
 
 TEST(FractalSharkLib_RenderAlgorithmMetadataIsIndexedAndPartitioned)

@@ -1,9 +1,85 @@
 #include "stdafx.h"
 #include "Environment.h"
+#include "Exceptions.h"
 #include "FractalPalette.h"
 
+#include <algorithm>
+#include <array>
+#include <charconv>
+#include <filesystem>
+#include <fstream>
+#include <sstream>
+#include <string>
 #include <thread>
 #include <vector>
+
+namespace {
+
+constexpr size_t MaxCustomPaletteEntries = size_t{1} << FractalPalette::PaletteDepths.back();
+
+[[noreturn]] void
+ThrowCustomPaletteError(const std::filesystem::path &path, size_t lineNumber, const std::string &message)
+{
+    std::ostringstream error;
+    error << "Custom palette \"" << path.string() << "\"";
+    if (lineNumber != 0) {
+        error << " line " << lineNumber;
+    }
+    error << ": " << message;
+    throw FractalSharkSeriousException(error.str());
+}
+
+int32_t
+ParseCustomPaletteComponent(const std::string &token,
+                            const std::filesystem::path &path,
+                            size_t lineNumber)
+{
+    const char *begin = token.data();
+    if (!token.empty() && *begin == '+') {
+        ++begin;
+    }
+
+    int32_t component = 0;
+    const auto [end, error] = std::from_chars(begin, token.data() + token.size(), component, 10);
+    if (error != std::errc{} || end != token.data() + token.size()) {
+        ThrowCustomPaletteError(path, lineNumber, "components must be signed 32-bit decimal integers");
+    }
+    return component;
+}
+
+uint16_t
+ConvertCustomPaletteComponent(int32_t component)
+{
+    constexpr int32_t MinComponent = 0;
+    constexpr int32_t MaxComponent = 255;
+    constexpr int32_t Color16Scale = 257;
+    return static_cast<uint16_t>(std::clamp(component, MinComponent, MaxComponent) * Color16Scale);
+}
+
+uint16_t
+InterpolateCustomPaletteComponent(uint16_t first,
+                                  uint16_t second,
+                                  uint64_t fraction,
+                                  uint64_t denominator)
+{
+    const uint64_t weighted = static_cast<uint64_t>(first) * (denominator - fraction) +
+                              static_cast<uint64_t>(second) * fraction;
+    return static_cast<uint16_t>(weighted / denominator);
+}
+
+Color16
+InterpolateCustomPaletteColor(const Color16 &first,
+                              const Color16 &second,
+                              uint64_t fraction,
+                              uint64_t denominator)
+{
+    return {InterpolateCustomPaletteComponent(first.r, second.r, fraction, denominator),
+            InterpolateCustomPaletteComponent(first.g, second.g, fraction, denominator),
+            InterpolateCustomPaletteComponent(first.b, second.b, fraction, denominator),
+            0};
+}
+
+} // namespace
 
 FractalPalette::FractalPalette()
     : m_WhichPalette{FractalPaletteType::Default}, m_PaletteRotate{0},
@@ -158,6 +234,10 @@ FractalPalette::PalTransition(size_t WhichPalette, size_t PaletteIndex, int leng
 void
 FractalPalette::UsePaletteType(FractalPaletteType type)
 {
+    if (type == FractalPaletteType::Custom && !m_HasCustomPalette) {
+        throw FractalSharkSeriousException("No custom palette has been loaded");
+    }
+
     m_WhichPalette = type;
 }
 
@@ -165,6 +245,94 @@ FractalPaletteType
 FractalPalette::GetPaletteType() const
 {
     return m_WhichPalette;
+}
+
+bool
+FractalPalette::HasCustomPalette() const
+{
+    return m_HasCustomPalette;
+}
+
+void
+FractalPalette::LoadCustomPalette(const std::filesystem::path &path)
+{
+    std::ifstream input(path);
+    if (!input) {
+        ThrowCustomPaletteError(path, 0, "could not open file");
+    }
+
+    std::vector<Color16> sourceColors;
+    sourceColors.reserve(1u << DefaultPaletteDepth);
+
+    std::string line;
+    size_t lineNumber = 0;
+    while (std::getline(input, line)) {
+        ++lineNumber;
+
+        std::istringstream fields(line);
+        std::string redToken;
+        if (!(fields >> redToken)) {
+            continue;
+        }
+        if (redToken.starts_with('#') || redToken.starts_with("//")) {
+            continue;
+        }
+
+        std::string greenToken;
+        std::string blueToken;
+        if (!(fields >> greenToken >> blueToken)) {
+            ThrowCustomPaletteError(path, lineNumber, "expected at least three RGB components");
+        }
+
+        if (sourceColors.size() == MaxCustomPaletteEntries) {
+            ThrowCustomPaletteError(
+                path, lineNumber, "contains more entries than the maximum supported palette depth");
+        }
+
+        sourceColors.push_back(
+            {ConvertCustomPaletteComponent(ParseCustomPaletteComponent(redToken, path, lineNumber)),
+             ConvertCustomPaletteComponent(ParseCustomPaletteComponent(greenToken, path, lineNumber)),
+             ConvertCustomPaletteComponent(ParseCustomPaletteComponent(blueToken, path, lineNumber)),
+             0});
+    }
+
+    if (input.bad()) {
+        ThrowCustomPaletteError(path, 0, "failed while reading file");
+    }
+    if (sourceColors.empty()) {
+        ThrowCustomPaletteError(path, 0, "contains no RGB entries");
+    }
+
+    std::array<std::vector<Color16>, NumBitDepths> generatedPalettes;
+    std::array<uint32_t, NumBitDepths> generatedCounts;
+    for (size_t paletteIndex = 0; paletteIndex < NumBitDepths; ++paletteIndex) {
+        const size_t targetCount = size_t{1} << PaletteDepths[paletteIndex];
+        auto &target = generatedPalettes[paletteIndex];
+        target.reserve(targetCount);
+
+        if (sourceColors.size() == targetCount) {
+            target = sourceColors;
+        } else {
+            for (size_t targetIndex = 0; targetIndex < targetCount; ++targetIndex) {
+                const uint64_t sourcePosition = static_cast<uint64_t>(targetIndex) * sourceColors.size();
+                const size_t sourceIndex = static_cast<size_t>(sourcePosition / targetCount);
+                const uint64_t fraction = sourcePosition % targetCount;
+                const Color16 &first = sourceColors[sourceIndex];
+                const Color16 &second = sourceColors[(sourceIndex + 1) % sourceColors.size()];
+                target.push_back(InterpolateCustomPaletteColor(first, second, fraction, targetCount));
+            }
+        }
+
+        generatedCounts[paletteIndex] = static_cast<uint32_t>(target.size());
+    }
+
+    for (size_t paletteIndex = 0; paletteIndex < NumBitDepths; ++paletteIndex) {
+        m_PalInterleaved[FractalPaletteType::Custom][paletteIndex] =
+            std::move(generatedPalettes[paletteIndex]);
+    }
+    m_PalIters[FractalPaletteType::Custom].assign(generatedCounts.begin(), generatedCounts.end());
+    m_HasCustomPalette = true;
+    ++m_PaletteGeneration;
 }
 
 uint32_t

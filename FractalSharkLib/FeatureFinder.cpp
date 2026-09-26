@@ -2164,7 +2164,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
 //    re-evaluate with PT or DIRECT at the final c (recommended).
 //
 // Notes / assumptions (based on your types):
-//  - LAstep::Evaluate(dz, dc) advances dz to the next macro step (step length = las.step).
+//  - LAstep::Evaluate(dc) advances the prepared delta to the next macro step.
 //  - LAstep::getZ(dz) returns absolute z = Refp1Deep + dz for that macro step.
 //  - LAstep::EvaluateDzdcDeep(dz, dzdc, ScalingFactor) updates *stored scaled* dzdc:
 //        dzdc_stored = dzdc_true * ScalingFactor
@@ -2190,8 +2190,8 @@ bool
 FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     const PerturbationResults<IterType, T, PExtras> &results,
     LAReference<IterType, T, SubType, PExtras> &laRef,
-    const HighPrecision &cX_hp,
-    const HighPrecision &cY_hp,
+    const HighPrecision &cXHp,
+    const HighPrecision &cYHp,
     T R,
     IterTypeFull maxIters,
     IterType &ioPeriod,
@@ -2226,9 +2226,9 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     // --------------------------
     // dc = c - referenceCenter
     // --------------------------
-    const HighPrecision dcX_hp = cX_hp - results.GetHiX();
-    const HighPrecision dcY_hp = cY_hp - results.GetHiY();
-    C dc(ToDouble(dcX_hp), ToDouble(dcY_hp));
+    const HighPrecision dcXHp = cXHp - results.GetHiX();
+    const HighPrecision dcYHp = cYHp - results.GetHiY();
+    C dc(ToDouble(dcXHp), ToDouble(dcYHp));
     dc.Reduce();
 
     // --------------------------
@@ -2320,7 +2320,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
             // ------------------------------------------------------------
             // Advance dz for this macro-step
             // ------------------------------------------------------------
-            dz = las.Evaluate(dz, dc);
+            dz = las.Evaluate(dc);
             dz.Reduce();
 
             // Advance iteration/refIteration

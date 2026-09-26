@@ -1,6 +1,6 @@
 #pragma once
 
-#include "HighPrecision.h"
+#include "HDRFloat.h"
 
 class LAParameters {
 public:
@@ -74,4 +74,36 @@ private:
 
     static constexpr LAThreadingAlgorithm DefaultThreadingAlgorithm =
         LAThreadingAlgorithm::MultiThreaded;
+};
+
+// Generation-local values: preserve the selected scalar's exponent range instead
+// of routing double and HDR thresholds through the legacy float getters.
+template <class Float> struct LAParametersRuntime {
+    explicit LAParametersRuntime(const LAParameters &parameters)
+        : m_DetectionMethod(parameters.GetDetectionMethod()),
+          m_LAThresholdScale(PowerOfTwo(parameters.GetLAThresholdScaleExp())),
+          m_LAThresholdCScale(PowerOfTwo(parameters.GetLAThresholdCScaleExp())),
+          m_Stage0PeriodDetectionThreshold2(
+              PowerOfTwo(parameters.GetStage0PeriodDetectionThreshold2Exp())),
+          m_PeriodDetectionThreshold2(PowerOfTwo(parameters.GetPeriodDetectionThreshold2Exp())),
+          m_Stage0PeriodDetectionThreshold(
+              PowerOfTwo(parameters.GetStage0PeriodDetectionThresholdExp())),
+          m_PeriodDetectionThreshold(PowerOfTwo(parameters.GetPeriodDetectionThresholdExp()))
+    {
+    }
+
+    int m_DetectionMethod;
+    Float m_LAThresholdScale;
+    Float m_LAThresholdCScale;
+    Float m_Stage0PeriodDetectionThreshold2;
+    Float m_PeriodDetectionThreshold2;
+    Float m_Stage0PeriodDetectionThreshold;
+    Float m_PeriodDetectionThreshold;
+
+private:
+    static Float
+    PowerOfTwo(int32_t exponent)
+    {
+        return HdrLdexp(Float{1}, exponent);
+    }
 };

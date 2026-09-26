@@ -18,6 +18,8 @@ template <typename IterType> class LAStageInfo;
 
 class RefOrbitCalc;
 
+template <typename IterType, class T, PerturbExtras PExtras> class RuntimeDecompressor;
+
 template <typename IterType, class T, PerturbExtras PExtras> class PerturbationResults;
 
 template <typename IterType, class T, class SubType> class GPU_LAReference;
@@ -35,11 +37,6 @@ private:
                                   std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
     using FloatComplexT =
         std::conditional<IsHDR, ::HDRFloatComplex<SubType>, ::FloatComplex<SubType>>::type;
-
-    friend class GPU_LAReference<IterType, Float, float>;
-    friend class GPU_LAReference<IterType, Float, double>;
-    friend class GPU_LAReference<IterType, Float, CudaDblflt<dblflt>>;
-    friend class GPU_LAReference<IterType, Float, CudaDblflt<MattDblflt>>;
 
     // TODO this is overly broad -- many types don't need these friends
     friend class LAReference<IterType, float, float, PExtras>;
@@ -63,27 +60,25 @@ public:
     LAReference &operator=(LAReference &&other) = delete;
     LAReference(LAReference &&other) = delete;
 
-    LAReference(LAParameters la_parameters,
+    LAReference(LAParameters parameters,
                 AddPointOptions addPointOptions,
-                std::wstring las_filename,
-                std::wstring la_stages_filename)
+                std::wstring lasFilename,
+                std::wstring laStagesFilename)
     requires(Introspection::TestPExtras<PExtras>::value)
         : m_AddPointOptions(addPointOptions), m_UseAT{}, m_AT{}, m_LAStageCount{},
-          m_LAParameters{la_parameters}, m_IsValid{}, m_LAs(addPointOptions, las_filename.c_str()),
-          m_LAStages(addPointOptions, la_stages_filename.c_str()), m_BenchmarkDataLA{}
+          m_LAParameters{parameters}, m_IsValid{}, m_LAs(addPointOptions, lasFilename.c_str()),
+          m_LAStages(addPointOptions, laStagesFilename.c_str()), m_BenchmarkDataLA{}
     {
 
         static_assert(PExtras != PerturbExtras::MaxCompression,
                       "MaxCompression not supported in LAReference");
     }
 
-    LAReference(AddPointOptions addPointOptions,
-                std::wstring las_filename,
-                std::wstring la_stages_filename)
+    LAReference(AddPointOptions addPointOptions, std::wstring lasFilename, std::wstring laStagesFilename)
     requires(Introspection::TestPExtras<PExtras>::value)
         : m_AddPointOptions(addPointOptions), m_UseAT{}, m_AT{}, m_LAStageCount{}, m_LAParameters{},
-          m_IsValid{}, m_LAs(addPointOptions, las_filename.c_str()),
-          m_LAStages(addPointOptions, la_stages_filename.c_str()), m_BenchmarkDataLA{}
+          m_IsValid{}, m_LAs(addPointOptions, lasFilename.c_str()),
+          m_LAStages(addPointOptions, laStagesFilename.c_str()), m_BenchmarkDataLA{}
     {
 
         static_assert(PExtras != PerturbExtras::MaxCompression,
@@ -168,6 +163,7 @@ public:
         m_AT = other.m_AT;
         m_LAStageCount = other.m_LAStageCount;
         m_IsValid = other.m_IsValid;
+        m_LAParameters = other.m_LAParameters;
 
         m_LAs.MutableResize(other.m_LAs.GetSize());
 
@@ -190,13 +186,20 @@ public:
         };
 
         std::vector<std::thread> threads;
-        for (size_t i = 0; i < numThreads; i++) {
-            size_t start = i * numElementsPerThread;
-            size_t end = (i + 1) * numElementsPerThread;
-            if (i == numThreads - 1) {
-                end = other.m_LAs.GetSize();
+        if (numThreads == 1) {
+            for (size_t i = 0; i < other.m_LAs.GetSize(); i++) {
+                m_LAs[i] = other.m_LAs[i];
             }
-            threads.push_back(std::thread(oneThread, start, end));
+        } else {
+            threads.reserve(numThreads);
+            for (size_t i = 0; i < numThreads; i++) {
+                size_t start = i * numElementsPerThread;
+                size_t end = (i + 1) * numElementsPerThread;
+                if (i == numThreads - 1) {
+                    end = other.m_LAs.GetSize();
+                }
+                threads.emplace_back(oneThread, start, end);
+            }
         }
 
         m_LAStages.MutableResize(other.m_LAStages.GetSize());
@@ -269,27 +272,58 @@ private:
     bool m_IsValid;
 
     static constexpr int MaxLAStages = 1024;
-    static constexpr int DEFAULT_SIZE = 10000;
     GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> m_LAs;
     GrowableVector<LAStageInfo<IterType>> m_LAStages;
 
     BenchmarkData m_BenchmarkDataLA;
 
+    struct OrbitStageState {
+        LAInfoDeep<IterType, Float, SubType, PExtras> m_LA;
+        LAInfoI<IterType> m_LAI;
+        IterType m_Index{};
+        IterType m_Period{};
+        IterType m_PeriodBegin{};
+        IterType m_PeriodEnd{};
+    };
+
     IterType LAsize();
+    static IterType CalculatePeriod(IterType maxRefIteration, double ratio, IterType stepLength);
+    template <typename PerturbType>
+    bool InitializeOrbitStage(const LAParametersRuntime<Float> &parameters,
+                              const PerturbationResults<IterType, PerturbType, PExtras> &results,
+                              IterType maxRefIteration,
+                              RuntimeDecompressor<IterType, Float, PExtras> &decompressor,
+                              OrbitStageState &state)
+    requires(PExtras != PerturbExtras::MaxCompression);
+
+    template <typename PerturbType>
+    LAInfoDeep<IterType, Float, SubType, PExtras> MakeOrbitEntry(
+        const LAParametersRuntime<Float> &parameters,
+        const PerturbationResults<IterType, PerturbType, PExtras> &results,
+        RuntimeDecompressor<IterType, Float, PExtras> &decompressor,
+        IterType index,
+        bool appendNext);
+
+    void
+    AppendTerminalEntry(const LAParametersRuntime<Float> &parameters, FloatComplexT ref)
+    {
+        m_LAs.PushBack(LAInfoDeep<IterType, Float, SubType, PExtras>{parameters, ref});
+    }
+
     template <typename PerturbType>
     bool CreateLAFromOrbit(
-        const LAParameters &la_parameters,
+        const LAParametersRuntime<Float> &parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         IterType maxRefIteration)
     requires(PExtras != PerturbExtras::MaxCompression);
     template <typename PerturbType>
     bool CreateLAFromOrbitMT(
-        const LAParameters &la_parameters,
+        const LAParametersRuntime<Float> &parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
         IterType maxRefIteration)
     requires(PExtras != PerturbExtras::MaxCompression);
     template <typename PerturbType>
-    bool CreateNewLAStage(const LAParameters &la_parameters,
+    bool CreateNewLAStage(const LAParametersRuntime<Float> &parameters,
                           const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
                           IterType maxRefIteration);
 
@@ -315,9 +349,6 @@ public:
     IterType getLAIndex(IterType CurrentLAStage);
     IterType getMacroItCount(IterType CurrentLAStage);
 
-    LAstep<IterType, Float, SubType, PExtras> getLA(IterType LAIndex,
-                                                    FloatComplexT dz,
-                                                    /*FloatComplexT dc, */ IterType j,
-                                                    IterType iterations,
-                                                    IterType max_iterations);
+    LAstep<IterType, Float, SubType, PExtras> getLA(
+        IterType LAIndex, FloatComplexT dz, IterType j, IterType iterations, IterType maxIterations);
 };

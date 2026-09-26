@@ -1,7 +1,5 @@
 #pragma once
 
-#pragma once
-
 #include "ATInfo.h"
 #include "HDRFloat.h"
 #include "HDRFloatComplex.h"
@@ -17,11 +15,7 @@ public:
                                   std::is_same<Float, ::HDRFloat<CudaDblflt<dblflt>>>::value;
     using HDRFloat = Float;
     using HDRFloatComplex =
-        std::conditional<std::is_same<Float, ::HDRFloat<float>>::value ||
-                             std::is_same<Float, ::HDRFloat<double>>::value ||
-                             std::is_same<Float, ::HDRFloat<CudaDblflt<MattDblflt>>>::value,
-                         ::HDRFloatComplex<SubType>,
-                         ::FloatComplex<SubType>>::type;
+        std::conditional_t<IsHDR, ::HDRFloatComplex<SubType>, ::FloatComplex<SubType>>;
 
     HDRFloatComplex Ref;
     HDRFloatComplex ZCoeff;
@@ -90,19 +84,7 @@ template <typename IterType, class Float, class SubType>
 CUDA_CRAP GPU_LAstep<IterType, Float, SubType>
 GPU_LAInfoDeep<IterType, Float, SubType>::Prepare(HDRFloatComplex dz) const
 {
-    //*2 is + 1
-    HDRFloatComplex newdz = dz * (Ref * HDRFloat(2) + dz);
-    newdz.Reduce();
-
-    GPU_LAstep<IterType, Float, SubType> temp;
-    if constexpr (IsHDR) {
-        temp.unusable = newdz.chebychevNorm().compareToBothPositiveReduced(LAThreshold) >= 0;
-    } else {
-        temp.unusable = newdz.chebychevNorm() >= LAThreshold;
-    }
-
-    temp.newDzDeep = newdz;
-    return temp;
+    return FractalShark::LA::Prepare<GPU_LAstep<IterType, Float, SubType>>(Ref, dz, LAThreshold);
 }
 
 template <typename IterType, class Float, class SubType>
@@ -123,7 +105,7 @@ template <typename IterType, class Float, class SubType>
 CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex
 GPU_LAInfoDeep<IterType, Float, SubType>::Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) const
 {
-    return newdz * ZCoeff + dc * CCoeff;
+    return FractalShark::LA::Evaluate(newdz, dc, ZCoeff, CCoeff);
 }
 
 template <typename IterType, class Float, class SubType>

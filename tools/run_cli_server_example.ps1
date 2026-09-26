@@ -45,7 +45,7 @@ $scenes = @(
 # The server retains the expensive renderer state between requests. Its output is captured
 # beside the PNGs so the example remains easy to inspect after it finishes.
 $server = Start-Process -FilePath $cli `
-    -ArgumentList @('--server', '--endpoint', $endpoint, '--width', '1280', '--height', '720') `
+    -ArgumentList @('--server', '--endpoint', $endpoint, '--width', '3840', '--height', '2160') `
     -WindowStyle Hidden `
     -RedirectStandardOutput (Join-Path $outputRoot 'server.stdout.txt') `
     -RedirectStandardError (Join-Path $outputRoot 'server.stderr.txt') `
@@ -60,7 +60,7 @@ try {
         & $cli --connect --endpoint $endpoint `
             --render-algorithm GpuHDRx32PerturbedLAv2 `
             --center-x $scene.X --center-y $scene.Y --zoom $scene.Zoom `
-            --iterations $scene.Iterations --width 1280 --height 720 `
+            --iterations $scene.Iterations --width 3840 --height 2160 `
             --antialiasing 1 --out $output --quiet
         if ($LASTEXITCODE -ne 0) {
             throw "Render failed with exit code $LASTEXITCODE"

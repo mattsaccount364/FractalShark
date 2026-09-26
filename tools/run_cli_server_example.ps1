@@ -98,7 +98,7 @@ try {
             --render-algorithm GpuHDRx32PerturbedLAv2 `
             --center-x $scene.X --center-y $scene.Y --zoom $scene.Zoom `
             --iterations $scene.Iterations --width 3840 --height 2160 `
-            --antialiasing 1 --out $output
+            --antialiasing 1 --out $output --quiet
         if ($LASTEXITCODE -ne 0) {
             throw "Render failed with exit code $LASTEXITCODE"
         }

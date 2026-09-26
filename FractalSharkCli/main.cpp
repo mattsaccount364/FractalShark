@@ -446,6 +446,27 @@ ParseHighPrecision(const std::string &text,
                    bool requirePositive,
                    std::string &error)
 {
+    const size_t exponentMarker = text.find_first_of("eE@");
+    if (exponentMarker != std::string::npos) {
+        std::string_view exponent{text.data() + exponentMarker + 1, text.size() - exponentMarker - 1};
+        if (!exponent.empty() && (exponent.front() == '+' || exponent.front() == '-')) {
+            exponent.remove_prefix(1);
+        }
+        if (exponent.empty() || !std::all_of(exponent.begin(), exponent.end(), [](char digit) {
+                return digit >= '0' && digit <= '9';
+            })) {
+            error = std::string(flag) + " exponent must be an integer";
+            return false;
+        }
+
+        errno = 0;
+        std::strtol(text.c_str() + exponentMarker + 1, nullptr, 10);
+        if (errno == ERANGE) {
+            error = std::string(flag) + " exponent is out of range";
+            return false;
+        }
+    }
+
     try {
         HighPrecision parsed;
         if (mpf_set_str(parsed.backend(), text.c_str(), 10) != 0) {

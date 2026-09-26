@@ -1033,7 +1033,7 @@ At least one output mode is required. \code{-{}-out} may be omitted when
     \code{-{}-console} and can also be combined with PNG output.
 
   \item[\code{-{}-quiet}]
-    Suppress progress output.
+    Suppress progress output and the rendering-details report.
 \end{description}
 
 \subsubsection*{Persistent server}
@@ -1060,6 +1060,14 @@ response does not guarantee that the PNG is complete. The shutdown command
 waits for outstanding PNG
 encoders before the server exits. The full PowerShell batch example is
 \code{tools/run\_cli\_server\_example.ps1}.
+
+After each successful non-quiet render, the CLI prints the same rendering
+details shown by the GUI's Show Rendering Details command, without the GUI's
+clipboard notice. The report includes the selected algorithm, render settings,
+reference-orbit details, and benchmark timings. Its Overall time measures
+fractal calculation; the client's frame time also covers the local request and
+response. Neither time includes a background PNG encode that continues after a
+server response.
 
 \subsubsection*{Implementation}
 

@@ -925,12 +925,12 @@ LinuxMainWindow::OnCurPos()
     std::string longStr;
     fractal->GetRenderDetails(shortStr, longStr);
     if (!Environment::SetClipboardText(longStr)) {
-        std::fprintf(stderr, "Could not copy location to clipboard.\n");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Could not copy location to clipboard.";
     }
     if (shortStr.size() < 5000) {
         ShowInfo("Current Position", shortStr);
     } else {
-        std::fprintf(stderr, "Location copied to clipboard.\n");
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Location copied to clipboard.";
     }
 }
 

@@ -314,6 +314,9 @@ public:
     LAParameters &GetLAParameters();
 
     void GetRenderDetails(std::string &shortStr, std::string &longStr) const;
+    void GetRenderDetails(std::string &shortStr,
+                          std::string &longStr,
+                          bool includeClipboardNotice) const;
 
     GpuMode GetGpuMode() const;
     bool GpuBypassed() const;

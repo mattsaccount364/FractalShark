@@ -109,6 +109,8 @@ PrintUsage()
                  "  --out FILE.png    Write a PNG image (required unless --console is given)\n"
                  "  --console         Print ASCII art to stdout (can combine with --out)\n"
                  "  --color           Use ANSI 256-color for console output (implies --console)\n"
+                 "  --quiet           Suppress progress and rendering details\n"
+                 "  Successful renders print the GUI rendering-details report.\n"
                  "\n"
                  "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
                  "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
@@ -708,6 +710,13 @@ ExecuteRenderRequest(const CliArgs &args,
     }
     if (!args.Quiet && !args.OutFile.empty()) {
         out << "Wrote " << args.OutFile << "\n";
+        out.flush();
+    }
+    if (!args.Quiet) {
+        std::string renderDetailsShort, renderDetailsLong;
+        fractal.GetRenderDetails(renderDetailsShort, renderDetailsLong, false);
+        std::erase(renderDetailsShort, '\r');
+        out << renderDetailsShort;
         out.flush();
     }
     return 0;

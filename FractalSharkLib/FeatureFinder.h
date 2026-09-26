@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <iosfwd>
 #include <string>
+#include <type_traits>
 
 #include "FeatureFinderMode.h"
 #include "FloatComplex.h"
@@ -53,6 +54,13 @@ template <typename IterType, class Float, class SubType, PerturbExtras PExtras> 
 
 class FeatureSummary;
 
+enum class NRPolishStatus { Accepted, Cancelled, Rejected, NumericalFailure };
+
+struct NRPolishResult {
+    NRPolishStatus status;
+    uint32_t iterations;
+};
+
 template <class IterType, class T, PerturbExtras PExtras>
 class FeatureFinder final : public TemplateHelpers<IterType, T, PExtras> {
 public:
@@ -64,21 +72,15 @@ public:
 
     struct Params {
         Params()
-            : MaxNewtonIters(32), RelStepTol{0x1p-40}, // 2^-40
-              RelStepTol2{0x1p-80},                    // 2^-80
-              Eps2Accept{}, PrintResult(true)
+            : MaxNewtonIters(32), RelStepTol{std::is_same_v<SubType, float> ? 0x1p-20 : 0x1p-40},
+              PrintResult(true)
         {
             HdrReduce(RelStepTol);
-            HdrReduce(RelStepTol2);
         }
 
         uint32_t MaxNewtonIters;
 
-        T RelStepTol;  // 2^-40
-        T RelStepTol2; // 2^-80
-
-        // Optional: keep residual accept as a *secondary* early-out (can be 0 to disable)
-        T Eps2Accept;
+        T RelStepTol;
 
         bool PrintResult;
     };
@@ -104,9 +106,8 @@ public:
         NRCheckpointSavePolicy checkpointSavePolicy = NRCheckpointSavePolicy::Save) const;
 
 private:
-    struct EvalState {
-        C z{};
-    };
+    struct PeriodSearchState;
+    enum class LASearchResult { Found, ContinuePT, RetryPT };
 
     // Evaluator policy for direct iteration (no perturbation)
     struct DirectEvaluator {
@@ -171,27 +172,27 @@ private:
 
     T ChebAbs(const C &a) const;
 
-    // NEW: LA evaluation method
-    template <bool FindPeriod>
-    bool Evaluate_LA(const PerturbationResults<IterType, T, PExtras> &results,
-                     LAReference<IterType, T, SubType, PExtras> &laRef,
-                     const HighPrecision &cX_hp,
-                     const HighPrecision &cY_hp,
-                     T R,
-                     IterTypeFull maxIters,
-                     IterType &ioPeriod,
-                     C &outDiff,
-                     C &outDzdc,
-                     C &outZcoeff,
-                     T &outResidual2) const;
+    LASearchResult Evaluate_LA(const PerturbationResults<IterType, T, PExtras> &results,
+                               LAReference<IterType, T, SubType, PExtras> &laRef,
+                               const HighPrecision &cXHp,
+                               const HighPrecision &cYHp,
+                               T radius,
+                               IterTypeFull maxIters,
+                               PeriodSearchState &state,
+                               IterType &ioPeriod,
+                               C &outDiff,
+                               C &outDzdc,
+                               C &outZcoeff,
+                               T &outResidual2) const;
 
     template <bool FindPeriod>
     bool Evaluate_PT(const PerturbationResults<IterType, T, PExtras> &results,
                      RuntimeDecompressor<IterType, T, PExtras> &dec,
-                     const HighPrecision &cX_hp, // <-- CURRENT Newton iterate
-                     const HighPrecision &cY_hp, // <-- CURRENT Newton iterate
+                     const HighPrecision &cXHp,
+                     const HighPrecision &cYHp,
                      T R,
                      IterTypeFull maxIters,
+                     PeriodSearchState *resumeState,
                      IterType &ioPeriod,
                      C &outDiff,
                      C &outDzdc,
@@ -237,25 +238,18 @@ private:
         }
     }
 
-    bool Evaluate_AtPeriod(const PerturbationResults<IterType, T, PExtras> &results,
-                           RuntimeDecompressor<IterType, T, PExtras> &dec,
-                           const C &c,
-                           IterType period,
-                           EvalState &st,
-                           T &outResidual2) const;
+    static T ToScalar(const HighPrecision &v);
 
-    static T ToDouble(const HighPrecision &v);
-
-    IterType RefinePeriodicPoint_WithMPF(HighPrecision &cX_hp,
-                                         HighPrecision &cY_hp,
-                                         IterType period,
-                                         mp_bitcnt_t coord_prec,
-                                         const T &sqrRadius_T,
-                                         int scaleExp2_for_deriv,
-                                         NRInnerLoopBackend backend,
-                                         const HighPrecision &intrinsicRadius,
-                                         uint64_t numIterationsAtFind,
-                                         NRCheckpointSavePolicy checkpointSavePolicy) const;
+    NRPolishResult RefinePeriodicPoint_WithMPF(HighPrecision &cXHp,
+                                               HighPrecision &cYHp,
+                                               IterType period,
+                                               mp_bitcnt_t coordPrec,
+                                               const HighPrecision &sqrRadiusHp,
+                                               int scaleExp2ForDeriv,
+                                               NRInnerLoopBackend backend,
+                                               const HighPrecision &intrinsicRadius,
+                                               uint64_t numIterationsAtFind,
+                                               NRCheckpointSavePolicy checkpointSavePolicy) const;
 
 private:
     Params m_params{};

@@ -70,8 +70,11 @@ private:
 
     // Core implementation: creates a FeatureFinder, acquires perturbation
     // results / LA data as needed, and runs the search (single point or grid).
-    template <typename IterType, typename RenderAlg, PerturbExtras PExtras>
+    template <typename IterType, typename RenderAlg>
     void TryFindPeriodicPointTemplate(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
+
+    template <typename IterType, typename T, PerturbExtras PExtras>
+    void TryFindPeriodicPointSearch(size_t scrnX, size_t scrnY, FeatureFinderMode mode);
 
     Fractal &m_Fractal;
     std::vector<std::unique_ptr<FeatureSummary>> m_FeatureSummaries;

@@ -6,6 +6,7 @@
 #include "stdafx.h"
 
 #include "AbortMonitor.h"
+#include "ConsoleLog.h"
 #include "Exceptions.h"
 #include "FeatureFinder.h"
 #include "FeatureSummary.h"
@@ -27,9 +28,9 @@
 #include <fstream>
 #include <future>
 #include <iomanip>
-#include <iostream>
 #include <limits>
 #include <mutex>
+#include <ostream>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -573,10 +574,11 @@ private:
     void
     PrintCheckpointMessage(const NRCheckpointParams &params, bool saved) const
     {
-        std::cout << "RefinePeriodicPoint: NR checkpoint "
-                  << (saved ? "saved" : "not saved because policy is PreserveExisting") << " at NR iter "
-                  << params.iteration << " phase " << NRCheckpointPhaseName(params.phase)
-                  << " innerIter " << params.innerIteration << " period " << params.period << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "RefinePeriodicPoint: NR checkpoint "
+            << (saved ? "saved" : "not saved because policy is PreserveExisting") << " at NR iter "
+            << params.iteration << " phase " << NRCheckpointPhaseName(params.phase) << " innerIter "
+            << params.innerIteration << " period " << params.period;
     }
 
     std::mutex m_Mutex;
@@ -794,6 +796,8 @@ ValidateExistingNRCheckpointPhase()
 // Returns true if the checkpoint matches expected_period/expected_prec.
 static bool
 TryReadNRCheckpointWithInner(mpf_complex &c,
+                             const mpf_complex &expectedCandidate,
+                             const mpf_t expectedRadius,
                              uint64_t expected_period,
                              mp_bitcnt_t expected_prec,
                              uint32_t &out_iteration,
@@ -815,12 +819,11 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
     ReadRequiredMpfField(f, "c_re", exp_re, digits_re);
     ReadRequiredMpfField(f, "c_im", exp_im, digits_im);
 
-    // Skip candidate, radius, intrinsicRadius
-    mp_exp_t skip_exp;
-    std::string skip_str;
-    ReadRequiredMpfField(f, "cand_re", skip_exp, skip_str);
-    ReadRequiredMpfField(f, "cand_im", skip_exp, skip_str);
-    ReadRequiredMpfField(f, "sqrRadius", skip_exp, skip_str);
+    mp_exp_t candidateRealExp, candidateImagExp, radiusExp, skip_exp;
+    std::string candidateRealDigits, candidateImagDigits, radiusDigits, skip_str;
+    ReadRequiredMpfField(f, "cand_re", candidateRealExp, candidateRealDigits);
+    ReadRequiredMpfField(f, "cand_im", candidateImagExp, candidateImagDigits);
+    ReadRequiredMpfField(f, "sqrRadius", radiusExp, radiusDigits);
     ReadRequiredMpfField(f, "intrinsicRadius", skip_exp, skip_str);
 
     uint64_t skip_numIters;
@@ -847,6 +850,21 @@ TryReadNRCheckpointWithInner(mpf_complex &c,
 
     if (header.period != expected_period || header.coordPrec != expected_prec)
         return false;
+
+    const auto matchesMpf =
+        [expected_prec](
+            const std::string &digits, mp_exp_t exponent, mpf_srcptr expected, const char *label) {
+            HighPrecision parsed{HighPrecision::SetPrecision::True, expected_prec};
+            const std::string value = ReconstructMpfString(digits, exponent);
+            if (mpf_set_str(parsed.backend(), value.c_str(), 10) != 0)
+                ThrowInvalidCheckpointField(label);
+            return mpf_cmp(parsed.backend(), expected) == 0;
+        };
+    if (!matchesMpf(candidateRealDigits, candidateRealExp, expectedCandidate.re, "cand_re") ||
+        !matchesMpf(candidateImagDigits, candidateImagExp, expectedCandidate.im, "cand_im") ||
+        !matchesMpf(radiusDigits, radiusExp, expectedRadius, "sqrRadius")) {
+        return false;
+    }
 
     auto setMpf =
         [](mpf_ptr destination, const std::string &digits, mp_exp_t exponent, const char *label) {
@@ -971,7 +989,7 @@ DeleteNRCheckpoint()
 //   stop when −ilogb(err) ≥ 2 * coord_prec
 // ------------------------------------------------------------
 template <typename IterType, typename T>
-static inline uint32_t
+static inline NRPolishResult
 RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                     const mpf_complex &c0_coord, // coord_prec (initial seed)
                     mpf_t sqrRadius_coord,       // coord_prec (R^2) for final accept/reject
@@ -1029,9 +1047,10 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
             coord_prec, scaleExp2_for_deriv_choice, coordExp2_max_abs, /*minPrec*/ 256);
     }
 
-    std::cout << "RefinePeriodicPoint: coord_prec(bits)=" << coord_prec
-              << ", deriv_prec(bits)=" << deriv_prec << " (scaleExp2=" << scaleExp2_for_deriv_choice
-              << ", coordExp2_max_abs=" << coordExp2_max_abs << ")\n";
+    FractalSharkLog::LogLine(__FILE__, __LINE__)
+        << "RefinePeriodicPoint: coord_prec(bits)=" << coord_prec << ", deriv_prec(bits)=" << deriv_prec
+        << " (scaleExp2=" << scaleExp2_for_deriv_choice << ", coordExp2_max_abs=" << coordExp2_max_abs
+        << ")";
 
     // ---------------- deriv temporaries ----------------
     mpf_t tr_d, ti_d, t1_d, t2_d;
@@ -1129,6 +1148,8 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         uint32_t savedIter = 0;
         InnerLoopCheckpointData inner{};
         if (TryReadNRCheckpointWithInner(c_coord,
+                                         c0_coord,
+                                         sqrRadius_coord,
                                          period,
                                          coord_prec,
                                          savedIter,
@@ -1139,26 +1160,29 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                          d2i_hdr,
                                          diagState)) {
             if (inner.phase == NRCheckpointPhase::Complete) {
-                std::cout << "RefinePeriodicPoint: checkpoint is already complete at iter " << savedIter
-                          << "; skipping main and final NR phases." << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "RefinePeriodicPoint: checkpoint is already complete at iter " << savedIter
+                    << "; skipping main and final NR phases.";
                 startIter = savedIter;
                 checkpointComplete = true;
             } else if (inner.phase == NRCheckpointPhase::Final) {
-                std::cout << "RefinePeriodicPoint: resuming final correction at innerIter "
-                          << inner.innerIteration << "; skipping main NR loop." << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "RefinePeriodicPoint: resuming final correction at innerIter "
+                    << inner.innerIteration << "; skipping main NR loop.";
                 startIter = savedIter;
                 finalInnerStartIter = inner.innerIteration;
                 resumeFinalPass = true;
             } else if (inner.innerIteration > 0) {
                 // Resuming mid-inner-loop: outer loop at savedIter, inner at innerIteration
-                std::cout << "RefinePeriodicPoint: resuming from checkpoint iter " << savedIter
-                          << " innerIter " << inner.innerIteration << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "RefinePeriodicPoint: resuming from checkpoint iter " << savedIter
+                    << " innerIter " << inner.innerIteration;
                 startIter = savedIter;
                 innerStartIter = inner.innerIteration;
             } else {
                 // Resuming at completed NR step: outer loop at savedIter + 1
-                std::cout << "RefinePeriodicPoint: resuming from checkpoint iter " << savedIter
-                          << std::endl;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "RefinePeriodicPoint: resuming from checkpoint iter " << savedIter;
                 startIter = savedIter + 1;
             }
         }
@@ -1170,9 +1194,11 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
     updateCandidateDistance();
 
     uint32_t it = startIter;
+    NRPolishStatus polishStatus = NRPolishStatus::Accepted;
     for (; !resumeFinalPass && !checkpointComplete && it < max_nr_iters; ++it) {
 
-        std::cout << "  Refinement iter " << it << " of " << max_nr_iters << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "  Refinement iter " << it << " of " << max_nr_iters;
 
         // Full forward eval at current c
         uint64_t innerStart = (it == startIter) ? innerStartIter : 0;
@@ -1247,8 +1273,10 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                            d2r_hdr,
                                            d2i_hdr,
                                            diagState});
-            std::cout << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed
-                      << "\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "RefinePeriodicPoint: aborted at NR iter " << it << " innerIter " << completed;
+            polishStatus = AbortMonitor::GetStopCalculatingGlobal() ? NRPolishStatus::Cancelled
+                                                                    : NRPolishStatus::NumericalFailure;
             break;
         }
 
@@ -1277,7 +1305,9 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
         }
 
         if (dzdcNorm_hdr.getMantissa() == 0.0) {
-            std::cout << "RefinePeriodicPoint: break after dzdcNorm==0\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "RefinePeriodicPoint: break after dzdcNorm==0";
+            polishStatus = NRPolishStatus::NumericalFailure;
             break;
         }
 
@@ -1300,7 +1330,8 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
             wantHalley = ((int)rho2_hdr.getExp() <= HalleyRho2ExpThreshold);
         }
 
-        std::cout << "    rho2=" << rho2_hdr.ToString<false>() << " wantHalley=" << wantHalley << "\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "    rho2=" << rho2_hdr.ToString<false>() << " wantHalley=" << wantHalley;
 
         // ------------------------------------------------------------
         // Compute step
@@ -1322,19 +1353,24 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                                                           t2_c);
 
             if (!ok) {
-                std::cout << "RefinePeriodicPoint: Halley denom singular, fallback to Newton\n";
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "RefinePeriodicPoint: Halley denom singular, fallback to Newton";
                 ok = ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
                     step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c);
             }
             if (!ok) {
-                std::cout << "RefinePeriodicPoint: break after Halley/Newton failure\n";
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "RefinePeriodicPoint: break after Halley/Newton failure";
+                polishStatus = NRPolishStatus::NumericalFailure;
                 break;
             }
         } else {
             // Newton step
             if (!ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
                     step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
-                std::cout << "RefinePeriodicPoint: break after Newton\n";
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "RefinePeriodicPoint: break after Newton";
+                polishStatus = NRPolishStatus::NumericalFailure;
                 break;
             }
         }
@@ -1418,39 +1454,44 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                                  0));
 
         // Print diagnostics between outer iterations.
-        std::cout << "  NR step " << it << " diag: rho2_exp2=" << rho2_hdr.getExp()
-                  << " rho2_mantissa=" << rho2_hdr.getMantissa() << ", err_exp2=" << err_hdr.getExp()
-                  << " err_mantissa=" << err_hdr.getMantissa()
-                  << ", step_norm_exp2=" << normStep_hdr.getExp()
-                  << " step_norm_mantissa=" << normStep_hdr.getMantissa()
-                  << ", z_mag2=" << diagState.z_mag2
-                  << ", |c-cand|2_exp2=" << diagState.c_cand_dist2.getExp()
-                  << " |c-cand|2_mantissa=" << diagState.c_cand_dist2.getMantissa()
-                  << ", bits=" << diagState.normalized_bits
-                  << ", est_remaining=" << diagState.est_remaining
-                  << (wantHalley ? " (Halley)" : " (Newton)") << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "  NR step " << it << " diag: rho2_exp2=" << rho2_hdr.getExp()
+            << " rho2_mantissa=" << rho2_hdr.getMantissa() << ", err_exp2=" << err_hdr.getExp()
+            << " err_mantissa=" << err_hdr.getMantissa() << ", step_norm_exp2=" << normStep_hdr.getExp()
+            << " step_norm_mantissa=" << normStep_hdr.getMantissa() << ", z_mag2=" << diagState.z_mag2
+            << ", |c-cand|2_exp2=" << diagState.c_cand_dist2.getExp()
+            << " |c-cand|2_mantissa=" << diagState.c_cand_dist2.getMantissa()
+            << ", bits=" << diagState.normalized_bits << ", est_remaining=" << diagState.est_remaining
+            << (wantHalley ? " (Halley)" : " (Newton)");
 
         const int e = (int)err_hdr.getExp();
         if (-e >= targetExp) {
-            std::cout << "RefinePeriodicPoint: stop with err_hdr=" << err_hdr.ToString<false>()
-                      << " (err_exp2=" << e << " >= targetExp2=" << targetExp << ")\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "RefinePeriodicPoint: stop with err_hdr=" << err_hdr.ToString<false>()
+                << " (err_exp2=" << e << " >= targetExp2=" << targetExp << ")";
             break;
         }
 
         // Check for user abort (Ctrl held 3s sets flag, Escape cancels it).
         // The latest checkpoint write has already been requested when enabled.
         if (AbortMonitor::GetStopCalculatingGlobal()) {
-            std::cout << "RefinePeriodicPoint: aborted at iter " << it << "\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "RefinePeriodicPoint: aborted at iter " << it;
+            polishStatus = NRPolishStatus::Cancelled;
             break;
         }
     }
 
     // Skip final correction + accept/reject if aborted or already completed.
-    if (!checkpointComplete && !AbortMonitor::GetStopCalculatingGlobal()) {
+    if (AbortMonitor::GetStopCalculatingGlobal()) {
+        polishStatus = NRPolishStatus::Cancelled;
+    }
+    if (!checkpointComplete && polishStatus == NRPolishStatus::Accepted) {
         // ---------------- Imagina final correction pass ----------------
         // Keep this Newton-only (matches Imagina + avoids Halley denom corner cases).
-        std::cout << "RefinePeriodicPoint: starting final correction phase at innerIter "
-                  << finalInnerStartIter << std::endl;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "RefinePeriodicPoint: starting final correction phase at innerIter "
+            << finalInnerStartIter;
 
         NRCheckpointParams finalParams{c_coord.re,
                                        c_coord.im,
@@ -1523,11 +1564,16 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
                                            d2r_hdr,
                                            d2i_hdr,
                                            diagState});
-            std::cout << "RefinePeriodicPoint: aborted during final correction at innerIter "
-                      << finalCompleted << "\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "RefinePeriodicPoint: aborted during final correction at innerIter "
+                << finalCompleted;
+            polishStatus = AbortMonitor::GetStopCalculatingGlobal() ? NRPolishStatus::Cancelled
+                                                                    : NRPolishStatus::NumericalFailure;
         } else {
-            if (ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
+            if (!ComputeNewtonStep_mpf_coord_from_deriv<IterType, T>(
                     step_coord, z_coord, dzdc_deriv, dzdc_coord, denom_c, tr_c, ti_c, t1_c, t2_c)) {
+                polishStatus = NRPolishStatus::NumericalFailure;
+            } else {
                 mpf_sub(c_coord.re, c_coord.re, step_coord.re);
                 mpf_sub(c_coord.im, c_coord.im, step_coord.im);
             }
@@ -1536,37 +1582,38 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
             mpf_complex_sub(dc, c_coord, c0_coord);
             mpf_complex_norm(abs2_c, dc, t1_c, t2_c);
 
-            if (mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
+            if (polishStatus == NRPolishStatus::Accepted && mpf_cmp(abs2_c, sqrRadius_coord) > 0) {
                 mpf_set(c_coord.re, c0_coord.re);
                 mpf_set(c_coord.im, c0_coord.im);
-                it = 0;
+                polishStatus = NRPolishStatus::Rejected;
             }
             updateCandidateDistance();
 
-            // Keep checkpoint file — user can resume or re-refine later.
-            checkpointWriter.TriggerWrite(
-                std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
-                                                                        c_coord.im,
-                                                                        c0_coord.re,
-                                                                        c0_coord.im,
-                                                                        sqrRadius_coord,
-                                                                        intrinsicRadius_mpf,
-                                                                        period,
-                                                                        coord_prec,
-                                                                        it,
-                                                                        NRCheckpointPhase::Complete,
-                                                                        scaleExp2_for_deriv_choice,
-                                                                        numIterationsAtFind,
-                                                                        0,
-                                                                        z_coord.re,
-                                                                        z_coord.im,
-                                                                        dzdc_deriv.re,
-                                                                        dzdc_deriv.im,
-                                                                        deriv_prec,
-                                                                        d2r_hdr,
-                                                                        d2i_hdr,
-                                                                        diagState},
-                                                     0));
+            if (polishStatus == NRPolishStatus::Accepted) {
+                checkpointWriter.TriggerWrite(
+                    std::make_unique<CheckpointSnapshot>(NRCheckpointParams{c_coord.re,
+                                                                            c_coord.im,
+                                                                            c0_coord.re,
+                                                                            c0_coord.im,
+                                                                            sqrRadius_coord,
+                                                                            intrinsicRadius_mpf,
+                                                                            period,
+                                                                            coord_prec,
+                                                                            it,
+                                                                            NRCheckpointPhase::Complete,
+                                                                            scaleExp2_for_deriv_choice,
+                                                                            numIterationsAtFind,
+                                                                            0,
+                                                                            z_coord.re,
+                                                                            z_coord.im,
+                                                                            dzdc_deriv.re,
+                                                                            dzdc_deriv.im,
+                                                                            deriv_prec,
+                                                                            d2r_hdr,
+                                                                            d2i_hdr,
+                                                                            diagState},
+                                                         0));
+            }
         }
     }
 
@@ -1600,7 +1647,7 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 
     mpf_complex_clear(dc);
 
-    return it;
+    return {polishStatus, it};
 }
 
 // ------------------------------------------------------------
@@ -1612,17 +1659,17 @@ RefinePeriodicPoint(mpf_complex &c_coord,        // coord_prec in/out
 // - Runs Imagina-style mixed-precision NR polish
 // - Writes back to HighPrecision
 //
-// Returns: number of NR iterations performed (0 can mean "rejected").
+// Returns the outcome and number of NR iterations performed.
 // ------------------------------------------------------------
 template <class IterType, class T, PerturbExtras PExtras>
-IterType
+NRPolishResult
 FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
-    HighPrecision &cX_hp,
-    HighPrecision &cY_hp,
+    HighPrecision &cXHp,
+    HighPrecision &cYHp,
     IterType period,
-    mp_bitcnt_t coord_prec,
-    const T &sqrRadius_T,
-    int scaleExp2_for_deriv,
+    mp_bitcnt_t coordPrec,
+    const HighPrecision &sqrRadiusHp,
+    int scaleExp2ForDeriv,
     NRInnerLoopBackend backend,
     const HighPrecision &intrinsicRadius,
     uint64_t numIterationsAtFind,
@@ -1630,61 +1677,58 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_WithMPF(
 {
     ValidateExistingNRCheckpointPhase();
 
-    // ---- Convert inputs to MPF at coord_prec ----
+    // ---- Convert inputs to MPF at coordPrec ----
     mpf_complex c;
-    mpf_complex_init(c, coord_prec);
+    mpf_complex_init(c, coordPrec);
 
     mpf_complex c0;
-    mpf_complex_init(c0, coord_prec);
+    mpf_complex_init(c0, coordPrec);
 
     // Seed from HighPrecision backends
     // NOTE: HighPrecision::backend() is expected to be an mpf_t-compatible pointer.
-    mpf_set(c.re, (mpf_srcptr)cX_hp.backend());
-    mpf_set(c.im, (mpf_srcptr)cY_hp.backend());
+    mpf_set(c.re, (mpf_srcptr)cXHp.backend());
+    mpf_set(c.im, (mpf_srcptr)cYHp.backend());
 
     // Keep initial seed (Imagina reject check compares final c vs initial)
     mpf_set(c0.re, c.re);
     mpf_set(c0.im, c.im);
 
-    // Convert sqrRadius_T (T-space) -> mpf_t at coord_prec
-    mpf_t sqrRadius_mpf;
-    mpf_init2(sqrRadius_mpf, coord_prec);
-    {
-        HighPrecision r2_hp{sqrRadius_T};
-        mpf_set(sqrRadius_mpf, (mpf_srcptr)r2_hp.backend());
-    }
+    mpf_t sqrRadiusMpf;
+    mpf_init2(sqrRadiusMpf, coordPrec);
+    mpf_set(sqrRadiusMpf, sqrRadiusHp.backend());
 
     // Convert intrinsicRadius to mpf for checkpoint persistence
-    mpf_t ir_mpf;
-    mpf_init2(ir_mpf, coord_prec);
-    mpf_set(ir_mpf, (mpf_srcptr)intrinsicRadius.backend());
+    mpf_t intrinsicRadiusMpf;
+    mpf_init2(intrinsicRadiusMpf, coordPrec);
+    mpf_set(intrinsicRadiusMpf, (mpf_srcptr)intrinsicRadius.backend());
 
     // ---- Run Imagina-style polish ----
-    const uint32_t max_polish = 32;
+    const uint32_t maxPolish = 32;
 
-    const uint32_t iters = RefinePeriodicPoint<IterType, T>(c,
-                                                            c0,
-                                                            sqrRadius_mpf,
-                                                            (uint64_t)period,
-                                                            coord_prec,
-                                                            scaleExp2_for_deriv,
-                                                            max_polish,
-                                                            backend,
-                                                            ir_mpf,
-                                                            numIterationsAtFind,
-                                                            checkpointSavePolicy);
+    const NRPolishResult result = RefinePeriodicPoint<IterType, T>(c,
+                                                                   c0,
+                                                                   sqrRadiusMpf,
+                                                                   (uint64_t)period,
+                                                                   coordPrec,
+                                                                   scaleExp2ForDeriv,
+                                                                   maxPolish,
+                                                                   backend,
+                                                                   intrinsicRadiusMpf,
+                                                                   numIterationsAtFind,
+                                                                   checkpointSavePolicy);
 
-    // ---- Write back ----
-    cX_hp = HighPrecision{c.re};
-    cY_hp = HighPrecision{c.im};
+    if (result.status == NRPolishStatus::Accepted) {
+        cXHp = HighPrecision{c.re};
+        cYHp = HighPrecision{c.im};
+    }
 
     // ---- Cleanup ----
-    mpf_clear(ir_mpf);
-    mpf_clear(sqrRadius_mpf);
+    mpf_clear(intrinsicRadiusMpf);
+    mpf_clear(sqrRadiusMpf);
     mpf_complex_clear(c0);
     mpf_complex_clear(c);
 
-    return (IterTypeFull)iters;
+    return result;
 }
 
 // Periodicity state for periodic-point detection
@@ -1761,6 +1805,26 @@ template <class IterType, class T, class C> struct PeriodicityPP {
 };
 
 template <class IterType, class T, PerturbExtras PExtras>
+struct FeatureFinder<IterType, T, PExtras>::PeriodSearchState {
+    PeriodSearchState()
+    {
+        dz.Reduce();
+        z.Reduce();
+        dzdc.Reduce();
+        zcoeff.Reduce();
+    }
+
+    IterTypeFull iteration{};
+    IterTypeFull refIteration{};
+    C dz{};
+    C z{};
+    C dzdc{};
+    C zcoeff{};
+    PeriodicityPP<IterType, T, C> periodicity{};
+    bool zcoeffValid{true};
+};
+
+template <class IterType, class T, PerturbExtras PExtras>
 T
 FeatureFinder<IterType, T, PExtras>::ChebAbs(const C &a) const
 {
@@ -1769,7 +1833,7 @@ FeatureFinder<IterType, T, PExtras>::ChebAbs(const C &a) const
 
 template <class IterType, class T, PerturbExtras PExtras>
 T
-FeatureFinder<IterType, T, PExtras>::ToDouble(const HighPrecision &v)
+FeatureFinder<IterType, T, PExtras>::ToScalar(const HighPrecision &v)
 {
     return T{v};
 }
@@ -1815,7 +1879,8 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_Direct(const C &c,
     HdrReduce(R);
     const T zero = T{};
     if (HdrCompareToBothPositiveReducedLE(R, zero)) {
-        std::cout << "FeatureFinder::Evaluate_FindPeriod_Direct: R must be positive.\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "FeatureFinder::Evaluate_FindPeriod_Direct: R must be positive.";
         return false;
     }
 
@@ -1877,8 +1942,8 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_FindPeriod_Direct(const C &c,
                 return true;
             }
 
-            std::cout
-                << "FeatureFinder::Evaluate_FindPeriod_Direct: candidate period exceeds IterType.\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "FeatureFinder::Evaluate_FindPeriod_Direct: candidate period exceeds IterType.";
             return false;
         }
     }
@@ -1922,7 +1987,8 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PeriodResidualAndDzdc_Direct(
         HdrReduce(normSq);
 
         if (HdrCompareToBothPositiveReducedGT(normSq, escape2)) {
-            std::cout << "FeatureFinder::Evaluate_PeriodResidualAndDzdc_Direct: orbit escaped.\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "FeatureFinder::Evaluate_PeriodResidualAndDzdc_Direct: orbit escaped.";
             return false;
         }
     }
@@ -1987,10 +2053,11 @@ bool
 FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     const PerturbationResults<IterType, T, PExtras> &results,
     RuntimeDecompressor<IterType, T, PExtras> &dec,
-    const HighPrecision &cX_hp,
-    const HighPrecision &cY_hp,
+    const HighPrecision &cXHp,
+    const HighPrecision &cYHp,
     T R,
     IterTypeFull maxIters,
+    PeriodSearchState *resumeState,
     IterType &ioPeriod,
     C &outDiff,
     C &outDzdc,
@@ -2003,9 +2070,9 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     const T escape2 = HdrReduce(T{4096.0});
 
     // dc = current c - reference center (HP -> T)
-    const HighPrecision dcX_hp = cX_hp - results.GetHiX();
-    const HighPrecision dcY_hp = cY_hp - results.GetHiY();
-    C dc(ToDouble(dcX_hp), ToDouble(dcY_hp));
+    const HighPrecision dcXHp = cXHp - results.GetHiX();
+    const HighPrecision dcYHp = cYHp - results.GetHiY();
+    C dc(ToScalar(dcXHp), ToScalar(dcYHp));
     dc.Reduce();
 
     const size_t refOrbitLength = (size_t)results.GetCountOrbitEntries();
@@ -2027,7 +2094,8 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
     T InvScale2 = InvScalingFactor * InvScalingFactor;
     HdrReduce(InvScale2);
 
-    PeriodicityPP<IterType, T, C> pp;
+    PeriodSearchState freshState{};
+    PeriodSearchState &state = resumeState != nullptr ? *resumeState : freshState;
     IterType prePeriod = 0;
     IterType period = 0;
 
@@ -2035,54 +2103,60 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
         HdrReduce(R);
         if (HdrCompareToBothPositiveReducedLE(R, zero))
             return false;
-        pp.Init(R);
-        // pp.Init already builds R^2, scale = (0.25)^2
+        if (resumeState == nullptr) {
+            state.periodicity.Init(R);
+        }
     }
 
-    size_t refIteration = 0;
-    C dz{}, z{};
-    dz.Reduce();
-    z.Reduce();
+    if (state.iteration > cap || state.refIteration >= refOrbitLength) {
+        return false;
+    }
 
-    // Stored scaled dzdc/zcoeff:
-    C dzdc{};   // stored = true * ScalingFactor
-    C zcoeff{}; // stored = true * ScalingFactor
-    dzdc.Reduce();
-    zcoeff.Reduce();
-
-    for (IterTypeFull n = 0; n < cap; ++n) {
-        // if Iteration==0 zcoeff = ScalingFactor else zcoeff *= 2*z
-        if (n == 0) {
-            zcoeff = ScalingFactorC;
-        } else {
-            zcoeff = zcoeff * (z * two);
+    for (IterTypeFull n = state.iteration; n < cap; ++n) {
+        // A completed LA step may end at the final reference entry. Rebase
+        // before reading the next pair of reference values.
+        if (state.refIteration >= refOrbitLength - 1) {
+            state.dz = state.z;
+            state.dz.Reduce();
+            state.refIteration = 0;
         }
-        zcoeff.Reduce();
+
+        // if Iteration==0 zcoeff = ScalingFactor else zcoeff *= 2*z
+        if (state.zcoeffValid) {
+            if (n == 0) {
+                state.zcoeff = ScalingFactorC;
+            } else {
+                state.zcoeff = state.zcoeff * (state.z * two);
+            }
+            state.zcoeff.Reduce();
+        }
 
         // scaled dzdc: dzdc = dzdc*(2z) + ScalingFactor
-        dzdc = dzdc * (z * two) + ScalingFactorC;
-        dzdc.Reduce();
+        state.dzdc = state.dzdc * (state.z * two) + ScalingFactorC;
+        state.dzdc.Reduce();
 
         // PT delta recurrence
-        const C zref = results.GetComplex(dec, refIteration);
-        dz = dz * (zref + z) + dc;
-        dz.Reduce();
+        const C zref = results.GetComplex(dec, static_cast<size_t>(state.refIteration));
+        state.dz = state.dz * (zref + state.z) + dc;
+        state.dz.Reduce();
 
-        refIteration++;
-        const C zrefNext = results.GetComplex(dec, refIteration);
-        z = zrefNext + dz;
-        z.Reduce();
+        state.refIteration++;
+        const C zrefNext = results.GetComplex(dec, static_cast<size_t>(state.refIteration));
+        state.z = zrefNext + state.dz;
+        state.z.Reduce();
+        state.iteration = n + 1;
 
         // Rebasing check
-        T dzNorm = dz.norm_squared();
+        T dzNorm = state.dz.norm_squared();
         HdrReduce(dzNorm);
-        T zNorm = z.norm_squared();
+        T zNorm = state.z.norm_squared();
         HdrReduce(zNorm);
 
-        if (refIteration >= refOrbitLength - 1 || HdrCompareToBothPositiveReducedLT(zNorm, dzNorm)) {
-            dz = z;
-            dz.Reduce();
-            refIteration = 0;
+        if (state.refIteration >= refOrbitLength - 1 ||
+            HdrCompareToBothPositiveReducedLT(zNorm, dzNorm)) {
+            state.dz = state.z;
+            state.dz.Reduce();
+            state.refIteration = 0;
         }
 
         // Escape check
@@ -2096,7 +2170,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
             //   norm(dzdc) in trigger is true dzdc norm
             //
             // dzdc is stored scaled, so convert norm to true:
-            T dzdcNormStored = dzdc.norm_squared();
+            T dzdcNormStored = state.dzdc.norm_squared();
             HdrReduce(dzdcNormStored);
 
             T dzdcNormTrue = dzdcNormStored * InvScale2;
@@ -2104,15 +2178,18 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
 
             // Iteration increments then checks; your n is 0-based
             // At end of loop, we've computed z_{n+1}, dzdc at same time.
-            const IterType Iteration = (IterType)(n + 1);
+            if (state.iteration > static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
+                return false;
+            }
+            const IterType iteration = static_cast<IterType>(state.iteration);
 
-            if (pp.CheckPeriodicity(zNorm, dzdcNormTrue, Iteration, prePeriod, period)) {
+            if (state.periodicity.CheckPeriodicity(zNorm, dzdcNormTrue, iteration, prePeriod, period)) {
                 ioPeriod = period; // prePeriod is always 0 here
 
                 // Unscale outputs (to match your direct conventions)
-                outDiff = z;
-                outDzdc = dzdc * InvScalingFactorC;
-                outZcoeff = zcoeff * InvScalingFactorC;
+                outDiff = state.z;
+                outDzdc = state.dzdc * InvScalingFactorC;
+                outZcoeff = state.zcoeffValid ? state.zcoeff * InvScalingFactorC : ScalingFactorC;
                 outDiff.Reduce();
                 outDzdc.Reduce();
                 outZcoeff.Reduce();
@@ -2125,26 +2202,19 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
 
     if constexpr (FindPeriod) {
         return false;
+    } else {
+        // Fixed-period path: unscale outputs.
+        outDiff = state.z;
+        outResidual2 = state.z.norm_squared();
+        HdrReduce(outResidual2);
+
+        outDzdc = state.dzdc * InvScalingFactorC;
+        outZcoeff = state.zcoeff * InvScalingFactorC;
+        outDiff.Reduce();
+        outDzdc.Reduce();
+        outZcoeff.Reduce();
+        return true;
     }
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
-#endif
-    // Fixed-period path: unscale outputs
-    outDiff = z;
-    outResidual2 = z.norm_squared();
-    HdrReduce(outResidual2);
-
-    outDzdc = dzdc * InvScalingFactorC;
-    outZcoeff = zcoeff * InvScalingFactorC;
-    outDiff.Reduce();
-    outDzdc.Reduce();
-    outZcoeff.Reduce();
-    return true;
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 }
 
 // =====================================================================================
@@ -2185,8 +2255,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_PT(
 //    like PT's stored-derivative renorm scheme.
 // =====================================================================================
 template <class IterType, class T, PerturbExtras PExtras>
-template <bool FindPeriod>
-bool
+typename FeatureFinder<IterType, T, PExtras>::LASearchResult
 FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     const PerturbationResults<IterType, T, PExtras> &results,
     LAReference<IterType, T, SubType, PExtras> &laRef,
@@ -2194,6 +2263,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     const HighPrecision &cYHp,
     T R,
     IterTypeFull maxIters,
+    PeriodSearchState &state,
     IterType &ioPeriod,
     C &outDiff,
     C &outDzdc,
@@ -2201,7 +2271,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     T &outResidual2) const
 {
     if (!laRef.IsValid()) {
-        return false;
+        return LASearchResult::RetryPT;
     }
 
     const T zero = T{};
@@ -2211,37 +2281,30 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     // --------------------------
     // Periodicity state (PT/direct semantics)
     // --------------------------
-    PeriodicityPP<IterType, T, C> pp;
     IterType prePeriod = 0;
     IterType period = 0;
 
-    if constexpr (FindPeriod) {
-        HdrReduce(R);
-        if (HdrCompareToBothPositiveReducedLE(R, zero)) {
-            return false;
-        }
-        pp.Init(R);
+    HdrReduce(R);
+    if (HdrCompareToBothPositiveReducedLE(R, zero)) {
+        return LASearchResult::RetryPT;
     }
+    state.periodicity.Init(R);
+    state.zcoeffValid = false;
 
     // --------------------------
     // dc = c - referenceCenter
     // --------------------------
     const HighPrecision dcXHp = cXHp - results.GetHiX();
     const HighPrecision dcYHp = cYHp - results.GetHiY();
-    C dc(ToDouble(dcXHp), ToDouble(dcYHp));
+    C dc(ToScalar(dcXHp), ToScalar(dcYHp));
     dc.Reduce();
 
     // --------------------------
     // Cap
     // --------------------------
-    IterTypeFull cap;
-    if constexpr (FindPeriod) {
-        cap = maxIters;
-    } else {
-        cap = static_cast<IterTypeFull>(ioPeriod);
-    }
+    const IterTypeFull cap = maxIters;
     if (cap < 1) {
-        return false;
+        return LASearchResult::RetryPT;
     }
 
     // =========================================================================
@@ -2253,7 +2316,6 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     int scaleExp = 0;
     const T ScalingFactor = HdrReduce(HdrLdexp(one, -scaleExp));   // 2^-scaleExp
     const T InvScalingFactor = HdrReduce(HdrLdexp(one, scaleExp)); // 2^scaleExp
-    const C ScalingFactorC(ScalingFactor, T{});
     const C InvScalingFactorC(InvScalingFactor, T{});
     T InvScale2 = InvScalingFactor * InvScalingFactor;
     HdrReduce(InvScale2);
@@ -2261,155 +2323,115 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
     // =========================================================================
     // State
     // =========================================================================
-    C dz{};
-    dz.Reduce(); // delta state
-    C z{};
-    z.Reduce(); // absolute z
-
-    // Stored (scaled) derivative dzdc
-    C dzdc{};
-    dzdc.Reduce(); // stored = true * ScalingFactor
-
-    // We do NOT use LA "zcoeff" for downstream intrinsic radius / MPF.
-    // Set it to 1 at output as a sentinel.
+    // Period discovery does not use zcoeff. Fixed-period PT evaluates it later.
     const C oneC(one, T{});
 
-    IterTypeFull iteration = 0;
     const IterType laStageCount = laRef.GetLAStageCount();
 
-    // Process stages coarse->fine (same as your previous loop)
-    for (IterType currentLAStage = laStageCount; currentLAStage > 0 && iteration < cap;) {
+    // The next-stage index is relative to the finer stage. Preserve it when
+    // descending; the orbit and derivative state already represent "iteration".
+    for (IterType currentLAStage = laStageCount; currentLAStage > 0 && state.iteration < cap;) {
         --currentLAStage;
 
         const IterType laIndex = laRef.getLAIndex(currentLAStage);
         const IterType macroItCount = laRef.getMacroItCount(currentLAStage);
 
-        // Stage invalidity check uses LAThresholdC idea
-        if (laRef.isLAStageInvalid(laIndex, dc)) {
+        if (state.refIteration >= macroItCount) {
+            return LASearchResult::RetryPT;
+        }
+
+        const IterType stageRefIteration = static_cast<IterType>(state.refIteration);
+        if (laRef.isLAStageInvalid(laIndex + stageRefIteration, dc)) {
+            const auto stageEntry = laRef.getLA(laIndex,
+                                                state.dz,
+                                                stageRefIteration,
+                                                static_cast<IterType>(state.iteration),
+                                                static_cast<IterType>(cap));
+            state.refIteration = stageEntry.nextStageLAindex;
             continue;
         }
 
-        IterType refIteration = 0;
-
-        while (iteration < cap) {
+        while (state.iteration < cap) {
 
             // Get LA step descriptor for this block
-            auto las = laRef.getLA(
-                laIndex, dz, refIteration, static_cast<IterType>(iteration), static_cast<IterType>(cap));
+            auto las = laRef.getLA(laIndex,
+                                   state.dz,
+                                   static_cast<IterType>(state.refIteration),
+                                   static_cast<IterType>(state.iteration),
+                                   static_cast<IterType>(cap));
 
             if (las.unusable) {
-                // Jump within this stage
-                const IterType nextRef = las.nextStageLAindex;
-
-                if (nextRef == refIteration || nextRef >= macroItCount) {
-                    // can't progress at this stage -> go finer stage
-                    break;
-                }
-
-                refIteration = nextRef;
-                continue;
+                state.refIteration = las.nextStageLAindex;
+                break;
             }
 
             // ------------------------------------------------------------
             // Update dzdc (stored scaled) for this macro-step
             // MUST use the scaled API: EvaluateDzdcDeep(dz, dzdc, ScalingFactor)
             // ------------------------------------------------------------
-            las.EvaluateDzdcDeep(dz, dzdc, ScalingFactor);
-            dzdc.Reduce();
+            las.EvaluateDzdcDeep(state.dz, state.dzdc, ScalingFactor);
+            state.dzdc.Reduce();
 
             // ------------------------------------------------------------
             // Advance dz for this macro-step
             // ------------------------------------------------------------
-            dz = las.Evaluate(dc);
-            dz.Reduce();
+            state.dz = las.Evaluate(dc);
+            state.dz.Reduce();
 
             // Advance iteration/refIteration
-            iteration += las.step;
-            refIteration++;
+            state.iteration += las.step;
+            state.refIteration++;
 
             // Absolute z at the end of the macro-step
-            z = las.getZ(dz);
-            z.Reduce();
+            state.z = las.getZ(state.dz);
+            state.z.Reduce();
 
             // Escape check (like PT/direct)
-            T zNorm = z.norm_squared();
+            T zNorm = state.z.norm_squared();
             HdrReduce(zNorm);
             if (HdrCompareToBothPositiveReducedGT(zNorm, escape2)) {
-                return false;
+                return LASearchResult::RetryPT;
             }
 
             // Rebase rule (match PT)
-            if (refIteration >= macroItCount ||
-                HdrCompareToBothPositiveReducedGT(ChebAbs(dz), ChebAbs(z))) {
-                dz = z;
-                dz.Reduce();
-                refIteration = 0;
+            if (state.refIteration >= macroItCount ||
+                HdrCompareToBothPositiveReducedGT(ChebAbs(state.dz), ChebAbs(state.z))) {
+                state.dz = state.z;
+                state.dz.Reduce();
+                state.refIteration = 0;
             }
 
             // ------------------------------------------------------------
             // Period detection (PT/direct semantics)
             // ------------------------------------------------------------
-            if constexpr (FindPeriod) {
-                // TRUE ||dzdc||^2 = STORED ||dzdc||^2 * InvScale2
-                T dzdcNormStored = dzdc.norm_squared();
-                HdrReduce(dzdcNormStored);
+            T dzdcNormStored = state.dzdc.norm_squared();
+            HdrReduce(dzdcNormStored);
 
-                T dzdcNormTrue = dzdcNormStored * InvScale2;
-                HdrReduce(dzdcNormTrue);
+            T dzdcNormTrue = dzdcNormStored * InvScale2;
+            HdrReduce(dzdcNormTrue);
 
-                // iteration is IterTypeFull; PP expects IterType
-                if (iteration <= static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
-                    const IterType IterIt = static_cast<IterType>(iteration);
-
-                    if (pp.CheckPeriodicity(zNorm, dzdcNormTrue, IterIt, prePeriod, period)) {
-                        ioPeriod = period;
-
-                        // Outputs:
-                        outDiff = z; // same as PT/direct convention
-
-                        // Unscale dzdc to match PT/direct
-                        outDzdc = dzdc * InvScalingFactorC;
-                        outDzdc.Reduce();
-
-                        // DO NOT use LA zcoeff. Provide a safe sentinel value.
-                        outZcoeff = oneC;
-                        outZcoeff.Reduce();
-
-                        outResidual2 = zNorm;
-                        return true;
-                    }
-                } else {
-                    // period won't fit IterType
-                    return false;
-                }
+            if (state.iteration > static_cast<IterTypeFull>(std::numeric_limits<IterType>::max())) {
+                return LASearchResult::RetryPT;
             }
-        } // while iteration < cap
-    } // for stages
-
-    // If we didn't reach cap, caller should fall back (PT/direct)
-    if (iteration < cap) {
-        return false;
+            const IterType iteration = static_cast<IterType>(state.iteration);
+            if (state.periodicity.CheckPeriodicity(zNorm, dzdcNormTrue, iteration, prePeriod, period)) {
+                ioPeriod = period;
+                outDiff = state.z;
+                outDzdc = state.dzdc * InvScalingFactorC;
+                outDzdc.Reduce();
+                outZcoeff = oneC;
+                outZcoeff.Reduce();
+                outResidual2 = zNorm;
+                return LASearchResult::Found;
+            }
+        }
     }
 
-    // Fixed-period evaluation path: return final state at period==cap
-    if constexpr (!FindPeriod) {
-        // We made it to iteration==cap (or beyond).
-        // Output z, dzdc_true, dummy zcoeff.
-        outDiff = z;
-        outResidual2 = z.norm_squared();
-        HdrReduce(outResidual2);
-
-        outDzdc = dzdc * InvScalingFactorC;
-        outDzdc.Reduce();
-
-        outZcoeff = oneC;
-        outZcoeff.Reduce();
-
-        return true;
+    if (state.iteration > 0 && state.iteration < cap &&
+        state.refIteration < results.GetCountOrbitEntries()) {
+        return LASearchResult::ContinuePT;
     }
-
-    // FindPeriod: reached cap without trigger
-    return false;
+    return LASearchResult::RetryPT;
 }
 
 // DirectEvaluator::Eval implementation
@@ -2443,10 +2465,10 @@ FeatureFinder<IterType, T, PExtras>::DirectEvaluator::Eval(const C &c,
 template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
 bool
-FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
-                                                       const HighPrecision &cX_hp,
-                                                       const HighPrecision &cY_hp,
-                                                       T SqrRadius,
+FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval([[maybe_unused]] const C &c,
+                                                       const HighPrecision &cXHp,
+                                                       const HighPrecision &cYHp,
+                                                       T sqrRadius,
                                                        IterTypeFull maxIters,
                                                        IterType &ioPeriod,
                                                        C &outDiff,
@@ -2454,90 +2476,69 @@ FeatureFinder<IterType, T, PExtras>::LAEvaluator::Eval(const C &c,
                                                        C &outZcoeff,
                                                        T &outResidual2) const
 {
-    T R = HdrSqrt(SqrRadius);
-
+    T radius = HdrSqrt(sqrRadius);
     if constexpr (FindPeriod) {
-        // Try LA first if valid
-        if (laRef->IsValid()) {
-            if (self->template Evaluate_LA<FindPeriod>(*results,
-                                                       *laRef,
-                                                       cX_hp,
-                                                       cY_hp,
-                                                       R,
-                                                       maxIters,
-                                                       ioPeriod,
-                                                       outDiff,
-                                                       outDzdc,
-                                                       outZcoeff,
-                                                       outResidual2)) {
-                return true;
-            }
-
-            std::cout << "[LA->PT fallback] INFO: LA eval incomplete; trying PT at same period cap="
-                      << (uint64_t)ioPeriod << "\n";
-        } else {
-            std::cout << "[LA->PT fallback] INFO: LA reference invalid; trying PT at same period cap="
-                      << (uint64_t)ioPeriod << "\n";
-        }
-
-        // Fall back to PT
-        if (self->template Evaluate_PT<FindPeriod>(*results,
-                                                   *dec,
-                                                   cX_hp,
-                                                   cY_hp,
-                                                   R,
-                                                   maxIters,
-                                                   ioPeriod,
-                                                   outDiff,
-                                                   outDzdc,
-                                                   outZcoeff,
-                                                   outResidual2)) {
+        PeriodSearchState state{};
+        const LASearchResult laResult = self->Evaluate_LA(*results,
+                                                          *laRef,
+                                                          cXHp,
+                                                          cYHp,
+                                                          radius,
+                                                          maxIters,
+                                                          state,
+                                                          ioPeriod,
+                                                          outDiff,
+                                                          outDzdc,
+                                                          outZcoeff,
+                                                          outResidual2);
+        if (laResult == LASearchResult::Found) {
             return true;
         }
-
-        std::cout << "[LA->PT fallback] INFO: PT eval failed" << std::endl;
-
-        return false;
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Temporary LA status: result=" << static_cast<int>(laResult)
+            << " iteration=" << state.iteration << " reference=" << state.refIteration;
+        // Keep the fresh PT retry for invalid or uncertain LA state.
+        PeriodSearchState *resumeState = laResult == LASearchResult::ContinuePT ? &state : nullptr;
+        if (resumeState != nullptr) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Temporary LA-to-PT probe: iteration=" << state.iteration
+                << " reference=" << state.refIteration;
+        }
+        return self->template Evaluate_PT<true>(*results,
+                                                *dec,
+                                                cXHp,
+                                                cYHp,
+                                                radius,
+                                                maxIters,
+                                                resumeState,
+                                                ioPeriod,
+                                                outDiff,
+                                                outDzdc,
+                                                outZcoeff,
+                                                outResidual2);
+    } else {
+        return self->template Evaluate_PT<false>(*results,
+                                                 *dec,
+                                                 cXHp,
+                                                 cYHp,
+                                                 radius,
+                                                 static_cast<IterTypeFull>(ioPeriod),
+                                                 nullptr,
+                                                 ioPeriod,
+                                                 outDiff,
+                                                 outDzdc,
+                                                 outZcoeff,
+                                                 outResidual2);
     }
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
-#endif
-    // Final fallback to direct (for non-FindPeriod case)
-    // Use the requested period as cap (your Evaluate_PT ignores maxIters for !FindPeriod)
-    // Note: Here maxIters is actually passed as "period" by your caller, but we ignore it.
-    if (self->template Evaluate_PT<false>(*results,
-                                          *dec,
-                                          cX_hp,
-                                          cY_hp,
-                                          R,
-                                          /*maxIters*/ (IterTypeFull)ioPeriod,
-                                          ioPeriod,
-                                          outDiff,
-                                          outDzdc,
-                                          outZcoeff,
-                                          outResidual2)) {
-        return true;
-    }
-
-    std::cout << "[LA->Direct fallback] INFO: LA/PT eval failed; trying DIRECT at period="
-              << (uint64_t)ioPeriod << "\n";
-    return self->Evaluate_PeriodResidualAndDzdc_Direct(
-        c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 }
 
-// PTEvaluator::Eval implementation
 // PTEvaluator::Eval implementation
 template <class IterType, class T, PerturbExtras PExtras>
 template <bool FindPeriod>
 bool
-FeatureFinder<IterType, T, PExtras>::PTEvaluator::Eval(const C &c,
-                                                       const HighPrecision &cX_hp, // ADD
-                                                       const HighPrecision &cY_hp, // ADD
+FeatureFinder<IterType, T, PExtras>::PTEvaluator::Eval([[maybe_unused]] const C &c,
+                                                       const HighPrecision &cXHp,
+                                                       const HighPrecision &cYHp,
                                                        T SqrRadius,
                                                        IterTypeFull maxIters,
                                                        IterType &ioPeriod,
@@ -2549,10 +2550,11 @@ FeatureFinder<IterType, T, PExtras>::PTEvaluator::Eval(const C &c,
     T R = HdrSqrt(SqrRadius);
     if (self->template Evaluate_PT<FindPeriod>(*results,
                                                *dec,
-                                               cX_hp,
-                                               cY_hp,
+                                               cXHp,
+                                               cYHp,
                                                R,
                                                maxIters,
+                                               nullptr,
                                                ioPeriod,
                                                outDiff,
                                                outDzdc,
@@ -2561,21 +2563,7 @@ FeatureFinder<IterType, T, PExtras>::PTEvaluator::Eval(const C &c,
         return true;
     }
 
-    if constexpr (!FindPeriod) {
-        std::cout << "[PT->Direct fallback] INFO: PT eval failed; trying DIRECT at same period="
-                  << (uint64_t)ioPeriod << "\n";
-        return self->Evaluate_PeriodResidualAndDzdc_Direct(
-            c, ioPeriod, outDiff, outDzdc, outZcoeff, outResidual2);
-    }
-
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4702) // unreachable code — dead when FindPeriod==true
-#endif
     return false;
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 }
 
 // Simplified FindPeriodicPoint (Direct)
@@ -2626,8 +2614,8 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(
     if (feature.IsRefined())
         return true;
 
-    HighPrecision cX_hp = cand->cX_hp;
-    HighPrecision cY_hp = cand->cY_hp;
+    HighPrecision cXHp = cand->cX_hp;
+    HighPrecision cYHp = cand->cY_hp;
 
     // period conversion
     IterType period{};
@@ -2636,26 +2624,27 @@ FeatureFinder<IterType, T, PExtras>::RefinePeriodicPoint_HighPrecision(
     period = (IterType)cand->period;
 
     // Use the candidate's stored radius^2 so Phase B is independent of the FeatureSummary radius.
-    const HighPrecision &sqrRadius_hp = cand->sqrRadius_hp;
+    const HighPrecision &sqrRadiusHp = cand->sqrRadius_hp;
 
     // MPF polish only
-    [[maybe_unused]] const IterType refineIters =
-        RefinePeriodicPoint_WithMPF(cX_hp,
-                                    cY_hp,
-                                    period,
-                                    cand->mpfPrecBits,
-                                    /*sqrRadius_T*/ T{sqrRadius_hp},
-                                    cand->scaleExp2_for_mpf,
-                                    backend,
-                                    feature.GetIntrinsicRadius(),
-                                    feature.GetNumIterationsAtFind(),
-                                    checkpointSavePolicy);
+    const NRPolishResult polish = RefinePeriodicPoint_WithMPF(cXHp,
+                                                              cYHp,
+                                                              period,
+                                                              cand->mpfPrecBits,
+                                                              sqrRadiusHp,
+                                                              cand->scaleExp2_for_mpf,
+                                                              backend,
+                                                              feature.GetIntrinsicRadius(),
+                                                              feature.GetNumIterationsAtFind(),
+                                                              checkpointSavePolicy);
+    if (polish.status != NRPolishStatus::Accepted) {
+        return false;
+    }
 
     // Commit only the refined coordinates + period.
     // Preserve existing intrinsicRadius if present — the refinement
     // improves coordinates but doesn't recompute intrinsic radius.
-    feature.SetFound(
-        cX_hp, cY_hp, (IterType)period, feature.GetResidual2(), feature.GetIntrinsicRadius());
+    feature.SetFound(cXHp, cYHp, (IterType)period, feature.GetResidual2(), feature.GetIntrinsicRadius());
     feature.SetRefined();
 
     // Optionally keep candidate (or clear it)
@@ -2671,28 +2660,64 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
                                                               FeatureSummary &feature,
                                                               EvalPolicy &&evaluator) const
 {
-    const HighPrecision &origCX_hp = feature.GetOrigX();
-    const HighPrecision &origCY_hp = feature.GetOrigY();
+    const HighPrecision &origCXHp = feature.GetOrigX();
+    const HighPrecision &origCYHp = feature.GetOrigY();
 
     // Search radius (T-space), but we keep c updates in HP and regenerate T c each time.
-    T R{feature.GetRadius()};
-    R = HdrAbs(R);
-    T SqrRadius = R * R;
-    HdrReduce(SqrRadius);
+    T radius{feature.GetRadius()};
+    radius = HdrAbs(radius);
+    T sqrRadius = radius * radius;
+    HdrReduce(sqrRadius);
 
     // Canonical parameter in HP (ONLY updated in HP to avoid drift)
-    HighPrecision cX_hp = origCX_hp;
-    HighPrecision cY_hp = origCY_hp;
+    HighPrecision cXHp = origCXHp;
+    HighPrecision cYHp = origCYHp;
+    const HighPrecision sqrRadiusHp = feature.GetRadius() * feature.GetRadius();
+
+    const auto makeOffset = [&]() -> C {
+        if constexpr (std::is_same_v<std::decay_t<EvalPolicy>, DirectEvaluator>) {
+            return C(ToScalar(cXHp), ToScalar(cYHp));
+        } else {
+            C offset(ToScalar(cXHp - evaluator.results->GetHiX()),
+                     ToScalar(cYHp - evaluator.results->GetHiY()));
+            offset.Reduce();
+            return offset;
+        }
+    };
+
+    const auto applyStep = [&](const C &step) {
+        const auto applyComponent = [](HighPrecision &coordinate, const T &component) {
+            const HighPrecision correction{component};
+            if (correction == HighPrecision{}) {
+                return;
+            }
+            double mantissa;
+            long coordinateExp;
+            long correctionExp;
+            coordinate.frexp(mantissa, coordinateExp);
+            correction.frexp(mantissa, correctionExp);
+            const auto neededBits =
+                static_cast<uint64_t>(std::max<long>(512, coordinateExp - correctionExp + 256));
+            if (neededBits > coordinate.precisionInBits()) {
+                HighPrecision widened{HighPrecision::SetPrecision::True, neededBits};
+                mpf_set(widened.backend(), coordinate.backend());
+                coordinate = std::move(widened);
+            }
+            coordinate -= correction;
+        };
+        applyComponent(cXHp, step.getRe());
+        applyComponent(cYHp, step.getIm());
+    };
 
     // T-space parameter used by evaluators (ALWAYS derived from HP)
-    auto MakeCTFromHP = [&]() -> C {
-        C out(ToDouble(cX_hp), ToDouble(cY_hp));
+    auto makeCFromHp = [&]() -> C {
+        C out(ToScalar(cXHp), ToScalar(cYHp));
         out.Reduce();
         return out;
     };
 
-    const C origC(ToDouble(origCX_hp), ToDouble(origCY_hp));
-    C c = MakeCTFromHP();
+    const C origC(ToScalar(origCXHp), ToScalar(origCYHp));
+    C c = makeCFromHp();
 
     IterType period = 0;
     C diff{}, dzdc{}, zcoeff{};
@@ -2702,8 +2727,8 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     // 1) Find candidate period
     // -----------------------------------------------------------------------------
     if (!evaluator.template Eval<true>(
-            c, cX_hp, cY_hp, SqrRadius, refIters, period, diff, dzdc, zcoeff, residual2)) {
-        std::cout << "Rejected: findPeriod failed\n";
+            c, cXHp, cYHp, sqrRadius, refIters, period, diff, dzdc, zcoeff, residual2)) {
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: findPeriod failed";
         return false;
     }
 
@@ -2711,20 +2736,19 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     // 2) Initial Newton correction: c <- c - diff/dzdc  (HP only)
     // -----------------------------------------------------------------------------
     {
-        T dzdc2_init = dzdc.norm_squared();
-        HdrReduce(dzdc2_init);
-        if (HdrCompareToBothPositiveReducedLE(dzdc2_init, T{})) {
-            std::cout << "Rejected: initial dzdc too small\n";
+        T dzdc2Initial = dzdc.norm_squared();
+        HdrReduce(dzdc2Initial);
+        if (HdrCompareToBothPositiveReducedLE(dzdc2Initial, T{})) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: initial dzdc too small";
             return false;
         }
 
         C step0 = Div(diff, dzdc);
         step0.Reduce();
 
-        cX_hp = cX_hp - HighPrecision{step0.getRe()};
-        cY_hp = cY_hp - HighPrecision{step0.getIm()};
+        applyStep(step0);
 
-        c = MakeCTFromHP();
+        c = makeCFromHp();
     }
 
     // -----------------------------------------------------------------------------
@@ -2734,22 +2758,16 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     T relTol2 = relTol * relTol;
     HdrReduce(relTol2);
 
-    // Periodicity convergence tolerance:
-    //   stop if |diff|^2 <= |c|^2 * tol^2
-    const T diffTol = HdrReduce(T{0x1p-40});
-    T diffTol2 = diffTol * diffTol;
-    HdrReduce(diffTol2);
-
     // -----------------------------------------------------------------------------
     // 3) Newton loop
     // -----------------------------------------------------------------------------
     for (uint32_t it = 0; it < m_params.MaxNewtonIters; ++it) {
         // Always evaluate at c derived from HP
-        c = MakeCTFromHP();
+        c = makeCFromHp();
 
         if (!evaluator.template Eval<false>(
-                c, cX_hp, cY_hp, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
-            std::cout << "Rejected: evalAtPeriod failed in loop\n";
+                c, cXHp, cYHp, sqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: evalAtPeriod failed in loop";
             return false;
         }
 
@@ -2757,16 +2775,17 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
             T diff2 = diff.norm_squared();
             HdrReduce(diff2);
 
-            T c2 = c.norm_squared();
-            HdrReduce(c2);
+            T offset2 = makeOffset().norm_squared();
+            HdrReduce(offset2);
 
-            T rhs = c2 * diffTol2;
+            T rhs = offset2 * relTol2;
             HdrReduce(rhs);
 
             if (HdrCompareToBothPositiveReducedLE(diff2, rhs)) {
                 // Residual is small enough relative to current c => converged
-                std::cout << "Iter1 " << it << ": diff^2=" << HdrToString<false>(diff2)
-                          << ", |c|^2*tol^2=" << HdrToString<false>(rhs) << "\n";
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "Iter1 " << it << ": diff^2=" << HdrToString<false>(diff2)
+                    << ", |dc|^2*tol^2=" << HdrToString<false>(rhs);
                 break;
             }
         }
@@ -2775,7 +2794,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         T dzdc2 = dzdc.norm_squared();
         HdrReduce(dzdc2);
         if (HdrCompareToBothPositiveReducedLE(dzdc2, T{})) {
-            std::cout << "Rejected: dzdc too small\n";
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: dzdc too small";
             return false;
         }
 
@@ -2783,35 +2802,36 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
         C step = Div(diff, dzdc);
         step.Reduce();
 
-        // Update ONLY HP
-        cX_hp = cX_hp - HighPrecision{step.getRe()};
-        cY_hp = cY_hp - HighPrecision{step.getIm()};
+        const C previousOffset = makeOffset();
+        applyStep(step);
 
         // Rebuild T-space c from HP
-        c = MakeCTFromHP();
+        c = makeCFromHp();
 
         // Optional: keep your original step-based stop as a secondary criterion
         {
             T step2 = step.norm_squared();
             HdrReduce(step2);
 
-            T c2 = c.norm_squared();
-            HdrReduce(c2);
+            T offset2 = makeOffset().norm_squared();
+            HdrReduce(offset2);
 
-            T rhs = c2 * relTol2;
+            T rhs = offset2 * relTol2;
             HdrReduce(rhs);
 
             if (HdrCompareToBothPositiveReducedLE(step2, rhs)) {
-                std::cout << "Iter2 " << it << ": step^2=" << HdrToString<false>(step2)
-                          << ", |c|^2*relTol^2=" << HdrToString<false>(rhs) << "\n";
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "Iter2 " << it << ": step^2=" << HdrToString<false>(step2)
+                    << ", |dc|^2*relTol^2=" << HdrToString<false>(rhs);
                 break;
             }
         }
 
-        // Optional absolute residual accept (if you already use this)
-        if (HdrCompareToBothPositiveReducedGT(m_params.Eps2Accept, T{}) &&
-            HdrCompareToBothPositiveReducedLE(residual2, m_params.Eps2Accept)) {
-            std::cout << "Iter3 " << it << ": residual^2=" << HdrToString<false>(residual2) << "\n";
+        const C currentOffset = makeOffset();
+        if (currentOffset.getRe() == previousOffset.getRe() &&
+            currentOffset.getIm() == previousOffset.getIm()) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Search offset reached its mantissa limit; deferring to MPF refinement.";
             break;
         }
     }
@@ -2819,41 +2839,48 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
     // -----------------------------------------------------------------------------
     // Final correction pass (same idea)
     // -----------------------------------------------------------------------------
-    c = MakeCTFromHP();
+    c = makeCFromHp();
 
     if (!evaluator.template Eval<false>(
-            c, cX_hp, cY_hp, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
-        std::cout << "Rejected: final eval failed\n";
+            c, cXHp, cYHp, sqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: final eval failed";
         return false;
     }
 
     {
-        T dzdc2_final = dzdc.norm_squared();
-        HdrReduce(dzdc2_final);
-        if (HdrCompareToBothPositiveReducedLE(dzdc2_final, T{})) {
-            std::cout << "Rejected: final dzdc too small\n";
+        T dzdc2Final = dzdc.norm_squared();
+        HdrReduce(dzdc2Final);
+        if (HdrCompareToBothPositiveReducedLE(dzdc2Final, T{})) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: final dzdc too small";
             return false;
         }
 
         C step = Div(diff, dzdc);
         step.Reduce();
 
-        cX_hp = cX_hp - HighPrecision{step.getRe()};
-        cY_hp = cY_hp - HighPrecision{step.getIm()};
+        applyStep(step);
 
-        c = MakeCTFromHP();
+        c = makeCFromHp();
     }
 
     // Final eval for residual and scale
     if (!evaluator.template Eval<false>(
-            c, cX_hp, cY_hp, SqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
-        std::cout << "Rejected: final eval failed\n";
+            c, cXHp, cYHp, sqrRadius, period, period, diff, dzdc, zcoeff, residual2)) {
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: final eval failed";
+        return false;
+    }
+
+    const HighPrecision acceptedDx = cXHp - origCXHp;
+    const HighPrecision acceptedDy = cYHp - origCYHp;
+    if (acceptedDx * acceptedDx + acceptedDy * acceptedDy > sqrRadiusHp) {
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Rejected: Newton candidate exceeds search radius";
         return false;
     }
 
     {
         int scaleExp2 = 0;
-        mp_bitcnt_t prec_bits = cX_hp.precisionInBits();
+        mp_bitcnt_t precisionBits = cXHp.precisionInBits();
 
         {
             // Always promote to HDRFloat<double> to avoid overflow in the product.
@@ -2872,7 +2899,7 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
             HdrReduce(w2);
 
             if (!HdrCompareToBothPositiveReducedGT(w2, H{})) {
-                std::cout << "Rejected: zero w in candidate store\n";
+                FractalSharkLog::LogLine(__FILE__, __LINE__) << "Rejected: zero w in candidate store";
                 feature.ClearCandidate();
                 return false;
             }
@@ -2884,10 +2911,10 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
             HdrReduce(scaleH);
 
             HighPrecision scaleHP{scaleH};
-            long exp_long;
+            long exponentLong;
             double mant;
-            scaleHP.frexp(mant, exp_long);
-            scaleExp2 = (int)exp_long;
+            scaleHP.frexp(mant, exponentLong);
+            scaleExp2 = (int)exponentLong;
         }
 
         {
@@ -2895,64 +2922,36 @@ FeatureFinder<IterType, T, PExtras>::FindPeriodicPoint_Common(IterType refIters,
             const int marginBits = 256;
 
             mp_bitcnt_t want = (mp_bitcnt_t)(bitsFromScale + marginBits);
-            want = std::max(want, (mp_bitcnt_t)cX_hp.precisionInBits());
+            want = std::max(want, (mp_bitcnt_t)cXHp.precisionInBits());
             want = std::max<mp_bitcnt_t>(want, 512);
-            prec_bits = want;
+            precisionBits = want;
         }
 
-        // Convert T SqrRadius → HP once and store it
-        HighPrecision sqrRadius_hp{SqrRadius};
-
         // Store candidate for Phase B refinement
-        feature.SetCandidate(cX_hp,
-                             cY_hp,
+        feature.SetCandidate(cXHp,
+                             cYHp,
                              (IterTypeFull)period,
                              HDRFloat<double>{residual2},
-                             sqrRadius_hp,
+                             sqrRadiusHp,
                              scaleExp2,
-                             prec_bits);
+                             precisionBits);
     }
 
     const HighPrecision intrinsicRadius = ComputeIntrinsicRadius_HP(zcoeff, dzdc);
 
-    feature.SetFound(cX_hp, cY_hp, period, HDRFloat<double>{residual2}, intrinsicRadius);
+    feature.SetFound(cXHp, cYHp, period, HDRFloat<double>{residual2}, intrinsicRadius);
 
     if (m_params.PrintResult) {
-        std::cout << "Periodic point: "
-                  << " orig cx=" << HdrToString<false, T>(origC.getRe())
-                  << " orig cy=" << HdrToString<false, T>(origC.getIm())
-                  << " new cx=" << HdrToString<false, T>(c.getRe())
-                  << " new cy=" << HdrToString<false, T>(c.getIm())
-                  << " period=" << static_cast<uint64_t>(period)
-                  << " residual2=" << HdrToString<false, T>(residual2)
-                  << " intrinsicRadius=" << intrinsicRadius.str() << "\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Periodic point:  orig cx=" << HdrToString<false, T>(origC.getRe())
+            << " orig cy=" << HdrToString<false, T>(origC.getIm())
+            << " new cx=" << HdrToString<false, T>(c.getRe())
+            << " new cy=" << HdrToString<false, T>(c.getIm())
+            << " period=" << static_cast<uint64_t>(period)
+            << " residual2=" << HdrToString<false, T>(residual2)
+            << " intrinsicRadius=" << intrinsicRadius.str();
     }
 
-    return true;
-}
-
-template <class IterType, class T, PerturbExtras PExtras>
-bool
-FeatureFinder<IterType, T, PExtras>::Evaluate_AtPeriod(
-    const PerturbationResults<IterType, T, PExtras> & /*results*/,
-    RuntimeDecompressor<IterType, T, PExtras> &dec,
-    const C &c,
-    IterType period,
-    EvalState &st,
-    T &outResidual2) const
-{
-    // Re-evaluate orbit up to "period" and measure how close we are to z0.
-    C z{};
-    const C z0 = z;
-
-    for (IterType i = 0; i < period; ++i) {
-        z = (z * z) + c;
-        (void)dec;
-    }
-
-    const C delta = z - z0;
-    outResidual2 = delta.norm_squared();
-    st.z = z;
     return true;
 }
 

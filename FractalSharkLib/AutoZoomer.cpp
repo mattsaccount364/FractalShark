@@ -8,7 +8,6 @@
 #include "WaitCursor.h"
 
 #include <cmath>
-#include <iostream>
 #include <utility>
 
 AutoZoomer::AutoZoomer(Fractal &fractal) : m_Fractal(fractal) {}
@@ -344,8 +343,9 @@ AutoZoomer::RunFeatureAtPoint(int clientX, int clientY, NRCheckpointSavePolicy c
 {
     Environment::WaitCursor waitCursor;
 
-    std::cout << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
-                 "perturbation results to perform the zoom.\n";
+    FractalSharkLog::LogLine(__FILE__, __LINE__)
+        << "Forcing GPU HDRx32 Perturbed LAv2 for AutoZoom(Feature) since it relies on "
+           "perturbation results to perform the zoom.";
 
     m_Fractal.ResetStopCalculating();
 
@@ -400,13 +400,14 @@ AutoZoomer::SetupFeatureZoom(Fractal &f,
 
     FeatureSummary *feature = f.ChooseClosestFeatureToScreenPoint(clientX, clientY);
     if (!feature) {
-        std::cout << "AutoZoom(Feature): no feature found. Use the feature finder first.\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "AutoZoom(Feature): no feature found. Use the feature finder first.";
         out.Failed = true;
         return;
     }
 
     if (!f.ZoomToFoundFeature(*feature, nullptr, checkpointSavePolicy)) {
-        std::cout << "AutoZoom(Feature): feature refinement failed.\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "AutoZoom(Feature): feature refinement failed.";
         out.Failed = true;
         return;
     }
@@ -416,31 +417,32 @@ AutoZoomer::SetupFeatureZoom(Fractal &f,
 
     HighPrecision targetZoomFactor = feature->ComputeZoomFactor(f.GetPtz());
 
-    std::cout << "AutoZoom(Feature): targetZoomFactor=";
     {
-        double m;
-        long e;
-        targetZoomFactor.frexp(m, e);
-        std::cout << m << " * 2^" << e;
+        auto log = FractalSharkLog::LogLine(__FILE__, __LINE__);
+        log << "AutoZoom(Feature): targetZoomFactor=";
+        {
+            double m;
+            long e;
+            targetZoomFactor.frexp(m, e);
+            log << m << " * 2^" << e;
+        }
+        log << " origZoom=";
+        {
+            double m;
+            long e;
+            f.GetPtz().GetZoomFactor().frexp(m, e);
+            log << m << " * 2^" << e;
+        }
+        log << " intrinsicRadius=";
+        {
+            double m;
+            long e;
+            feature->GetIntrinsicRadius().frexp(m, e);
+            log << m << " * 2^" << e;
+        }
     }
-    std::cout << " origZoom=";
-    {
-        double m;
-        long e;
-        f.GetPtz().GetZoomFactor().frexp(m, e);
-        std::cout << m << " * 2^" << e;
-    }
-    std::cout << " intrinsicRadius=";
-    {
-        double m;
-        long e;
-        feature->GetIntrinsicRadius().frexp(m, e);
-        std::cout << m << " * 2^" << e;
-    }
-    std::cout << "\n";
-
     if (targetZoomFactor <= HighPrecision{0}) {
-        std::cout << "AutoZoom(Feature): invalid target zoom factor.\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "AutoZoom(Feature): invalid target zoom factor.";
         out.Failed = true;
         return;
     }
@@ -465,14 +467,15 @@ AutoZoomer::SetupFeatureZoom(Fractal &f,
         }
         f.ForceRecalc();
 
-        std::cout << "AutoZoom(Feature): pre-computing ref orbit at target zoom...\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "AutoZoom(Feature): pre-computing ref orbit at target zoom...";
         f.CalcFractal(false, false);
         if (f.GetStopCalculating()) {
             ApplyFeatureZoomStep(f, startingStep);
             out.Failed = true;
             return;
         }
-        std::cout << "AutoZoom(Feature): ref orbit ready.\n";
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "AutoZoom(Feature): ref orbit ready.";
 
         // Restore starting iteration count
         f.SetNumIterations<IterTypeFull>(startIters);
@@ -499,9 +502,10 @@ AutoZoomer::SetupFeatureZoom(Fractal &f,
 
     const bool shouldInterpolateIters = targetIters > 0 && startIters < targetIters;
 
-    std::cout << "AutoZoom(Feature): startIters=" << startIters << " targetIters=" << targetIters
-              << " period=" << feature->GetPeriod() << " totalSteps=" << totalSteps
-              << " interpolate=" << shouldInterpolateIters << "\n";
+    FractalSharkLog::LogLine(__FILE__, __LINE__)
+        << "AutoZoom(Feature): startIters=" << startIters << " targetIters=" << targetIters
+        << " period=" << feature->GetPeriod() << " totalSteps=" << totalSteps
+        << " interpolate=" << shouldInterpolateIters;
 
     out.Steps.reserve(totalSteps);
     {

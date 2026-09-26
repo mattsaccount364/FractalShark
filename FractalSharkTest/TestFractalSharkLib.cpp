@@ -6,6 +6,7 @@
 #include "ItersMemoryContainer.h"
 #include "OrbitEndpointEvaluator.h"
 #include "OrbitParameterPack.h"
+#include "PointZoomBBConverter.h"
 #include "RecommendedSettings.h"
 #include "RenderAlgorithm.h"
 #include "RenderToConsole.h"
@@ -257,6 +258,62 @@ TEST(FractalSharkLib_FeatureSummaryTracksCandidatesAndScreenCoordinates)
 
     summary.ClearCandidate();
     ASSERT_FALSE(summary.HasCandidate());
+}
+
+TEST(FractalSharkLib_LAFeatureFinderAgreesWithPerturbationNearPeriodTwo)
+{
+    for (const IterTypeEnum iterType : {IterTypeEnum::Bits32, IterTypeEnum::Bits64}) {
+        Fractal fractal(
+            32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+        ASSERT_TRUE(
+            fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
+        fractal.SetIterType(iterType);
+        fractal.SetNumIterations<uint64_t>(128);
+        const PointZoomBBConverter view(HighPrecision{-1},
+                                        HighPrecision{0},
+                                        HighPrecision{8},
+                                        PointZoomBBConverter::TestMode::Enabled);
+        ASSERT_TRUE(fractal.RecenterViewCalc(view));
+        fractal.CalcFractal(true);
+
+        fractal.TryFindPeriodicPoint(16, 16, FeatureFinderMode::PT);
+        const FeatureSummary *pt = fractal.ChooseClosestFeatureToScreenPoint(16, 16);
+        ASSERT_TRUE(pt != nullptr);
+        const IterTypeFull ptPeriod = pt->GetPeriod();
+        const double ptX = static_cast<double>(pt->GetFoundX());
+        const double ptY = static_cast<double>(pt->GetFoundY());
+
+        fractal.TryFindPeriodicPoint(16, 16, FeatureFinderMode::LA);
+        const FeatureSummary *la = fractal.ChooseClosestFeatureToScreenPoint(16, 16);
+        ASSERT_TRUE(la != nullptr);
+        ASSERT_EQ(la->GetPeriod(), ptPeriod);
+        ASSERT_NEAR(static_cast<double>(la->GetFoundX()), ptX, 1e-8);
+        ASSERT_NEAR(static_cast<double>(la->GetFoundY()), ptY, 1e-8);
+
+        fractal.TryFindPeriodicPoint(20, 16, FeatureFinderMode::PT);
+        ASSERT_TRUE(fractal.ChooseClosestFeatureToScreenPoint(20, 16) == nullptr);
+        fractal.TryFindPeriodicPoint(20, 16, FeatureFinderMode::LA);
+        ASSERT_TRUE(fractal.ChooseClosestFeatureToScreenPoint(20, 16) == nullptr);
+    }
+}
+
+TEST(FractalSharkLib_LAFeatureFinderHandlesIncompleteSearch)
+{
+    Fractal fractal(
+        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
+    fractal.SetNumIterations<uint32_t>(256);
+    const PointZoomBBConverter view(HighPrecision{"-0.743643887037151"},
+                                    HighPrecision{"0.13182590420533"},
+                                    HighPrecision{1000},
+                                    PointZoomBBConverter::TestMode::Enabled);
+    ASSERT_TRUE(fractal.RecenterViewCalc(view));
+    fractal.CalcFractal(true);
+
+    fractal.TryFindPeriodicPoint(20, 16, FeatureFinderMode::PT);
+    ASSERT_TRUE(fractal.ChooseClosestFeatureToScreenPoint(20, 16) == nullptr);
+    fractal.TryFindPeriodicPoint(20, 16, FeatureFinderMode::LA);
+    ASSERT_TRUE(fractal.ChooseClosestFeatureToScreenPoint(20, 16) == nullptr);
 }
 
 TEST(FractalSharkLib_OrbitEndpointCpuBackendsAgree)

@@ -1,12 +1,12 @@
 #include "MpirOrbitEval.h"
 #include "AbortMonitor.h"
+#include "ConsoleLog.h"
 #include "Environment.h"
 
 #include <atomic>
 #include <chrono>
 #include <format>
 #include <iomanip>
-#include <iostream>
 #include <limits>
 #include <thread>
 
@@ -163,17 +163,17 @@ EvaluateCriticalOrbitAndDerivsMT(const mpf_complex &c_coord,
             double itersPerSec = (elapsedSec > 0) ? (i - startIter) / elapsedSec : 0;
             double etaHours = (itersPerSec > 0) ? (period - i) / itersPerSec / 3600.0 : 0;
 
-            std::cout << "    CPU-MT inner: " << i << " / " << period;
             {
+                auto log = FractalSharkLog::LogLine(__FILE__, __LINE__);
+                log << "    CPU-MT inner: " << i << " / " << period;
                 const double zr = mpf_get_d(z_coord.re);
                 const double zi = mpf_get_d(z_coord.im);
-                std::cout << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
+                log << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
+                if (itersPerSec > 0) {
+                    log << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
+                        << std::setprecision(1) << etaHours << " hrs)";
+                }
             }
-            if (itersPerSec > 0) {
-                std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
-                          << std::setprecision(1) << etaHours << " hrs)";
-            }
-            std::cout << std::endl;
 
             if (onProgress) {
                 onProgress(i, progressContext);
@@ -351,17 +351,17 @@ EvaluateCriticalOrbitAndDerivsST(const mpf_complex &c_coord,
             double itersPerSec = (elapsedSec > 0) ? (i - startIter) / elapsedSec : 0;
             double etaHours = (itersPerSec > 0) ? (period - i) / itersPerSec / 3600.0 : 0;
 
-            std::cout << "    CPU-ST inner: " << i << " / " << period;
             {
+                auto log = FractalSharkLog::LogLine(__FILE__, __LINE__);
+                log << "    CPU-ST inner: " << i << " / " << period;
                 const double zr = mpf_get_d(z_coord.re);
                 const double zi = mpf_get_d(z_coord.im);
-                std::cout << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
+                log << " |z|^2=" << std::setprecision(4) << (zr * zr + zi * zi);
+                if (itersPerSec > 0) {
+                    log << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
+                        << std::setprecision(1) << etaHours << " hrs)";
+                }
             }
-            if (itersPerSec > 0) {
-                std::cout << " (" << static_cast<uint64_t>(itersPerSec) << " iter/s, ETA: " << std::fixed
-                          << std::setprecision(1) << etaHours << " hrs)";
-            }
-            std::cout << std::endl;
 
             if (onProgress) {
                 onProgress(i, progressContext);

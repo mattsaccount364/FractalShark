@@ -3277,6 +3277,12 @@ Fractal::GetLAParameters()
 void
 Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr) const
 {
+    GetRenderDetails(shortStr, longStr, true);
+}
+
+void
+Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr, bool includeClipboardNotice) const
+{
 
     HighPrecision minX, minY;
     HighPrecision maxX, maxY;
@@ -3392,7 +3398,7 @@ Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr) const
         std::string("Feature Finder time high-prec (ms) = ") +
         std::to_string(GetBenchmark().m_FeatureFinderHP.GetDeltaInMs()) + "\r\n";
 
-    shortStr = std::format("This text is copied to clipboard.  Using \"{}\"\r\n"
+    shortStr = std::format("{}Using \"{}\"\r\n"
                            "Antialiasing: {}\r\n"
                            "Palette depth: {}\r\n"
                            "Coordinate precision = {};\r\n"
@@ -3405,6 +3411,7 @@ Fractal::GetRenderDetails(std::string &shortStr, std::string &longStr) const
                            "Additional details:\r\n"
                            "{}\r\n"
                            "SetNumIterations<IterTypeFull>({});\r\n",
+                           includeClipboardNotice ? "This text is copied to clipboard.  " : "",
                            GetRenderAlgorithmName(),
                            GetGpuAntialiasing(),
                            GetPaletteDepth(),

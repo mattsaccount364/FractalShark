@@ -2403,6 +2403,25 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
         added = true;
 
         results = GetLast<IterType, T, PExtras>();
+        if constexpr (PExtras == PerturbExtras::SimpleCompression && !UsingDblflt) {
+            // The GPU reference backend produces an uncompressed orbit even for a
+            // compressed request. Materialize the requested type before returning.
+            if (GetPerturbationAlg() == PerturbationAlg::GPU) {
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "Warning: GPU reference backend returned an uncompressed orbit for a "
+                       "compressed request; avoid this path.";
+                auto *plainResults = GetLast<IterType, T, PerturbExtras::Disable>();
+                if (plainResults == nullptr) {
+                    throw FractalSharkSeriousException(
+                        "Reference generation produced no orbit for feature finding.");
+                }
+                auto compressedResults = plainResults->Compress(
+                    m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low),
+                    GetNextGenerationNumber());
+                results = compressedResults.get();
+                PushbackResults(std::move(compressedResults));
+            }
+        }
 
         // This is a hack for testing, but it's only a hack
         // if ForceCompressDecompressForTesting is true.

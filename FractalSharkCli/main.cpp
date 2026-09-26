@@ -9,6 +9,7 @@
 #include "CrashHandler.h"
 #include "Environment.h"
 #include "Fractal.h"
+#include "FractalPalette.h"
 #include "LocalIpc.h"
 #include "PointZoomBBConverter.h"
 #include "RefOrbitCalc.h"
@@ -69,6 +70,7 @@ struct CliArgs {
     std::string RenderAlgorithm;
     std::string PerturbationAlg; // empty => unspecified
     std::string PaletteMapFile;
+    std::optional<uint32_t> PaletteDepth;
 
     std::string OutFile;
 
@@ -92,7 +94,8 @@ PrintUsage()
            "                   --locations FILE [--location-index N] |\n"
            "                   --center-x X --center-y Y --zoom Z}\n"
            "                  [--iterations N] [--antialiasing N]\n"
-           "                  [--perturbation-alg NAME] [--palette-map FILE] [--commit-cap-bytes N]\n"
+           "                  [--perturbation-alg NAME] [--palette-map FILE] [--palette-depth BITS]\n"
+           "                  [--commit-cap-bytes N]\n"
            "                  [--no-gpu]\n"
            "                  [--quiet]\n"
            "\n"
@@ -115,6 +118,8 @@ PrintUsage()
            "  --palette-map FILE\n"
            "                    Load Fractal Zoomer RGB8 triplets; blank, #, and // lines are ignored\n"
            "                    (the first three values per row are clamped to 0-255)\n"
+           "  --palette-depth BITS\n"
+           "                    Use a 5, 6, 8, 12, 16, or 20-bit palette resolution (default: 8)\n"
            "  --quiet           Suppress progress and rendering details\n"
            "  Successful renders print the GUI rendering-details report.\n"
            "\n"
@@ -147,31 +152,30 @@ ParseRenderAlgorithm(const std::string &name)
 std::optional<RefOrbitCalc::PerturbationAlg>
 ParsePerturbationAlg(const std::string &name)
 {
-    using P = RefOrbitCalc::PerturbationAlg;
     if (name == "ST")
-        return P::ST;
+        return RefOrbitCalc::PerturbationAlg::ST;
     if (name == "MT")
-        return P::MT;
+        return RefOrbitCalc::PerturbationAlg::MT;
     if (name == "STPeriodicity")
-        return P::STPeriodicity;
+        return RefOrbitCalc::PerturbationAlg::STPeriodicity;
     if (name == "MTPeriodicity3")
-        return P::MTPeriodicity3;
+        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3;
     if (name == "MTPeriodicity3PerturbMTHighSTMed")
-        return P::MTPeriodicity3PerturbMTHighSTMed;
+        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed;
     if (name == "MTPeriodicity3PerturbMTHighMTMed1")
-        return P::MTPeriodicity3PerturbMTHighMTMed1;
+        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1;
     if (name == "MTPeriodicity3PerturbMTHighMTMed2")
-        return P::MTPeriodicity3PerturbMTHighMTMed2;
+        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2;
     if (name == "MTPeriodicity3PerturbMTHighMTMed3")
-        return P::MTPeriodicity3PerturbMTHighMTMed3;
+        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3;
     if (name == "MTPeriodicity3PerturbMTHighMTMed4")
-        return P::MTPeriodicity3PerturbMTHighMTMed4;
+        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4;
     if (name == "MTPeriodicity5")
-        return P::MTPeriodicity5;
+        return RefOrbitCalc::PerturbationAlg::MTPeriodicity5;
     if (name == "GPU")
-        return P::GPU;
+        return RefOrbitCalc::PerturbationAlg::GPU;
     if (name == "Auto")
-        return P::Auto;
+        return RefOrbitCalc::PerturbationAlg::Auto;
     return std::nullopt;
 }
 
@@ -208,6 +212,24 @@ ParseInt(const char *s, int &out)
     if (v > static_cast<uint64_t>(INT32_MAX))
         return false;
     out = static_cast<int>(v);
+    return true;
+}
+
+bool
+ParsePaletteDepth(const char *s, uint32_t &out)
+{
+    uint64_t depth;
+    if (!ParseUint64(s, depth) || depth > UINT32_MAX) {
+        return false;
+    }
+
+    const auto it =
+        std::find(FractalPalette::PaletteDepths.begin(), FractalPalette::PaletteDepths.end(), depth);
+    if (it == FractalPalette::PaletteDepths.end()) {
+        return false;
+    }
+
+    out = static_cast<uint32_t>(depth);
     return true;
 }
 
@@ -362,6 +384,14 @@ ParseArgs(int argc, char *argv[], CliArgs &a, std::ostream &errorOut)
             if (!v)
                 return false;
             a.PaletteMapFile = v;
+        } else if (arg == "--palette-depth") {
+            auto v = expectValue(i, "--palette-depth");
+            uint32_t depth;
+            if (!v || !ParsePaletteDepth(v, depth)) {
+                errorOut << "error: --palette-depth must be one of 5, 6, 8, 12, 16, or 20\n";
+                return false;
+            }
+            a.PaletteDepth = depth;
         } else {
             errorOut << "error: unknown argument: " << arg << "\n";
             return false;
@@ -560,7 +590,7 @@ ValidateServerArgs(const CliArgs &args, std::string &error)
     }
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
         args.Console || args.Color || args.Iterations != 0 || args.Antialiasing != 0 ||
-        !args.PerturbationAlg.empty() || !args.PaletteMapFile.empty() ||
+        !args.PerturbationAlg.empty() || !args.PaletteMapFile.empty() || args.PaletteDepth.has_value() ||
         args.LocationIndex != SIZE_MAX) {
         error = "server accepts only --endpoint, --width, --height, --commit-cap-bytes, --no-gpu, and "
                 "--quiet";
@@ -583,7 +613,8 @@ ValidateShutdownArgs(const CliArgs &args, std::string &error)
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
         args.Console || args.Color || args.WidthSet || args.HeightSet || args.Iterations != 0 ||
         args.Antialiasing != 0 || args.CommitCapBytes != UINT64_MAX || !args.PerturbationAlg.empty() ||
-        !args.PaletteMapFile.empty() || args.LocationIndex != SIZE_MAX) {
+        !args.PaletteMapFile.empty() || args.PaletteDepth.has_value() ||
+        args.LocationIndex != SIZE_MAX) {
         error = "--shutdown cannot be combined with render arguments";
         return false;
     }
@@ -734,6 +765,9 @@ ExecuteRenderRequest(const CliArgs &args,
             errorOut << "error: " << exception.what() << "\n";
             return 1;
         }
+    }
+    if (args.PaletteDepth) {
+        fractal.UsePalette(static_cast<int>(*args.PaletteDepth));
     }
 
     std::string error;

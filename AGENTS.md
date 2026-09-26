@@ -82,8 +82,10 @@ function parameters to new or modified interfaces; pass required values explicit
 
 Portable command and menu contracts belong directly in `FractalShark`. Platform-specific GUI
 implementation belongs in `FractalShark::Win32` or `FractalShark::Linux`. Keep OS entry points and
-third-party-mandated APIs global. Do not use `using namespace`; use unqualified names inside the owning
-namespace and narrow aliases or using-declarations where needed.
+third-party-mandated APIs global. Do not use `using namespace` directives or using-declarations to
+import names. Spell out the namespace path at each use site for names from other namespaces. Avoid
+aliases whose only purpose is shortening a qualified name; keep type aliases that define intentional
+domain or API types. Unqualified names remain valid inside their owning namespace.
 
 Prefer typed C++ functions, templates, and explicit callsite arguments over preprocessor macros. Do not
 add function-like logging macros or wrappers for `__FILE__`/`__LINE__` when a non-inline function can be

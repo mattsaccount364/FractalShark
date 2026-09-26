@@ -7,8 +7,6 @@
 #include <omp.h>
 #include "test_util.h"
 
-using namespace std;
-
 void randArray(dd_real* data, const unsigned numElement, 
                dd_real low, dd_real high, int seed) {
 
@@ -83,23 +81,23 @@ int checkTwoArray( const dd_real* gold, const dd_real* ref, const int numElement
                 }
         }
 
-        cout << "abs. of max. relative error: " << maxRelError << endl;
-        cout << "abs. of avg. relative error: " << avgRelError << endl;
+        std::cout << "abs. of max. relative error: " << maxRelError << std::endl;
+        std::cout << "abs. of avg. relative error: " << avgRelError << std::endl;
         if( maxRelError > 0.0 ) {
-                cout << "max. relative error elements" << endl;
-                cout << "i = " << maxId << endl;
-                cout << "gold = " << gold[maxId].to_string() << endl;
+                std::cout << "max. relative error elements" << std::endl;
+                std::cout << "i = " << maxId << std::endl;
+                std::cout << "gold = " << gold[maxId].to_string() << std::endl;
                 printf("Components(%.16e, %.16e)\n", gold[maxId].x[0], gold[maxId].x[1]);
-                cout << "ref  = " << ref[maxId].to_string() << endl;
+                std::cout << "ref  = " << ref[maxId].to_string() << std::endl;
                 printf("Components(%.16e, %.16e)\n", ref[maxId].x[0], ref[maxId].x[1]);
 
         } else {
-                cout << "a sample:" << endl;
+                std::cout << "a sample:" << std::endl;
                 const int i = rand()%numElement;
-                cout << "i = " << i << endl;
-                cout << "gold = " << gold[i].to_string() << endl;
+                std::cout << "i = " << i << std::endl;
+                std::cout << "gold = " << gold[i].to_string() << std::endl;
                 printf("Components(%.16e, %.16e)\n", gold[maxId].x[0], gold[maxId].x[1]);
-                cout << "ref  = " << ref[i].to_string() << endl;
+                std::cout << "ref  = " << ref[i].to_string() << std::endl;
                 printf("Components(%.16e, %.16e)\n", ref[maxId].x[0], ref[maxId].x[1]);
                 maxId = i;
         }
@@ -122,20 +120,20 @@ int checkTwoArray( const qd_real* gold, const qd_real* ref, const int numElement
                 }
         }
 
-        cout << "abs. of max. relative error: " << maxRelError << endl;
-        cout << "abs. of avg. relative error: " << avgRelError << endl;
+        std::cout << "abs. of max. relative error: " << maxRelError << std::endl;
+        std::cout << "abs. of avg. relative error: " << avgRelError << std::endl;
         if( maxRelError > 0.0 ) {
-                cout << "max. relative error elements" << endl;
-                cout << "i = " << maxId << endl;
-                cout << "gold = " << (gold[maxId]).to_string() << endl;
-                cout << "ref  = " << (ref[maxId]).to_string() << endl;
-                cout << "rel. error = " << (abs((gold[maxId] - ref[maxId])/gold[maxId])).to_string() << endl;
+                std::cout << "max. relative error elements" << std::endl;
+                std::cout << "i = " << maxId << std::endl;
+                std::cout << "gold = " << (gold[maxId]).to_string() << std::endl;
+                std::cout << "ref  = " << (ref[maxId]).to_string() << std::endl;
+                std::cout << "rel. error = " << (abs((gold[maxId] - ref[maxId])/gold[maxId])).to_string() << std::endl;
         } else {
-                cout << "a sample:" << endl;
+                std::cout << "a sample:" << std::endl;
                 const int i = rand()%numElement;
-                cout << "i = " << i << endl;
-                cout << "gold = " << (gold[i]).to_string() << endl;
-                cout << "ref  = " << (ref[i]).to_string() << endl;
+                std::cout << "i = " << i << std::endl;
+                std::cout << "gold = " << (gold[i]).to_string() << std::endl;
+                std::cout << "ref  = " << (ref[i]).to_string() << std::endl;
                 maxId = i;
         }
 

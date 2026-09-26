@@ -313,7 +313,6 @@ template <class SharkFloatParams> struct DebugState {
                  size_t size,
                  uint64_t initialCrc)
     {
-        using namespace DebugChecksumGlobals;
 
         // Partition using block/thread linearization to match reduction order
         const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
@@ -360,16 +359,16 @@ template <class SharkFloatParams> struct DebugState {
             uint32_t w_s2 = __shfl_sync(mask, s2, last);
             uint32_t w_lm = __shfl_sync(mask, lmod, last);
             if (lane == 0) {
-                const int idx = blockIdx.x * kMaxWarpsPerBlock + warp;
-                d_warp_s1[idx] = w_s1;
-                d_warp_s2[idx] = w_s2;
-                d_warp_lm[idx] = w_lm;
+                const int idx = blockIdx.x * DebugChecksumGlobals::kMaxWarpsPerBlock + warp;
+                DebugChecksumGlobals::d_warp_s1[idx] = w_s1;
+                DebugChecksumGlobals::d_warp_s2[idx] = w_s2;
+                DebugChecksumGlobals::d_warp_lm[idx] = w_lm;
             }
         } else if (lane == 0) {
-            const int idx = blockIdx.x * kMaxWarpsPerBlock + warp;
-            d_warp_s1[idx] = 0;
-            d_warp_s2[idx] = 0;
-            d_warp_lm[idx] = 0;
+            const int idx = blockIdx.x * DebugChecksumGlobals::kMaxWarpsPerBlock + warp;
+            DebugChecksumGlobals::d_warp_s1[idx] = 0;
+            DebugChecksumGlobals::d_warp_s2[idx] = 0;
+            DebugChecksumGlobals::d_warp_lm[idx] = 0;
         }
 
         block.sync();
@@ -379,20 +378,21 @@ template <class SharkFloatParams> struct DebugState {
             const int warpsInBlock = (blockDim.x + 31) / 32;
             uint32_t bs1 = 0, bs2 = 0, blm = 0;
             for (int w = 0; w < warpsInBlock; ++w) {
-                const int idx = blockIdx.x * kMaxWarpsPerBlock + w;
-                F64Pair C = fletcher64_combine(F64Pair{bs1, bs2},
-                                               F64Pair{d_warp_s1[idx], d_warp_s2[idx]},
-                                               /*lenB*/ d_warp_lm[idx]);
+                const int idx = blockIdx.x * DebugChecksumGlobals::kMaxWarpsPerBlock + w;
+                F64Pair C = fletcher64_combine(
+                    F64Pair{bs1, bs2},
+                    F64Pair{DebugChecksumGlobals::d_warp_s1[idx], DebugChecksumGlobals::d_warp_s2[idx]},
+                    /*lenB*/ DebugChecksumGlobals::d_warp_lm[idx]);
                 bs1 = C.s1;
                 bs2 = C.s2;
-                uint64_t sum = uint64_t(blm) + uint64_t(d_warp_lm[idx]);
+                uint64_t sum = uint64_t(blm) + uint64_t(DebugChecksumGlobals::d_warp_lm[idx]);
                 if (sum >= FLETCHER64_MOD)
                     sum -= FLETCHER64_MOD;
                 blm = static_cast<uint32_t>(sum);
             }
-            d_block_s1[blockIdx.x] = bs1;
-            d_block_s2[blockIdx.x] = bs2;
-            d_block_lm[blockIdx.x] = blm;
+            DebugChecksumGlobals::d_block_s1[blockIdx.x] = bs1;
+            DebugChecksumGlobals::d_block_s2[blockIdx.x] = bs2;
+            DebugChecksumGlobals::d_block_lm[blockIdx.x] = blm;
         }
 
         grid.sync();
@@ -457,7 +457,8 @@ template <class SharkFloatParams> struct DebugState {
         }
 
         grid.sync();
-        return (uint64_t(d_final_s2) << 32) | uint64_t(d_final_s1);
+        return (uint64_t(DebugChecksumGlobals::d_final_s2) << 32) |
+               uint64_t(DebugChecksumGlobals::d_final_s1);
     }
 
     __device__ uint64_t
@@ -467,7 +468,6 @@ template <class SharkFloatParams> struct DebugState {
                  size_t size,
                  uint64_t initialCrc)
     {
-        using namespace DebugChecksumGlobals;
 
         const auto tid = block.thread_index().x + block.group_index().x * blockDim.x;
         const uint64_t T = uint64_t(gridDim.x) * blockDim.x;
@@ -510,16 +510,16 @@ template <class SharkFloatParams> struct DebugState {
             uint32_t w_s2 = __shfl_sync(mask, s2, last);
             uint32_t w_lm = __shfl_sync(mask, lmod, last);
             if (lane == 0) {
-                const int idx = blockIdx.x * kMaxWarpsPerBlock + warp;
-                d_warp_s1[idx] = w_s1;
-                d_warp_s2[idx] = w_s2;
-                d_warp_lm[idx] = w_lm;
+                const int idx = blockIdx.x * DebugChecksumGlobals::kMaxWarpsPerBlock + warp;
+                DebugChecksumGlobals::d_warp_s1[idx] = w_s1;
+                DebugChecksumGlobals::d_warp_s2[idx] = w_s2;
+                DebugChecksumGlobals::d_warp_lm[idx] = w_lm;
             }
         } else if (lane == 0) {
-            const int idx = blockIdx.x * kMaxWarpsPerBlock + warp;
-            d_warp_s1[idx] = 0;
-            d_warp_s2[idx] = 0;
-            d_warp_lm[idx] = 0;
+            const int idx = blockIdx.x * DebugChecksumGlobals::kMaxWarpsPerBlock + warp;
+            DebugChecksumGlobals::d_warp_s1[idx] = 0;
+            DebugChecksumGlobals::d_warp_s2[idx] = 0;
+            DebugChecksumGlobals::d_warp_lm[idx] = 0;
         }
 
         block.sync();
@@ -528,20 +528,21 @@ template <class SharkFloatParams> struct DebugState {
             const int warpsInBlock = (blockDim.x + 31) / 32;
             uint32_t bs1 = 0, bs2 = 0, blm = 0;
             for (int w = 0; w < warpsInBlock; ++w) {
-                const int idx = blockIdx.x * kMaxWarpsPerBlock + w;
-                F64Pair C = fletcher64_combine(F64Pair{bs1, bs2},
-                                               F64Pair{d_warp_s1[idx], d_warp_s2[idx]},
-                                               /*lenB*/ d_warp_lm[idx]);
+                const int idx = blockIdx.x * DebugChecksumGlobals::kMaxWarpsPerBlock + w;
+                F64Pair C = fletcher64_combine(
+                    F64Pair{bs1, bs2},
+                    F64Pair{DebugChecksumGlobals::d_warp_s1[idx], DebugChecksumGlobals::d_warp_s2[idx]},
+                    /*lenB*/ DebugChecksumGlobals::d_warp_lm[idx]);
                 bs1 = C.s1;
                 bs2 = C.s2;
-                uint64_t sum = uint64_t(blm) + uint64_t(d_warp_lm[idx]);
+                uint64_t sum = uint64_t(blm) + uint64_t(DebugChecksumGlobals::d_warp_lm[idx]);
                 if (sum >= FLETCHER64_MOD)
                     sum -= FLETCHER64_MOD;
                 blm = static_cast<uint32_t>(sum);
             }
-            d_block_s1[blockIdx.x] = bs1;
-            d_block_s2[blockIdx.x] = bs2;
-            d_block_lm[blockIdx.x] = blm;
+            DebugChecksumGlobals::d_block_s1[blockIdx.x] = bs1;
+            DebugChecksumGlobals::d_block_s2[blockIdx.x] = bs2;
+            DebugChecksumGlobals::d_block_lm[blockIdx.x] = blm;
         }
 
         grid.sync();
@@ -606,7 +607,8 @@ template <class SharkFloatParams> struct DebugState {
         }
 
         grid.sync();
-        return (uint64_t(d_final_s2) << 32) | uint64_t(d_final_s1);
+        return (uint64_t(DebugChecksumGlobals::d_final_s2) << 32) |
+               uint64_t(DebugChecksumGlobals::d_final_s1);
     }
 
 #else
@@ -618,7 +620,6 @@ template <class SharkFloatParams> struct DebugState {
                  size_t size,
                  uint64_t initialCrc)
     {
-        using namespace DebugChecksumGlobals;
 
         // Seed packed as (s2<<32 | s1), same as host
         uint32_t s1 = static_cast<uint32_t>(initialCrc & 0xFFFFFFFFull);
@@ -639,12 +640,13 @@ template <class SharkFloatParams> struct DebugState {
                 s2 = foldM(uint64_t(s2) + uint64_t(s1));
             }
 
-            d_final_s1 = s1;
-            d_final_s2 = s2;
+            DebugChecksumGlobals::d_final_s1 = s1;
+            DebugChecksumGlobals::d_final_s2 = s2;
         }
 
         grid.sync();
-        uint64_t ret = (uint64_t(d_final_s2) << 32) | uint64_t(d_final_s1);
+        uint64_t ret = (uint64_t(DebugChecksumGlobals::d_final_s2) << 32) |
+                       uint64_t(DebugChecksumGlobals::d_final_s1);
         grid.sync();
         return ret;
     }
@@ -658,7 +660,6 @@ template <class SharkFloatParams> struct DebugState {
                  size_t size,
                  uint64_t initialCrc)
     {
-        using namespace DebugChecksumGlobals;
 
         uint32_t s1 = static_cast<uint32_t>(initialCrc & 0xFFFFFFFFull);
         uint32_t s2 = static_cast<uint32_t>(initialCrc >> 32);
@@ -685,12 +686,13 @@ template <class SharkFloatParams> struct DebugState {
                 s2 = foldM(uint64_t(s2) + uint64_t(s1));
             }
 
-            d_final_s1 = s1;
-            d_final_s2 = s2;
+            DebugChecksumGlobals::d_final_s1 = s1;
+            DebugChecksumGlobals::d_final_s2 = s2;
         }
 
         grid.sync();
-        uint64_t ret = (uint64_t(d_final_s2) << 32) | uint64_t(d_final_s1);
+        uint64_t ret = (uint64_t(DebugChecksumGlobals::d_final_s2) << 32) |
+                       uint64_t(DebugChecksumGlobals::d_final_s1);
         grid.sync();
         return ret;
     }

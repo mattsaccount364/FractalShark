@@ -10,9 +10,6 @@
 #include "test_common.h"
 #include "gqdtest.h"
 
-using namespace std;
-
-
 /* general macro utilities */
 #define FUNC_START_MSG printf("%s start ............................................\n", __func__);
 #define FUNC_END_MSG   printf("%s done  ...........................................\n\n", __func__);

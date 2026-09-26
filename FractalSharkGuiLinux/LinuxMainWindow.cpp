@@ -328,38 +328,34 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     void OnLoadCustomPalette() override;
 
 private:
-    using FileDialogCallback = FractalShark::Linux::ImGuiOverlay::FileDialogCallback;
-    using FileDialogFilter = FractalShark::Linux::ImGuiOverlay::FileDialogFilter;
-    using FileDialogMode = FractalShark::Linux::ImGuiOverlay::FileDialogMode;
-    using PickFromListCallback = FractalShark::Linux::ImGuiOverlay::PickFromListCallback;
-
     void Destroy() noexcept;
     void ShowInfo(const char *title, const char *body);
     void ShowInfo(const char *title, const std::string &body);
     void RequestFileDialog(const char *operation,
                            const char *title,
-                           FileDialogMode mode,
+                           FractalShark::Linux::ImGuiOverlay::FileDialogMode mode,
                            const std::string &defaultName,
-                           std::vector<FileDialogFilter> filters,
-                           FileDialogCallback callback);
+                           std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters,
+                           FractalShark::Linux::ImGuiOverlay::FileDialogCallback callback);
     void RequestSaveFile(const char *operation,
                          const char *title,
                          const std::string &defaultName,
-                         std::vector<FileDialogFilter> filters,
-                         FileDialogCallback callback);
+                         std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters,
+                         FractalShark::Linux::ImGuiOverlay::FileDialogCallback callback);
     void RequestOpenFile(const char *operation,
                          const char *title,
-                         std::vector<FileDialogFilter> filters,
-                         FileDialogCallback callback);
+                         std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters,
+                         FractalShark::Linux::ImGuiOverlay::FileDialogCallback callback);
     void RequestPick(const char *operation,
                      const char *title,
                      std::vector<std::string> items,
-                     PickFromListCallback callback);
-    void RequestFractalOutputSave(const char *operation,
-                                  const char *title,
-                                  FractalShark::FractalOutputFile outputType,
-                                  std::string extension,
-                                  std::vector<FileDialogFilter> filters);
+                     FractalShark::Linux::ImGuiOverlay::PickFromListCallback callback);
+    void RequestFractalOutputSave(
+        const char *operation,
+        const char *title,
+        FractalShark::FractalOutputFile outputType,
+        std::string extension,
+        std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters);
     void SaveLocation(bool scaleToMaximum);
     void DoSaveRefOrbit(::CompressToDisk compression);
     void DoLoadRefOrbitImag(::ImaginaSettings settings);
@@ -1069,27 +1065,25 @@ namespace {
 
 constexpr size_t kMaxQuickPickImaginaFiles = 30;
 
-using LinuxFileDialogFilter = FractalShark::Linux::ImGuiOverlay::FileDialogFilter;
-
-std::vector<LinuxFileDialogFilter>
+std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter>
 OrbitFileFilters()
 {
     return {{"All (*.*)", ""}, {"Imagina (*.im)", ".im"}};
 }
 
-std::vector<LinuxFileDialogFilter>
+std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter>
 PngFileFilters()
 {
     return {{"PNG Image (*.png)", ".png"}, {"All (*.*)", ""}};
 }
 
-std::vector<LinuxFileDialogFilter>
+std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter>
 TextFileFilters()
 {
     return {{"Text File (*.txt)", ".txt"}, {"All (*.*)", ""}};
 }
 
-std::vector<LinuxFileDialogFilter>
+std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter>
 PaletteMapFileFilters()
 {
     return {{"Palette Map (*.map)", ".map"}, {"All (*.*)", ""}};
@@ -1111,54 +1105,66 @@ LinuxMainWindow::ShowInfo(const char *title, const std::string &body)
 }
 
 void
-LinuxMainWindow::RequestFileDialog(const char *operation,
-                                   const char *title,
-                                   FileDialogMode mode,
-                                   const std::string &defaultName,
-                                   std::vector<FileDialogFilter> filters,
-                                   FileDialogCallback callback)
+LinuxMainWindow::RequestFileDialog(
+    const char *operation,
+    const char *title,
+    FractalShark::Linux::ImGuiOverlay::FileDialogMode mode,
+    const std::string &defaultName,
+    std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters,
+    FractalShark::Linux::ImGuiOverlay::FileDialogCallback callback)
 {
     RequireUiState(overlay.has_value(), operation);
     overlay->RequestFileDialog(title, mode, defaultName, std::move(filters), std::move(callback));
 }
 
 void
-LinuxMainWindow::RequestSaveFile(const char *operation,
-                                 const char *title,
-                                 const std::string &defaultName,
-                                 std::vector<FileDialogFilter> filters,
-                                 FileDialogCallback callback)
+LinuxMainWindow::RequestSaveFile(
+    const char *operation,
+    const char *title,
+    const std::string &defaultName,
+    std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters,
+    FractalShark::Linux::ImGuiOverlay::FileDialogCallback callback)
 {
-    RequestFileDialog(
-        operation, title, FileDialogMode::Save, defaultName, std::move(filters), std::move(callback));
+    RequestFileDialog(operation,
+                      title,
+                      FractalShark::Linux::ImGuiOverlay::FileDialogMode::Save,
+                      defaultName,
+                      std::move(filters),
+                      std::move(callback));
 }
 
 void
-LinuxMainWindow::RequestOpenFile(const char *operation,
-                                 const char *title,
-                                 std::vector<FileDialogFilter> filters,
-                                 FileDialogCallback callback)
+LinuxMainWindow::RequestOpenFile(
+    const char *operation,
+    const char *title,
+    std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters,
+    FractalShark::Linux::ImGuiOverlay::FileDialogCallback callback)
 {
-    RequestFileDialog(
-        operation, title, FileDialogMode::Open, "", std::move(filters), std::move(callback));
+    RequestFileDialog(operation,
+                      title,
+                      FractalShark::Linux::ImGuiOverlay::FileDialogMode::Open,
+                      "",
+                      std::move(filters),
+                      std::move(callback));
 }
 
 void
 LinuxMainWindow::RequestPick(const char *operation,
                              const char *title,
                              std::vector<std::string> items,
-                             PickFromListCallback callback)
+                             FractalShark::Linux::ImGuiOverlay::PickFromListCallback callback)
 {
     RequireUiState(overlay.has_value(), operation);
     overlay->RequestPickFromList(title, std::move(items), std::move(callback));
 }
 
 void
-LinuxMainWindow::RequestFractalOutputSave(const char *operation,
-                                          const char *title,
-                                          FractalShark::FractalOutputFile outputType,
-                                          std::string extension,
-                                          std::vector<FileDialogFilter> filters)
+LinuxMainWindow::RequestFractalOutputSave(
+    const char *operation,
+    const char *title,
+    FractalShark::FractalOutputFile outputType,
+    std::string extension,
+    std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters)
 {
     RequireUiState(fractal && overlay, operation);
     RequestSaveFile(

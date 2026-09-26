@@ -727,18 +727,17 @@ GPURenderer::Render(
     } else if (algorithm == RenderAlgorithmEnum::Gpu4x64) {
         // qdbl
         if constexpr (EnableGpu4x64 && std::is_same<T, MattQDbldbl>::value) {
-            using namespace GQD;
-            gqd_real cx2;
-            cx2 = make_qd(cx.x, cx.y, cx.z, cx.w);
+            GQD::gqd_real cx2;
+            cx2 = GQD::make_qd(cx.x, cx.y, cx.z, cx.w);
 
-            gqd_real cy2;
-            cy2 = make_qd(cy.x, cy.y, cy.z, cy.w);
+            GQD::gqd_real cy2;
+            cy2 = GQD::make_qd(cy.x, cy.y, cy.z, cy.w);
 
-            gqd_real dx2;
-            dx2 = make_qd(dx.x, dx.y, dx.z, dx.w);
+            GQD::gqd_real dx2;
+            dx2 = GQD::make_qd(dx.x, dx.y, dx.z, dx.w);
 
-            gqd_real dy2;
-            dy2 = make_qd(dy.x, dy.y, dy.z, dy.w);
+            GQD::gqd_real dy2;
+            dy2 = GQD::make_qd(dy.x, dy.y, dy.z, dy.w);
 
             mandel_4x_double<IterType>
                 <<<DEFAULT_KERNEL_LAUNCH_PARAMS>>>(static_cast<IterType *>(OutputIterMatrix),
@@ -871,18 +870,17 @@ GPURenderer::Render(
     } else if (algorithm == RenderAlgorithmEnum::Gpu4x32) {
         // qflt
         if constexpr (EnableGpu4x32 && std::is_same<T, MattQFltflt>::value) {
-            using namespace GQF;
-            gqf_real cx2;
-            cx2 = make_qf(cx.x, cx.y, cx.z, cx.w);
+            GQF::gqf_real cx2;
+            cx2 = GQF::make_qf(cx.x, cx.y, cx.z, cx.w);
 
-            gqf_real cy2;
-            cy2 = make_qf(cy.x, cy.y, cy.z, cy.w);
+            GQF::gqf_real cy2;
+            cy2 = GQF::make_qf(cy.x, cy.y, cy.z, cy.w);
 
-            gqf_real dx2;
-            dx2 = make_qf(dx.x, dx.y, dx.z, dx.w);
+            GQF::gqf_real dx2;
+            dx2 = GQF::make_qf(dx.x, dx.y, dx.z, dx.w);
 
-            gqf_real dy2;
-            dy2 = make_qf(dy.x, dy.y, dy.z, dy.w);
+            GQF::gqf_real dy2;
+            dy2 = GQF::make_qf(dy.x, dy.y, dy.z, dy.w);
 
             mandel_4x_float<IterType>
                 <<<DEFAULT_KERNEL_LAUNCH_PARAMS>>>(static_cast<IterType *>(OutputIterMatrix),

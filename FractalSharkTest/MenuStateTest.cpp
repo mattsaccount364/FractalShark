@@ -159,21 +159,11 @@ TEST(MenuState_CustomPaletteRequiresSuccessfulLoad)
 
 TEST(MenuState_WindowSizeCommandsAreActions)
 {
-    using FractalShark::FractalCommand;
-    using FractalShark::Item;
-    using FractalShark::Node;
-    using FractalShark::Popup;
-    using FractalShark::Radio;
-    using FractalShark::RadioGroup;
-    using FractalShark::Rule;
-    using FractalShark::Sep;
-    using FractalShark::Toggle;
-
 #include "MenuTreeDef.h"
 
-    const auto nodes = std::span<const Node>{menu};
-    const Node *windowed = FindMenuNode(nodes, IDM_WINDOWED);
-    const Node *windowedSquare = FindMenuNode(nodes, IDM_WINDOWED_SQ);
+    const auto nodes = std::span<const FractalShark::Node>{menu};
+    const FractalShark::Node *windowed = FindMenuNode(nodes, IDM_WINDOWED);
+    const FractalShark::Node *windowedSquare = FindMenuNode(nodes, IDM_WINDOWED_SQ);
 
     ASSERT_TRUE(windowed != nullptr);
     ASSERT_TRUE(windowedSquare != nullptr);

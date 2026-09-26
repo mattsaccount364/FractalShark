@@ -20,12 +20,11 @@ namespace {
 enum class ShiftDir { Left, Right };
 enum class SpectrumId { ZReal, ZImag, DzdcReal, DzdcImag, CReal, CImag, One };
 enum class TermKind { Product, Linear };
-using VerboseMode = HpShark::TestParams::VerboseMode;
 
 static bool
-IsDebugTraceEnabled(VerboseMode verboseMode)
+IsDebugTraceEnabled(HpShark::TestParams::VerboseMode verboseMode)
 {
-    return verboseMode == VerboseMode::Debug;
+    return verboseMode == HpShark::TestParams::VerboseMode::Debug;
 }
 
 template <class SharkFloatParams, class ArrayType>
@@ -65,7 +64,7 @@ StoreReferenceDebugValue(DebugHostCombo<SharkFloatParams> &debugCombo,
 
 template <class UInt>
 static void
-PrintHexValue(const char *label, UInt value, VerboseMode verboseMode)
+PrintHexValue(const char *label, UInt value, HpShark::TestParams::VerboseMode verboseMode)
 {
     if (!IsDebugTraceEnabled(verboseMode))
         return;
@@ -97,7 +96,9 @@ SpectrumIdName(SpectrumId id)
 
 template <class SharkFloatParams>
 static void
-PrintHpValue(const char *label, const HpSharkFloat<SharkFloatParams> &value, VerboseMode verboseMode)
+PrintHpValue(const char *label,
+             const HpSharkFloat<SharkFloatParams> &value,
+             HpShark::TestParams::VerboseMode verboseMode)
 {
     if (!IsDebugTraceEnabled(verboseMode))
         return;
@@ -107,7 +108,7 @@ PrintHpValue(const char *label, const HpSharkFloat<SharkFloatParams> &value, Ver
 
 template <class Hdr>
 static void
-PrintHdrValue(const char *label, const Hdr &value, VerboseMode verboseMode)
+PrintHdrValue(const char *label, const Hdr &value, HpShark::TestParams::VerboseMode verboseMode)
 {
     if (!IsDebugTraceEnabled(verboseMode))
         return;
@@ -118,7 +119,10 @@ PrintHdrValue(const char *label, const Hdr &value, VerboseMode verboseMode)
 
 template <class T>
 static void
-PrintArray(const char *label, const T *values, size_t count, VerboseMode verboseMode)
+PrintArray(const char *label,
+           const T *values,
+           size_t count,
+           HpShark::TestParams::VerboseMode verboseMode)
 {
     if (!IsDebugTraceEnabled(verboseMode))
         return;
@@ -398,7 +402,9 @@ template <class SharkFloatParams> struct FinalizationStream {
 
 template <class SharkFloatParams>
 static void
-PrintTerm(const char *label, const FusedTerm<SharkFloatParams> &term, VerboseMode verboseMode)
+PrintTerm(const char *label,
+          const FusedTerm<SharkFloatParams> &term,
+          HpShark::TestParams::VerboseMode verboseMode)
 {
     if (!IsDebugTraceEnabled(verboseMode))
         return;
@@ -410,7 +416,7 @@ PrintTerm(const char *label, const FusedTerm<SharkFloatParams> &term, VerboseMod
 }
 
 static void
-PrintPlan(const SharkNTT::Plan &plan, VerboseMode verboseMode)
+PrintPlan(const SharkNTT::Plan &plan, HpShark::TestParams::VerboseMode verboseMode)
 {
     if (!IsDebugTraceEnabled(verboseMode))
         return;
@@ -722,7 +728,7 @@ NTTRadix2(DebugHostCombo<SharkFloatParams> &debugCombo,
           uint32_t N,
           uint32_t stages,
           SharkNTT::RootTables &rootTables,
-          VerboseMode verboseMode)
+          HpShark::TestParams::VerboseMode verboseMode)
 {
     if (IsDebugTraceEnabled(verboseMode)) {
         std::cout << "  " << (inverse ? "inverse" : "forward") << " NTT input\n";
@@ -836,7 +842,7 @@ PackForward(DebugHostCombo<SharkFloatParams> &debugCombo,
             uint32_t inputBitOffset,
             DebugStatePurpose packedPurpose,
             DebugStatePurpose forwardPurpose,
-            VerboseMode verboseMode)
+            HpShark::TestParams::VerboseMode verboseMode)
 {
     const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
@@ -889,7 +895,7 @@ PackAlignedForward(DebugHostCombo<SharkFloatParams> &debugCombo,
                    bool negative,
                    DebugStatePurpose packedPurpose,
                    DebugStatePurpose forwardPurpose,
-                   VerboseMode verboseMode)
+                   HpShark::TestParams::VerboseMode verboseMode)
 {
     const uint64_t zeroMont = SharkNTT::ToMontgomery(debugCombo, 0);
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
@@ -975,7 +981,7 @@ AddShiftedSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                    bool negative,
                    uint64_t *dest,
                    uint32_t capacity,
-                   VerboseMode verboseMode)
+                   HpShark::TestParams::VerboseMode verboseMode)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= capacity);
@@ -1048,7 +1054,7 @@ AccumulateOutputSpectrum(DebugHostCombo<SharkFloatParams> &debugCombo,
                          int32_t commonExp,
                          uint64_t *dest,
                          DebugStatePurpose checksumPurpose,
-                         VerboseMode verboseMode,
+                         HpShark::TestParams::VerboseMode verboseMode,
                          const FusedTerm<SharkFloatParams> &first,
                          const Terms &...terms)
 {
@@ -1148,7 +1154,7 @@ UnpackResiduesToSignedLimbs(const uint64_t *normalResidues,
                             uint32_t coefficientCount,
                             int64_t *limbs,
                             uint32_t limbCount,
-                            VerboseMode verboseMode)
+                            HpShark::TestParams::VerboseMode verboseMode)
 {
     assert(coefficientCount <= static_cast<uint32_t>(plan.N));
     PrintArray("normal residues", normalResidues, coefficientCount, verboseMode);
@@ -1245,7 +1251,7 @@ UnpackAlignedResiduesToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
                                    uint64_t linearBitOffset,
                                    int64_t *limbs,
                                    uint32_t limbCount,
-                                   VerboseMode verboseMode)
+                                   HpShark::TestParams::VerboseMode verboseMode)
 {
     assert(coefficientCount <= static_cast<uint32_t>(plan.N));
     const uint64_t halfPrime = (SharkNTT::MagicPrime - 1ull) >> 1;
@@ -1322,7 +1328,7 @@ InverseSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo,
                              uint32_t limbCount,
                              DebugStatePurpose residuesPurpose,
                              DebugStatePurpose limbsPurpose,
-                             VerboseMode verboseMode)
+                             HpShark::TestParams::VerboseMode verboseMode)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= MaxFusedN);
@@ -1367,7 +1373,7 @@ InverseAlignedSpectrumToSignedLimbs(DebugHostCombo<SharkFloatParams> &debugCombo
                                     uint32_t limbCount,
                                     DebugStatePurpose residuesPurpose,
                                     DebugStatePurpose limbsPurpose,
-                                    VerboseMode verboseMode)
+                                    HpShark::TestParams::VerboseMode verboseMode)
 {
     const uint32_t activeN = static_cast<uint32_t>(plan.N);
     assert(activeN <= MaxFusedN);
@@ -1402,7 +1408,7 @@ PropagateSignedLimbsToMagnitude(const int64_t *limbs,
                                 uint32_t &digitLength,
                                 uint32_t &magnitudeLength,
                                 bool &negative,
-                                VerboseMode verboseMode)
+                                HpShark::TestParams::VerboseMode verboseMode)
 {
     constexpr int64_t Base = 1ll << 32;
     assert(magnitudeCapacity >= limbCount + 2);
@@ -1488,7 +1494,7 @@ NormalizeMagnitudeToHpFloat(const uint32_t *magnitude,
                             int32_t commonExp,
                             bool negative,
                             HpSharkFloat<SharkFloatParams> *out,
-                            VerboseMode verboseMode)
+                            HpShark::TestParams::VerboseMode verboseMode)
 {
     constexpr int actualDigits = SharkFloatParams::GlobalNumUint32;
 
@@ -1540,7 +1546,7 @@ FinalizeSignedStream(const FinalizationStream<SharkFloatParams> &stream,
                      DebugHostCombo<SharkFloatParams> &debugCombo,
                      DebugStatePurpose digitsPurpose,
                      DebugStatePurpose magnitudePurpose,
-                     VerboseMode verboseMode)
+                     HpShark::TestParams::VerboseMode verboseMode)
 {
     if (IsDebugTraceEnabled(verboseMode))
         std::cout << "  FinalizeSignedStream commonExp=" << stream.CommonExp << '\n';
@@ -1572,7 +1578,7 @@ PrepareNormalSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                      const HpSharkFloat<SharkFloatParams> &zImag,
                      uint32_t inputBitOffset,
                      FusedWorkspace &workspace,
-                     VerboseMode verboseMode)
+                     HpShark::TestParams::VerboseMode verboseMode)
 {
     PackForward(debugHostCombo,
                 zReal,
@@ -1605,7 +1611,7 @@ PrepareDerivativeSpectra(DebugHostCombo<SharkFloatParams> &debugHostCombo,
                          const HpSharkFloat<SharkFloatParams> &dzdcImag,
                          uint32_t inputBitOffset,
                          FusedWorkspace &workspace,
-                         VerboseMode verboseMode)
+                         HpShark::TestParams::VerboseMode verboseMode)
 {
     PackForward(debugHostCombo,
                 dzdcReal,
@@ -1675,7 +1681,7 @@ FusedReferenceOrbitStep(const HpSharkFloat<SharkFloatParams> &zReal,
                         uint32_t actualPrecisionLimbs,
                         FusedWorkspace &workspace,
                         DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                        VerboseMode verboseMode)
+                        HpShark::TestParams::VerboseMode verboseMode)
 {
     constexpr uint32_t storagePrecisionLimbs = SharkFloatParams::GlobalNumUint32;
     assert(actualPrecisionLimbs > storagePrecisionLimbs / 2u);
@@ -2187,7 +2193,7 @@ static void EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams>
                                             uint32_t actualPrecisionLimbs,
                                             FusedWorkspace &workspace,
                                             DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                                            VerboseMode verboseMode);
+                                            HpShark::TestParams::VerboseMode verboseMode);
 
 template <class SharkFloatParams>
 std::unique_ptr<ReferenceOrbitResult<SharkFloatParams>>
@@ -2198,7 +2204,7 @@ ReferenceOrbit2Helper(const HpSharkFloat<SharkFloatParams> *cReal,
                       uint32_t actualPrecisionLimbs,
                       DebugHostCombo<SharkFloatParams> &debugHostCombo,
                       HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables,
-                      VerboseMode verboseMode)
+                      HpShark::TestParams::VerboseMode verboseMode)
 {
     if (IsDebugTraceEnabled(verboseMode)) {
         std::cout << "ReferenceOrbit2Helper begin maxIters=" << maxIters
@@ -2426,7 +2432,7 @@ EvaluateOrbitAndDerivative2Impl(const HpSharkFloat<SharkFloatParams> *cReal,
                                 uint32_t actualPrecisionLimbs,
                                 FusedWorkspace &workspace,
                                 DebugHostCombo<SharkFloatParams> &debugHostCombo,
-                                VerboseMode verboseMode)
+                                HpShark::TestParams::VerboseMode verboseMode)
 {
     if (IsDebugTraceEnabled(verboseMode))
         std::cout << "EvaluateOrbitAndDerivative2 begin period=" << period << '\n';
@@ -2573,7 +2579,7 @@ EvaluateOrbitAndDerivative2(const HpSharkFloat<SharkFloatParams> *cReal,
                             uint32_t actualPrecisionLimbs,
                             DebugHostCombo<SharkFloatParams> &debugHostCombo,
                             HpShark::ReferencePreparedTables<SharkFloatParams> *preparedTables,
-                            VerboseMode verboseMode)
+                            HpShark::TestParams::VerboseMode verboseMode)
 {
     EnsureGlobalFusedWorkspace<SharkFloatParams>();
     std::unique_ptr<HpShark::ReferencePreparedTables<SharkFloatParams>> localPreparedTables;

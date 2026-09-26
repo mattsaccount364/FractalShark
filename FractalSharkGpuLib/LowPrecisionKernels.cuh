@@ -15,7 +15,6 @@ mandel_4x_float(IterType *OutputIterMatrix,
                 IterType n_iterations)
 {
 
-    using namespace GQF;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -45,29 +44,29 @@ mandel_4x_float(IterType *OutputIterMatrix,
     ////}
 
     IterType iter = 0;
-    gqf_real x = make_qf(0.0f, 0.0f, 0.0f, 0.0f);
-    gqf_real y = make_qf(0.0f, 0.0f, 0.0f, 0.0f);
+    GQF::gqf_real x = GQF::make_qf(0.0f, 0.0f, 0.0f, 0.0f);
+    GQF::gqf_real y = GQF::make_qf(0.0f, 0.0f, 0.0f, 0.0f);
 
-    gqf_real y0;
-    gqf_real Y_QF = make_qf(Y, 0.0f, 0.0f, 0.0f);
-    y0 = cy + dy * Y_QF;
+    GQF::gqf_real y0;
+    GQF::gqf_real Y_QF = GQF::make_qf(Y, 0.0f, 0.0f, 0.0f);
+    y0 = GQF::operator+(cy, GQF::operator*(dy, Y_QF));
 
-    gqf_real x0;
-    gqf_real X_QF = make_qf(X, 0.0f, 0.0f, 0.0f);
-    x0 = cx + dx * X_QF;
+    GQF::gqf_real x0;
+    GQF::gqf_real X_QF = GQF::make_qf(X, 0.0f, 0.0f, 0.0f);
+    x0 = GQF::operator+(cx, GQF::operator*(dx, X_QF));
 
-    gqf_real four;
-    four = make_qf(4.0f, 0.0f, 0.0f, 0.0f);
+    GQF::gqf_real four;
+    four = GQF::make_qf(4.0f, 0.0f, 0.0f, 0.0f);
 
-    gqf_real zrsqr = sqr(x);
-    gqf_real zisqr = sqr(y);
-    while (zrsqr + zisqr <= four && iter < n_iterations) {
-        y = x * y;
-        y = mul_pwr2(y, 2.0f); // Multiply by two
-        y = y + y0;
-        x = zrsqr - zisqr + x0;
-        zrsqr = sqr(x);
-        zisqr = sqr(y);
+    GQF::gqf_real zrsqr = GQF::sqr(x);
+    GQF::gqf_real zisqr = GQF::sqr(y);
+    while (GQF::operator<=(GQF::operator+(zrsqr, zisqr), four) && iter < n_iterations) {
+        y = GQF::operator*(x, y);
+        y = GQF::mul_pwr2(y, 2.0f); // Multiply by two
+        y = GQF::operator+(y, y0);
+        x = GQF::operator+(GQF::operator-(zrsqr, zisqr), x0);
+        zrsqr = GQF::sqr(x);
+        zisqr = GQF::sqr(y);
         iter++;
     }
 
@@ -86,7 +85,6 @@ mandel_4x_double(IterType *OutputIterMatrix,
                  GQD::gqd_real dy,
                  IterType n_iterations)
 {
-    using namespace GQD;
     int X = blockIdx.x * blockDim.x + threadIdx.x;
     int Y = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -116,23 +114,23 @@ mandel_4x_double(IterType *OutputIterMatrix,
     ////}
 
     IterType iter = 0;
-    gqd_real x = make_qd(0, 0, 0, 0);
-    gqd_real y = make_qd(0, 0, 0, 0);
-    gqd_real y0;
-    y0 = cy + dy * Y;
+    GQD::gqd_real x = GQD::make_qd(0, 0, 0, 0);
+    GQD::gqd_real y = GQD::make_qd(0, 0, 0, 0);
+    GQD::gqd_real y0;
+    y0 = GQD::operator+(cy, GQD::operator*(dy, Y));
 
-    gqd_real x0;
-    x0 = cx + dx * X;
+    GQD::gqd_real x0;
+    x0 = GQD::operator+(cx, GQD::operator*(dx, X));
 
-    gqd_real zrsqr = x * x;
-    gqd_real zisqr = y * y;
-    while (zrsqr + zisqr <= 4.0 && iter < n_iterations) {
-        y = x * y;
-        y = y * 2.0; // Multiply by two
-        y = y + y0;
-        x = zrsqr - zisqr + x0;
-        zrsqr = x * x;
-        zisqr = y * y;
+    GQD::gqd_real zrsqr = GQD::operator*(x, x);
+    GQD::gqd_real zisqr = GQD::operator*(y, y);
+    while (GQD::operator<=(GQD::operator+(zrsqr, zisqr), 4.0) && iter < n_iterations) {
+        y = GQD::operator*(x, y);
+        y = GQD::operator*(y, 2.0); // Multiply by two
+        y = GQD::operator+(y, y0);
+        x = GQD::operator+(GQD::operator-(zrsqr, zisqr), x0);
+        zrsqr = GQD::operator*(x, x);
+        zisqr = GQD::operator*(y, y);
         iter++;
     }
 

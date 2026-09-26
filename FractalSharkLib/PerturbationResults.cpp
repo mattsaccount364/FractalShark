@@ -62,13 +62,11 @@ PerturbationResultsBase::SetMaxIterationsSaturate(IterTypeFull numIterations)
 std::wstring
 GetTimeAsString(size_t generation_number)
 {
-    using namespace std::chrono;
-
     // get current time
-    auto now = system_clock::now();
+    auto now = std::chrono::system_clock::now();
 
     // convert to std::time_t in order to convert to std::tm (broken time)
-    auto timer = system_clock::to_time_t(now);
+    auto timer = std::chrono::system_clock::to_time_t(now);
 
     // convert to broken time
     std::tm bt = *std::localtime(&timer);

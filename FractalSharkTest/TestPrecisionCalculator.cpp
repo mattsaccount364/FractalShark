@@ -5,8 +5,6 @@
 
 #include <cmath>
 
-using TestMode = PointZoomBBConverter::TestMode;
-
 // The constants from HighPrecision.h:
 // AuthoritativeMinExtraPrecisionInBits = 120
 // AuthoritativeReuseExtraPrecisionInBits = 800
@@ -23,7 +21,8 @@ TEST(PC_FromConverter_DefaultZoom)
     // Bounds [-2,-2,2,2], zoom=1 → deltaX=deltaY=4
     // HighPrecision→HDRFloat uses GMP [0.5,1.0) convention: 4.0 = 0.5 × 2^3 → exp=3
     // max(|3|,|3|) = 3 → 3 + 120 = 123
-    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(
+        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, PointZoomBBConverter::TestMode::Enabled);
 
     uint64_t prec = PrecisionCalculator::GetPrecision(pz, false);
     ASSERT_EQ(prec, 3 + MinExtra);
@@ -31,7 +30,8 @@ TEST(PC_FromConverter_DefaultZoom)
 
 TEST(PC_FromConverter_WithReuse)
 {
-    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, TestMode::Enabled);
+    PointZoomBBConverter pz(
+        HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, PointZoomBBConverter::TestMode::Enabled);
 
     uint64_t prec = PrecisionCalculator::GetPrecision(pz, true);
     ASSERT_EQ(prec, 3 + ReuseExtra);
@@ -48,7 +48,8 @@ TEST(PC_FromConverter_DeepZoom)
         zoom *= HighPrecision{2};
     }
 
-    PointZoomBBConverter pz(HighPrecision{0}, HighPrecision{0}, zoom, TestMode::Enabled);
+    PointZoomBBConverter pz(
+        HighPrecision{0}, HighPrecision{0}, zoom, PointZoomBBConverter::TestMode::Enabled);
 
     uint64_t prec = PrecisionCalculator::GetPrecision(pz, false);
     // delta = Factor/zoom * 2 = 4 / 2^50 = 2^(-48)

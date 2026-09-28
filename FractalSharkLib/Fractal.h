@@ -40,6 +40,7 @@ template <typename IterType, class T, class SubType, PerturbExtras PExtras> clas
 
 class FeatureFinderOrchestrator;
 class FeatureSummary;
+class FractalSaveThreadPool;
 struct ItersMemoryContainer;
 
 enum class GpuMode { Auto, Disabled };
@@ -224,7 +225,7 @@ public:
     void DrawFeatureFinderResults();
 
     // Saving images of the fractal
-    int SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters);
+    int SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters);
     int SaveHiResFractal(std::wstring filename_base);
     int SaveItersAsText(std::wstring filename_base);
     void SaveRefOrbit(CompressToDisk compression, std::wstring filename) const;
@@ -416,7 +417,7 @@ private:
     void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     template <PngParallelSave::Type Typ>
-    int SaveFractalData(const std::wstring filename_base, bool copy_the_iters);
+    int SaveFractalData(std::wstring filenameBase, bool copyTheIters);
 
     uint64_t FindTotalItersUsed();
 
@@ -427,7 +428,7 @@ private:
     RefOrbitCalc m_RefOrbit;
     std::unique_ptr<FeatureFinderOrchestrator> m_FeatureOrchestrator;
 
-    std::vector<std::unique_ptr<PngParallelSave>> m_FractalSavesInProgress;
+    std::unique_ptr<FractalSaveThreadPool> m_SavePool;
 
     // Defaults
     static constexpr IterTypeFull DefaultIterations = 256 * 32;

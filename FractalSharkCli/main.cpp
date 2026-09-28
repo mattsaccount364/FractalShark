@@ -6,6 +6,7 @@
 
 #include "stdafx.h"
 
+#include "BatchFile.h"
 #include "CrashHandler.h"
 #include "Environment.h"
 #include "Fractal.h"
@@ -19,6 +20,7 @@
 #include "RenderToPng.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cerrno>
 #include <chrono>
 #include <cstdint>
@@ -31,6 +33,7 @@
 #include <iostream>
 #include <limits>
 #include <optional>
+#include <set>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -55,6 +58,8 @@ struct CliArgs {
     CliMode Mode = CliMode::SingleShot;
     std::string Endpoint;
     bool Shutdown = false;
+    std::string BatchPath;
+    bool BatchSet = false;
 
     ViewSource Source = ViewSource::None;
     size_t BuiltinView = 0;
@@ -103,6 +108,7 @@ PrintUsage()
            "                   [--commit-cap-bytes N] [--no-gpu]\n"
            "  FractalSharkCli --connect [--endpoint NAME] <the render arguments above>\n"
            "  FractalSharkCli --connect --endpoint NAME --shutdown\n"
+           "  FractalSharkCli [--connect [--endpoint NAME]] --batch FILE\n"
            "\n"
            "  FractalSharkCli --list-render-algorithms\n"
            "  FractalSharkCli --help\n"
@@ -122,6 +128,8 @@ PrintUsage()
            "                    Use a 5, 6, 8, 12, 16, or 20-bit palette resolution (default: 8)\n"
            "  --quiet           Suppress progress and rendering details\n"
            "  Successful renders print the GUI rendering-details report.\n"
+           "  Batch files use [defaults] and named [image NAME] sections with key = value\n"
+           "  render options. Batch summaries include render and CLI image times.\n"
            "\n"
            "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
            "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
@@ -270,6 +278,12 @@ ParseArgs(int argc, char *argv[], CliArgs &a, std::ostream &errorOut)
             a.Endpoint = v;
         } else if (arg == "--shutdown") {
             a.Shutdown = true;
+        } else if (arg == "--batch") {
+            auto v = expectValue(i, "--batch");
+            if (!v)
+                return false;
+            a.BatchPath = v;
+            a.BatchSet = true;
         } else if (arg == "--quiet") {
             a.Quiet = true;
         } else if (arg == "--no-gpu") {
@@ -497,22 +511,17 @@ ParseHighPrecision(const std::string &text,
         }
     }
 
-    try {
-        HighPrecision parsed;
-        if (mpf_set_str(parsed.backend(), text.c_str(), 10) != 0) {
-            error = std::string(flag) + " is not a valid high-precision decimal";
-            return false;
-        }
-        MpfNormalize(parsed.backend());
-        if (requirePositive && mpf_sgn(parsed.backend()) <= 0) {
-            error = std::string(flag) + " must be greater than zero";
-            return false;
-        }
-        value = std::move(parsed);
-    } catch (const std::exception &) {
+    HighPrecision parsed;
+    if (mpf_set_str(parsed.backend(), text.c_str(), 10) != 0) {
         error = std::string(flag) + " is not a valid high-precision decimal";
         return false;
     }
+    MpfNormalize(parsed.backend());
+    if (requirePositive && mpf_sgn(parsed.backend()) <= 0) {
+        error = std::string(flag) + " must be greater than zero";
+        return false;
+    }
+    value = std::move(parsed);
     return true;
 }
 
@@ -616,6 +625,33 @@ ValidateShutdownArgs(const CliArgs &args, std::string &error)
         !args.PaletteMapFile.empty() || args.PaletteDepth.has_value() ||
         args.LocationIndex != SIZE_MAX) {
         error = "--shutdown cannot be combined with render arguments";
+        return false;
+    }
+    return true;
+}
+
+bool
+ValidateBatchArgs(const CliArgs &args, std::string &error)
+{
+    if (args.BatchPath.empty()) {
+        error = "--batch requires a nonempty file path";
+        return false;
+    }
+    if (args.Mode == CliMode::Server || args.Shutdown) {
+        error = "--batch cannot be combined with --server or --shutdown";
+        return false;
+    }
+    if (args.Mode == CliMode::SingleShot && !args.Endpoint.empty()) {
+        error = "--endpoint requires --connect";
+        return false;
+    }
+    if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
+        args.Console || args.Color || args.WidthSet || args.HeightSet || args.Iterations != 0 ||
+        args.Antialiasing != 0 || args.CommitCapBytes != UINT64_MAX ||
+        args.GpuRuntimeMode == GpuMode::Disabled || !args.PerturbationAlg.empty() ||
+        !args.PaletteMapFile.empty() || args.PaletteDepth.has_value() ||
+        args.LocationIndex != SIZE_MAX || args.Quiet) {
+        error = "render options for --batch belong in the batch file";
         return false;
     }
     return true;
@@ -759,12 +795,7 @@ ExecuteRenderRequest(const CliArgs &args,
     HighPrecision::defaultPrecisionInBits(FractalLimits::MaxPrecisionLame);
 
     if (!args.PaletteMapFile.empty()) {
-        try {
-            fractal.LoadCustomPalette(std::filesystem::path(args.PaletteMapFile));
-        } catch (const std::exception &exception) {
-            errorOut << "error: " << exception.what() << "\n";
-            return 1;
-        }
+        fractal.LoadCustomPalette(std::filesystem::path(args.PaletteMapFile));
     }
     if (args.PaletteDepth) {
         fractal.UsePalette(static_cast<int>(*args.PaletteDepth));
@@ -817,6 +848,89 @@ ExecuteServerRender(const CliArgs &args,
     req.PngCompletion = PngCompletionMode::Background;
 
     return ExecuteRenderRequest(args, req, fractal, out, errorOut);
+}
+
+void
+ResetBatchRenderSettings(Fractal &fractal)
+{
+    fractal.GetRenderPool()->Drain();
+    fractal.ResetNumIterations();
+    fractal.ResetDimensions(SIZE_MAX, SIZE_MAX, 1);
+    fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Low);
+    fractal.DefaultCompressionErrorExp(Fractal::CompressionError::Intermediate);
+    fractal.GetLAParameters().SetDefaults(LAParameters::LADefaults::MaxAccuracy);
+    fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
+    if (fractal.GetPaletteType() != FractalPaletteType::Default) {
+        fractal.UsePaletteType(FractalPaletteType::Default);
+    }
+    if (fractal.GetPaletteDepth() != FractalPalette::DefaultPaletteDepth) {
+        fractal.UsePalette(static_cast<int>(FractalPalette::DefaultPaletteDepth));
+    }
+}
+
+FractalSharkCli::IpcBatchResult
+ExecuteBatchImage(const std::vector<std::string> &arguments,
+                  Fractal &fractal,
+                  int defaultWidth,
+                  int defaultHeight,
+                  uint64_t commitCapBytes,
+                  bool serverMode)
+{
+    const auto started = std::chrono::steady_clock::now();
+    FractalSharkCli::IpcBatchResult result;
+    std::ostringstream output;
+    std::ostringstream errors;
+    CliArgs args;
+    try {
+        if (!ParseArgs(arguments, args, errors)) {
+            result.Response.Status = 2;
+        } else {
+            std::string validationError;
+            if (!ValidateRenderArgs(args, validationError, false)) {
+                errors << "error: " << validationError << "\n";
+                result.Response.Status = 2;
+            } else if (serverMode && args.GpuRuntimeMode == GpuMode::Disabled) {
+                errors << "error: --no-gpu is a server startup option; put it on --server\n";
+                result.Response.Status = 2;
+            } else if (serverMode && args.CommitCapBytes != UINT64_MAX &&
+                       args.CommitCapBytes != commitCapBytes) {
+                errors << "error: request commit cap does not match server startup cap\n";
+                result.Response.Status = 2;
+            } else {
+                ResetBatchRenderSettings(fractal);
+                RenderRequest request;
+                std::string requestError;
+                result.Response.Status = BuildRenderRequest(
+                    args, request, requestError, defaultWidth, defaultHeight, commitCapBytes);
+                if (result.Response.Status != 0) {
+                    errors << "error: " << requestError << "\n";
+                } else {
+                    request.PngCompletion = PngCompletionMode::Background;
+                    result.Width = static_cast<uint32_t>(request.Width);
+                    result.Height = static_cast<uint32_t>(request.Height);
+                    result.Response.Status =
+                        ExecuteRenderRequest(args, request, fractal, output, errors);
+                    if (result.Response.Status == 0) {
+                        result.Iterations = fractal.GetNumIterations<uint64_t>();
+                        result.OverallMs = fractal.GetBenchmark().m_Overall.GetDeltaInMs();
+                        result.PerPixelMs = fractal.GetBenchmark().m_PerPixel.GetDeltaInMs();
+                        RefOrbitDetails details;
+                        fractal.GetSomeDetails(details);
+                        result.RefOrbitMs = details.OrbitMilliseconds;
+                    }
+                }
+            }
+        }
+    } catch (const std::exception &exception) {
+        errors << "error: " << exception.what() << "\n";
+        result.Response.Status = 1;
+    }
+    result.CliImageMs = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started)
+            .count());
+    result.Response.Stdout = output.str();
+    result.Response.Stderr = errors.str();
+    return result;
 }
 
 std::vector<std::string>
@@ -886,6 +1000,165 @@ RunClient(const CliArgs &args, std::vector<std::string> forwardedArguments)
     return static_cast<int>(response.Status);
 }
 
+void
+PrintBatchImageError(size_t index, size_t count, const FractalSharkCli::BatchImage &image)
+{
+    std::cerr << "[" << index + 1 << "/" << count << "] " << image.Name
+              << " status=failed: " << image.Error << "\n";
+}
+
+void
+PrintBatchImageResult(size_t index,
+                      size_t count,
+                      const FractalSharkCli::BatchImage &image,
+                      const FractalSharkCli::IpcBatchResult &result)
+{
+    const bool success = result.Response.Status == 0;
+    std::cout << "[" << index + 1 << "/" << count << "] " << image.Name
+              << " status=" << (success ? "ok" : "failed") << " cli_image_ms=" << result.CliImageMs;
+    if (success) {
+        std::cout << " overall_ms=" << result.OverallMs << " per_pixel_ms=" << result.PerPixelMs
+                  << " ref_orbit_ms=" << result.RefOrbitMs << " size=" << result.Width << "x"
+                  << result.Height << " iterations=" << result.Iterations;
+    }
+    if (!image.Output.empty()) {
+        std::cout << " out=" << std::quoted(image.Output);
+    }
+    std::cout << "\n";
+    if (!result.Response.Stdout.empty()) {
+        std::cout << result.Response.Stdout;
+    }
+    if (!result.Response.Stderr.empty()) {
+        std::cerr << result.Response.Stderr;
+    }
+    std::cout.flush();
+    std::cerr.flush();
+}
+
+int
+RunBatch(const CliArgs &args)
+{
+    const auto started = std::chrono::steady_clock::now();
+    FractalSharkCli::BatchFile batch;
+    std::string error;
+    if (!FractalSharkCli::LoadBatchFile(args.BatchPath, batch, error)) {
+        std::cerr << "error: " << error << "\n";
+        return 2;
+    }
+
+    std::vector<size_t> validIndexes;
+    std::set<std::string> outputPaths;
+    size_t failedCount = 0;
+    for (size_t index = 0; index < batch.Images.size(); ++index) {
+        auto &image = batch.Images[index];
+        if (image.Error.empty()) {
+            CliArgs imageArgs;
+            std::ostringstream parseError;
+            if (!ParseArgs(image.Arguments, imageArgs, parseError)) {
+                image.Error = parseError.str();
+            } else if (!ValidateRenderArgs(imageArgs, image.Error, false)) {
+                // The validation error is stored on the image for ordered reporting.
+            }
+        }
+        if (image.Error.empty() && !image.Output.empty()) {
+            std::string outputKey = image.Output;
+#ifdef _WIN32
+            std::transform(outputKey.begin(), outputKey.end(), outputKey.begin(), [](unsigned char c) {
+                return static_cast<char>(std::tolower(c));
+            });
+#endif
+            if (!outputPaths.insert(outputKey).second) {
+                image.Error = "duplicate output path: " + image.Output;
+            }
+        }
+        if (image.Error.empty()) {
+            validIndexes.push_back(index);
+        } else {
+            ++failedCount;
+        }
+    }
+
+    if (args.Mode == CliMode::Client && !validIndexes.empty()) {
+        FractalSharkCli::IpcRequest request;
+        request.Operation = FractalSharkCli::IpcOperation::Batch;
+        request.BatchArguments.reserve(validIndexes.size());
+        for (const size_t index : validIndexes) {
+            request.BatchArguments.push_back(batch.Images[index].Arguments);
+        }
+        size_t nextToReport = 0;
+        size_t completedCount = 0;
+        const auto onResult = [&](size_t validIndex, const FractalSharkCli::IpcBatchResult &result) {
+            const size_t imageIndex = validIndexes[validIndex];
+            while (nextToReport < imageIndex) {
+                PrintBatchImageError(nextToReport, batch.Images.size(), batch.Images[nextToReport]);
+                ++nextToReport;
+            }
+            PrintBatchImageResult(imageIndex, batch.Images.size(), batch.Images[imageIndex], result);
+            if (result.Response.Status != 0) {
+                ++failedCount;
+            }
+            nextToReport = imageIndex + 1;
+        };
+        if (!FractalSharkCli::SendBatch(args.Endpoint, request, onResult, completedCount, error)) {
+            std::cerr << "error: batch IPC failed after " << completedCount << " responses: " << error
+                      << "\n";
+            size_t unknownCount = 0;
+            while (nextToReport < batch.Images.size()) {
+                const auto &image = batch.Images[nextToReport];
+                if (image.Error.empty()) {
+                    std::cerr << "[" << nextToReport + 1 << "/" << batch.Images.size() << "] "
+                              << image.Name << " status=unknown: no server response\n";
+                    ++unknownCount;
+                } else {
+                    PrintBatchImageError(nextToReport, batch.Images.size(), image);
+                }
+                ++nextToReport;
+            }
+            std::cout << "Batch: " << batch.Images.size() - failedCount - unknownCount << " succeeded, "
+                      << failedCount << " failed, " << unknownCount << " unknown\n";
+            return 3;
+        }
+        while (nextToReport < batch.Images.size()) {
+            PrintBatchImageError(nextToReport, batch.Images.size(), batch.Images[nextToReport]);
+            ++nextToReport;
+        }
+    } else {
+        std::unique_ptr<Fractal> fractal;
+        if (!validIndexes.empty()) {
+            fractal = std::make_unique<Fractal>(1024,
+                                                768,
+                                                /*nativeWindow=*/nullptr,
+                                                /*UseSensoCursor=*/false,
+                                                UINT64_MAX,
+                                                /*hostOwnedGlPresentation=*/true,
+                                                GpuMode::Auto);
+        }
+        for (size_t index = 0; index < batch.Images.size(); ++index) {
+            const auto &image = batch.Images[index];
+            if (!image.Error.empty()) {
+                PrintBatchImageError(index, batch.Images.size(), image);
+                continue;
+            }
+            const auto result =
+                ExecuteBatchImage(image.Arguments, *fractal, 1024, 768, UINT64_MAX, false);
+            PrintBatchImageResult(index, batch.Images.size(), image, result);
+            if (result.Response.Status != 0) {
+                ++failedCount;
+            }
+        }
+        if (fractal) {
+            fractal->CleanupThreads(/*all=*/true);
+        }
+    }
+
+    const auto elapsed =
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started)
+            .count();
+    std::cout << "Batch: " << batch.Images.size() - failedCount << " succeeded, " << failedCount
+              << " failed; elapsed_ms=" << elapsed << "\n";
+    return failedCount == 0 ? 0 : 1;
+}
+
 int
 RunServer(const CliArgs &serverArgs)
 {
@@ -919,6 +1192,23 @@ RunServer(const CliArgs &serverArgs)
         FractalSharkCli::IpcRequest request;
         if (!FractalSharkCli::ReadRequest(connection, request, error)) {
             std::cerr << "warning: rejected malformed IPC request: " << error << "\n";
+            continue;
+        }
+
+        if (request.Operation == FractalSharkCli::IpcOperation::Batch) {
+            for (const auto &arguments : request.BatchArguments) {
+                const auto result = ExecuteBatchImage(arguments,
+                                                      fractal,
+                                                      serverArgs.Width,
+                                                      serverArgs.Height,
+                                                      serverArgs.CommitCapBytes,
+                                                      true);
+                std::string writeError;
+                if (!FractalSharkCli::WriteBatchResult(connection, result, writeError)) {
+                    std::cerr << "warning: could not send batch result: " << writeError << "\n";
+                    break;
+                }
+            }
             continue;
         }
 
@@ -980,10 +1270,8 @@ RunServer(const CliArgs &serverArgs)
     return 0;
 }
 
-} // anonymous namespace
-
 int
-main(int argc, char *argv[])
+RunCli(int argc, char *argv[])
 {
     InitializeCliProcess();
 
@@ -1004,6 +1292,13 @@ main(int argc, char *argv[])
     }
 
     std::string validationError;
+    if (args.BatchSet) {
+        if (!ValidateBatchArgs(args, validationError)) {
+            std::cerr << "error: " << validationError << "\n";
+            return 2;
+        }
+        return RunBatch(args);
+    }
     if (args.Mode == CliMode::Client) {
         if (args.Shutdown) {
             if (!ValidateShutdownArgs(args, validationError)) {
@@ -1032,12 +1327,7 @@ main(int argc, char *argv[])
             std::cerr << "error: " << validationError << "\n";
             return 2;
         }
-        try {
-            return RunServer(args);
-        } catch (const std::exception &exception) {
-            std::cerr << "error: " << exception.what() << "\n";
-            return 1;
-        }
+        return RunServer(args);
     }
 
     if (!ValidateRenderArgs(args, validationError, false)) {
@@ -1046,24 +1336,32 @@ main(int argc, char *argv[])
         return 2;
     }
 
-    try {
-        RenderRequest request;
-        std::string requestError;
-        int requestStatus = BuildRenderRequest(
-            args, request, requestError, args.Width, args.Height, args.CommitCapBytes);
-        if (requestStatus != 0) {
-            std::cerr << "error: " << requestError << "\n";
-            return requestStatus;
-        }
+    RenderRequest request;
+    std::string requestError;
+    int requestStatus =
+        BuildRenderRequest(args, request, requestError, args.Width, args.Height, args.CommitCapBytes);
+    if (requestStatus != 0) {
+        std::cerr << "error: " << requestError << "\n";
+        return requestStatus;
+    }
 
-        Fractal fractal(request.Width,
-                        request.Height,
-                        /*nativeWindow=*/nullptr,
-                        /*UseSensoCursor=*/false,
-                        request.CommitCapBytes,
-                        /*hostOwnedGlPresentation=*/true,
-                        args.GpuRuntimeMode);
-        return ExecuteRenderRequest(args, request, fractal, std::cout, std::cerr);
+    Fractal fractal(request.Width,
+                    request.Height,
+                    /*nativeWindow=*/nullptr,
+                    /*UseSensoCursor=*/false,
+                    request.CommitCapBytes,
+                    /*hostOwnedGlPresentation=*/true,
+                    args.GpuRuntimeMode);
+    return ExecuteRenderRequest(args, request, fractal, std::cout, std::cerr);
+}
+
+} // anonymous namespace
+
+int
+main(int argc, char *argv[])
+{
+    try {
+        return RunCli(argc, argv);
     } catch (const std::exception &exception) {
         std::cerr << "error: " << exception.what() << "\n";
         return 1;

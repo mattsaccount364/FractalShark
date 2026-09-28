@@ -222,7 +222,8 @@ public:
              (SrcEnableBad == PerturbExtras::Disable && DestEnableBad == PerturbExtras::Disable));
 
     void ClearPerturbationResults(PerturbationResultType type);
-    void ResetGuess(HighPrecision x = HighPrecision(0), HighPrecision y = HighPrecision(0));
+    void ResetGuess();
+    void ResetGuess(HighPrecision x, HighPrecision y);
     void ResetLastUsedOrbit();
 
     void SaveAllOrbits();
@@ -391,6 +392,7 @@ private:
     const Fractal &m_Fractal;
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;
+    bool m_HasPerturbationGuess;
 
     AddPointOptions m_RefOrbitOptions;
 

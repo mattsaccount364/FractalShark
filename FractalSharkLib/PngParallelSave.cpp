@@ -12,6 +12,7 @@
 #include <iomanip>
 #include <sstream>
 #include <string_view>
+#include <utility>
 
 namespace {
 
@@ -70,8 +71,8 @@ WriteBinaryFile(const std::filesystem::path &path, const std::vector<unsigned ch
 //////////////////////////////////////////////////////////////////////////////
 
 PngParallelSave::PngParallelSave(enum Type typ,
-                                 std::wstring filename_base,
-                                 bool copy_the_iters,
+                                 std::wstring filenameBase,
+                                 bool copyTheIters,
                                  Fractal &fractal)
     : m_Type(typ), m_Fractal(fractal), m_ScrnWidth(fractal.m_ScrnWidth),
       m_ScrnHeight(fractal.m_ScrnHeight), m_GpuAntialiasing(fractal.m_GpuAntialiasing),
@@ -81,8 +82,7 @@ PngParallelSave::PngParallelSave(enum Type typ,
       m_PaletteAuxDepth(fractal.GetPalette().GetAuxDepth()),
       m_MaxPossibleIters(fractal.GetMaxIterationsRT()),
       m_WhichPalette(fractal.GetPalette().GetPaletteType()), m_PaletteColors{}, m_NumPaletteColors(),
-      m_CurIters{}, m_CopyTheIters(copy_the_iters), m_FilenameBase(filename_base), m_Thread(nullptr),
-      m_Destructable(false)
+      m_CurIters{}, m_CopyTheIters(copyTheIters), m_FilenameBase(std::move(filenameBase))
 {
 
     const std::vector<Color16> *palInterleaved = fractal.GetPalette().GetPalInterleaved(m_WhichPalette);
@@ -99,169 +99,134 @@ PngParallelSave::PngParallelSave(enum Type typ,
 
 PngParallelSave::~PngParallelSave()
 {
-    if (m_Thread) {
-        m_Thread->join();
+    if (!m_CopyTheIters) {
+        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
     }
-}
-
-void
-PngParallelSave::StartThread()
-{
-    assert(m_Thread == nullptr);
-    m_Thread = std::unique_ptr<std::thread>(DEBUG_NEW std::thread(&PngParallelSave::Run, this));
 }
 
 void
 PngParallelSave::Run()
 {
-    // Ensure m_Destructable is set on every exit path (early return, normal
-    // completion, or exception). Fractal::CleanupThreads waits for this flag;
-    // missing it on any path hangs the process at exit.
-    struct DestructableGuard {
-        PngParallelSave *self;
-        ~DestructableGuard() { self->m_Destructable.store(true, std::memory_order_release); }
-    } destructableGuard{this};
+    Environment::SetCurrentThreadName(L"PngParallelSave::Run");
 
-    struct IterMemoryReturnGuard {
-        PngParallelSave *self;
-        bool active;
-        ~IterMemoryReturnGuard()
-        {
-            if (active) {
-                self->m_Fractal.ReturnIterMemory(std::move(self->m_CurIters));
-            }
+    std::wstring finalFilename;
+
+    std::wstring ext;
+    if (m_Type == Type::PngImg) {
+        ext = L".png";
+    } else {
+        ext = L".txt";
+    }
+
+    if (!m_FilenameBase.empty()) {
+        finalFilename = m_FilenameBase;
+        if (!PathHasFilenameExtension(finalFilename)) {
+            finalFilename += ext;
         }
-    } iterMemoryReturnGuard{this, !m_CopyTheIters};
-
-    try {
-        Environment::SetCurrentThreadName(L"PngParallelSave::Run");
-
-        std::wstring final_filename;
-
-        std::wstring ext;
-        if (m_Type == Type::PngImg) {
-            ext = L".png";
-        } else {
-            ext = L".txt";
+        if (Utilities::FileExists(finalFilename.c_str())) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Not saving, file exists";
+            return;
         }
+    } else {
+        int i = 0;
+        do {
+            finalFilename = DefaultFilename(i, ext);
+            i++;
+        } while (Utilities::FileExists(finalFilename.c_str()));
+    }
 
-        if (!m_FilenameBase.empty()) {
-            final_filename = m_FilenameBase;
-            if (!PathHasFilenameExtension(final_filename)) {
-                final_filename += ext;
-            }
-            if (Utilities::FileExists(final_filename.c_str())) {
-                FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Not saving, file exists";
-                return;
-            }
-        } else {
-            int i = 0;
-            do {
-                final_filename = DefaultFilename(i, ext);
-                i++;
-            } while (Utilities::FileExists(final_filename.c_str()));
+    const std::filesystem::path finalPath(finalFilename);
+
+    if (m_Type == Type::PngImg) {
+        if (m_NumPaletteColors == 0) {
+            ReportSaveError(finalFilename, L"selected palette has no colors", __FILE__, __LINE__);
+            return;
         }
 
-        const std::filesystem::path finalPath(final_filename);
+        double accR, accB, accG;
+        size_t inputX, inputY;
+        size_t outputX, outputY;
+        IterTypeFull numIters;
 
-        if (m_Type == Type::PngImg) {
-            if (m_NumPaletteColors == 0) {
-                ReportSaveError(final_filename, L"selected palette has no colors", __FILE__, __LINE__);
-                return;
-            }
+        WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
 
-            double acc_r, acc_b, acc_g;
-            size_t input_x, input_y;
-            size_t output_x, output_y;
-            IterTypeFull numIters;
+        for (outputY = 0; outputY < m_ScrnHeight; outputY++) {
+            for (outputX = 0; outputX < m_ScrnWidth; outputX++) {
+                accR = 0;
+                accG = 0;
+                accB = 0;
 
-            WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
+                for (inputX = outputX * m_GpuAntialiasing; inputX < (outputX + 1) * m_GpuAntialiasing;
+                     inputX++) {
+                    for (inputY = outputY * m_GpuAntialiasing;
+                         inputY < (outputY + 1) * m_GpuAntialiasing;
+                         inputY++) {
 
-            for (output_y = 0; output_y < m_ScrnHeight; output_y++) {
-                for (output_x = 0; output_x < m_ScrnWidth; output_x++) {
-                    acc_r = 0;
-                    acc_g = 0;
-                    acc_b = 0;
-
-                    for (input_x = output_x * m_GpuAntialiasing;
-                         input_x < (output_x + 1) * m_GpuAntialiasing;
-                         input_x++) {
-                        for (input_y = output_y * m_GpuAntialiasing;
-                             input_y < (output_y + 1) * m_GpuAntialiasing;
-                             input_y++) {
-
-                            numIters = m_CurIters.GetItersArrayValSlow(input_x, input_y);
-                            if (numIters < m_NumIterations) {
-                                numIters += m_PaletteRotate;
-                                if (numIters >= m_MaxPossibleIters) {
-                                    numIters = m_MaxPossibleIters - 1;
-                                }
-
-                                auto shiftedIters = (numIters >> m_PaletteAuxDepth);
-                                auto palIndex = shiftedIters % m_NumPaletteColors;
-
-                                acc_r += m_PaletteColors[palIndex].r;
-                                acc_g += m_PaletteColors[palIndex].g;
-                                acc_b += m_PaletteColors[palIndex].b;
+                        numIters = m_CurIters.GetItersArrayValSlow(inputX, inputY);
+                        if (numIters < m_NumIterations) {
+                            numIters += m_PaletteRotate;
+                            if (numIters >= m_MaxPossibleIters) {
+                                numIters = m_MaxPossibleIters - 1;
                             }
+
+                            auto shiftedIters = (numIters >> m_PaletteAuxDepth);
+                            auto palIndex = shiftedIters % m_NumPaletteColors;
+
+                            accR += m_PaletteColors[palIndex].r;
+                            accG += m_PaletteColors[palIndex].g;
+                            accB += m_PaletteColors[palIndex].b;
                         }
                     }
-
-                    acc_r /= m_GpuAntialiasing * m_GpuAntialiasing;
-                    acc_g /= m_GpuAntialiasing * m_GpuAntialiasing;
-                    acc_b /= m_GpuAntialiasing * m_GpuAntialiasing;
-
-                    image.set((int)output_x,
-                              (int)output_y,
-                              WPngImage::Pixel16((uint16_t)acc_r, (uint16_t)acc_g, (uint16_t)acc_b));
-                }
-            }
-
-            std::vector<unsigned char> pngBytes;
-            const auto status =
-                image.saveImageToRAM(pngBytes, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
-            if (status != WPngImage::kIOStatus_Ok) {
-                std::wstring message = L"PNG encoder failed";
-                if (!status.pngLibErrorMsg.empty()) {
-                    message += L": ";
-                    message += WidenForLog(status.pngLibErrorMsg);
-                }
-                ReportSaveError(final_filename, message, __FILE__, __LINE__);
-                return;
-            }
-
-            if (!WriteBinaryFile(finalPath, pngBytes)) {
-                ReportSaveError(final_filename, L"could not write PNG file", __FILE__, __LINE__);
-                return;
-            }
-        } else {
-            std::ofstream out(finalPath);
-            if (!out) {
-                ReportSaveError(final_filename, L"could not open text file", __FILE__, __LINE__);
-                return;
-            }
-
-            out << "# x, y, and iteration counts are decimal.\n";
-
-            for (size_t output_y = 0; output_y < m_ScrnHeight * m_GpuAntialiasing; output_y++) {
-                for (size_t output_x = 0; output_x < m_ScrnWidth * m_GpuAntialiasing; output_x++) {
-                    IterTypeFull numiters = m_CurIters.GetItersArrayValSlow(output_x, output_y);
-                    out << "(x=" << output_x << ",y=" << output_y << "):iters=" << numiters << " ";
                 }
 
-                out << "\n";
-            }
+                accR /= m_GpuAntialiasing * m_GpuAntialiasing;
+                accG /= m_GpuAntialiasing * m_GpuAntialiasing;
+                accB /= m_GpuAntialiasing * m_GpuAntialiasing;
 
-            if (!out) {
-                ReportSaveError(final_filename, L"could not write text file", __FILE__, __LINE__);
-                return;
+                image.set((int)outputX,
+                          (int)outputY,
+                          WPngImage::Pixel16((uint16_t)accR, (uint16_t)accG, (uint16_t)accB));
             }
         }
-    } catch (const std::exception &ex) {
-        FractalSharkLog::WriteException("PngParallelSave failed", ex, __FILE__, __LINE__);
-    } catch (...) {
-        // This thread boundary preserves the asynchronous log-only save contract for unknown types.
-        FractalSharkLog::LogLine(__FILE__, __LINE__)
-            << "PngParallelSave failed with an unknown exception";
+
+        std::vector<unsigned char> pngBytes;
+        const auto status =
+            image.saveImageToRAM(pngBytes, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
+        if (status != WPngImage::kIOStatus_Ok) {
+            std::wstring message = L"PNG encoder failed";
+            if (!status.pngLibErrorMsg.empty()) {
+                message += L": ";
+                message += WidenForLog(status.pngLibErrorMsg);
+            }
+            ReportSaveError(finalFilename, message, __FILE__, __LINE__);
+            return;
+        }
+
+        if (!WriteBinaryFile(finalPath, pngBytes)) {
+            ReportSaveError(finalFilename, L"could not write PNG file", __FILE__, __LINE__);
+            return;
+        }
+    } else {
+        std::ofstream out(finalPath);
+        if (!out) {
+            ReportSaveError(finalFilename, L"could not open text file", __FILE__, __LINE__);
+            return;
+        }
+
+        out << "# x, y, and iteration counts are decimal.\n";
+
+        for (size_t outputY = 0; outputY < m_ScrnHeight * m_GpuAntialiasing; outputY++) {
+            for (size_t outputX = 0; outputX < m_ScrnWidth * m_GpuAntialiasing; outputX++) {
+                IterTypeFull numIters = m_CurIters.GetItersArrayValSlow(outputX, outputY);
+                out << "(x=" << outputX << ",y=" << outputY << "):iters=" << numIters << " ";
+            }
+
+            out << "\n";
+        }
+
+        if (!out) {
+            ReportSaveError(finalFilename, L"could not write text file", __FILE__, __LINE__);
+            return;
+        }
     }
 }

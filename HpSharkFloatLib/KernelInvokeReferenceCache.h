@@ -72,6 +72,29 @@ namespace ReferenceCacheDetail {
 inline constexpr std::array<char, 8> CacheMagic{'F', 'S', 'R', '2', 'C', 'A', 'C', 'H'};
 inline constexpr wchar_t CacheDirectoryName[] = L"ReferencePreparedTemp";
 
+class TemporaryCacheFileCleanup {
+public:
+    explicit TemporaryCacheFileCleanup(const std::wstring &path) noexcept : m_Path(path) {}
+    TemporaryCacheFileCleanup(const TemporaryCacheFileCleanup &) = delete;
+    TemporaryCacheFileCleanup &operator=(const TemporaryCacheFileCleanup &) = delete;
+    ~TemporaryCacheFileCleanup()
+    {
+        if (m_Active) {
+            Environment::FileDelete(m_Path.c_str());
+        }
+    }
+
+    void
+    Disarm() noexcept
+    {
+        m_Active = false;
+    }
+
+private:
+    const std::wstring &m_Path;
+    bool m_Active = true;
+};
+
 inline constexpr size_t
 Align(size_t value, size_t alignment)
 {
@@ -309,6 +332,7 @@ SaveHpSharkReferenceTables(const ReferencePreparedTables<SharkFloatParams> &prep
         testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
     const auto temporary = target + L".tmp";
     Environment::FileDelete(temporary.c_str());
+    ReferenceCacheDetail::TemporaryCacheFileCleanup temporaryCleanup(temporary);
 
     auto mapped = ReferenceMappedCacheFile::CreateWrite(temporary.c_str(), layout.FileBytes);
     if (mapped == nullptr)
@@ -334,6 +358,7 @@ SaveHpSharkReferenceTables(const ReferencePreparedTables<SharkFloatParams> &prep
     mapped.reset();
     if (!Environment::FileRename(temporary.c_str(), target.c_str(), true))
         throw FractalSharkSeriousException("Unable to publish Reference prepared-table cache");
+    temporaryCleanup.Disarm();
 }
 
 template <class SharkFloatParams>
@@ -399,6 +424,40 @@ LoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                                                         Workspace::MaxFusedStages);
 }
 
+namespace ReferenceCacheDetail {
+
+template <class SharkFloatParams, class Prepare>
+std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
+PrepareOrLoadHpSharkReferenceTablesImpl(const HpShark::LaunchParams &launchParams,
+                                        uint32_t actualPrecisionLimbs,
+                                        int64_t testNumber,
+                                        uint32_t sequence,
+                                        uint32_t minFusedStages,
+                                        uint32_t maxFusedStages,
+                                        Prepare prepare)
+{
+    try {
+        return LoadHpSharkReferenceTables<SharkFloatParams>(
+            launchParams, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
+    } catch (const std::exception &error) {
+        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Reference cache miss for test " << testNumber
+                                                     << " sequence " << sequence << ": " << error.what();
+    }
+
+    auto prepared = prepare();
+    try {
+        SaveHpSharkReferenceTables<SharkFloatParams>(
+            *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
+    } catch (const std::exception &error) {
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
+            << error.what();
+    }
+    return prepared;
+}
+
+} // namespace ReferenceCacheDetail
+
 template <class SharkFloatParams>
 std::unique_ptr<ReferencePreparedTables<SharkFloatParams>>
 PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
@@ -410,25 +469,11 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                                     uint32_t minFusedStages,
                                     uint32_t maxFusedStages)
 {
-    try {
-        return LoadHpSharkReferenceTables<SharkFloatParams>(
-            launchParams, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    } catch (const std::exception &error) {
-        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Reference cache miss for test " << testNumber
-                                                     << " sequence " << sequence << ": " << error.what();
-    }
-
-    auto prepared = PrepareHpSharkReferenceTables<SharkFloatParams>(
-        launchParams, cReal, cImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    try {
-        SaveHpSharkReferenceTables<SharkFloatParams>(
-            *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    } catch (const std::exception &error) {
-        FractalSharkLog::LogLine(__FILE__, __LINE__)
-            << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
-            << error.what();
-    }
-    return prepared;
+    return ReferenceCacheDetail::PrepareOrLoadHpSharkReferenceTablesImpl<SharkFloatParams>(
+        launchParams, actualPrecisionLimbs, testNumber, sequence, minFusedStages, maxFusedStages, [&] {
+            return PrepareHpSharkReferenceTables<SharkFloatParams>(
+                launchParams, cReal, cImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
+        });
 }
 
 template <class SharkFloatParams>
@@ -462,25 +507,11 @@ PrepareOrLoadHpSharkReferenceTables(const HpShark::LaunchParams &launchParams,
                                     uint32_t minFusedStages,
                                     uint32_t maxFusedStages)
 {
-    try {
-        return LoadHpSharkReferenceTables<SharkFloatParams>(
-            launchParams, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    } catch (const std::exception &error) {
-        FractalSharkLog::LogLine(__FILE__, __LINE__) << "Reference cache miss for test " << testNumber
-                                                     << " sequence " << sequence << ": " << error.what();
-    }
-
-    auto prepared = PrepareHpSharkReferenceTables<SharkFloatParams>(
-        launchParams, cReal, cImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    try {
-        SaveHpSharkReferenceTables<SharkFloatParams>(
-            *prepared, testNumber, sequence, actualPrecisionLimbs, minFusedStages, maxFusedStages);
-    } catch (const std::exception &error) {
-        FractalSharkLog::LogLine(__FILE__, __LINE__)
-            << "Reference cache save failed for test " << testNumber << " sequence " << sequence << ": "
-            << error.what();
-    }
-    return prepared;
+    return ReferenceCacheDetail::PrepareOrLoadHpSharkReferenceTablesImpl<SharkFloatParams>(
+        launchParams, actualPrecisionLimbs, testNumber, sequence, minFusedStages, maxFusedStages, [&] {
+            return PrepareHpSharkReferenceTables<SharkFloatParams>(
+                launchParams, cReal, cImag, actualPrecisionLimbs, minFusedStages, maxFusedStages);
+        });
 }
 
 template <class SharkFloatParams>

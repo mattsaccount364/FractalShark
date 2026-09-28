@@ -299,33 +299,22 @@ CrummyTest::ReferenceSaveLoad(Fractal &fractal,
         const auto disableFilename = genLocalFilename(L"Disable") + L".txt";
         fractal.SaveRefOrbit(CompressToDisk::Disable, disableFilename);
 
-        // Only run this for non-2x32 algorithms
+        // Simple compression does not support the 2x32 algorithms.
         // TODO introduce better way to sort out different RenderAlgorithm properties
-        try {
+        if constexpr (origAlgToTest.Algorithm != RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::Gpu2x32PerturbedLAv2 &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2 &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO &&
+                      origAlgToTest.Algorithm != RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO) {
             const auto simpleFilename = genLocalFilename(L"Simple") + L".txt";
             fractal.SaveRefOrbit(CompressToDisk::SimpleCompression, simpleFilename);
-        } catch (FractalSharkSeriousException &e) {
-            if constexpr (origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2 ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2 ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2PO ||
-                          origAlgToTest.Algorithm ==
-                              RenderAlgorithmEnum::GpuHDRx2x32PerturbedRCLAv2LAO ||
-
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2 ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2PO ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedLAv2LAO ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2 ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2PO ||
-                          origAlgToTest.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedRCLAv2LAO) {
-
-                // This is expected to fail for 2x32 algorithms
-            } else {
-
-                // Scaled algs also throw but we're not testing that currently
-                throw e;
-            }
         }
     }
 

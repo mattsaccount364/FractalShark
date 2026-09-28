@@ -1,14 +1,32 @@
-# Start one persistent CLI server, submit render requests, and stop the server after
-# its background PNG encoders finish. Each run keeps its images and server logs together.
+param(
+    [ValidateSet('Batch', 'Sequential', 'Compare')]
+    [string]$Mode = 'Batch',
+    [string]$OutputRoot
+)
+
+# Submit the same scenes sequentially or as one batch. Compare uses a fresh server
+# for each pass so reference-orbit state from the first pass cannot affect the second.
 $ErrorActionPreference = 'Stop'
 $totalTime = [System.Diagnostics.Stopwatch]::StartNew()
+$outputRootProvided = [bool]$OutputRoot
 
 $cli = (Resolve-Path (Join-Path $PSScriptRoot '..\Release\FractalSharkCli.exe')).Path
 # A unique endpoint allows multiple copies of this example to run without colliding.
 $runName = 'cli-server-example-{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'), $PID
-$outputRoot = Join-Path (Split-Path $PSScriptRoot -Parent) $runName
+if (-not $OutputRoot) {
+    $OutputRoot = Join-Path (Split-Path $PSScriptRoot -Parent) $runName
+}
+$outputRoot = $OutputRoot
+$batchOutput = Join-Path $outputRoot 'batch'
+$sequentialOutput = Join-Path $outputRoot 'sequential'
 $endpoint = "FractalSharkCli-example-$PID"
-New-Item -ItemType Directory -Path $outputRoot | Out-Null
+New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
+if ($Mode -eq 'Batch' -or $Mode -eq 'Compare') {
+    New-Item -ItemType Directory -Path $batchOutput -Force | Out-Null
+}
+if ($Mode -eq 'Sequential' -or $Mode -eq 'Compare') {
+    New-Item -ItemType Directory -Path $sequentialOutput -Force | Out-Null
+}
 
 # Coordinates stay as strings so PowerShell cannot truncate their precision.
 $scenes = @(
@@ -56,6 +74,29 @@ $scenes = @(
     }
 )
 
+if ($Mode -eq 'Compare') {
+    & $PSCommandPath -Mode Sequential -OutputRoot $outputRoot
+    & $PSCommandPath -Mode Batch -OutputRoot $outputRoot
+    foreach ($scene in $scenes) {
+        $sequential = Join-Path $sequentialOutput "$($scene.Name).png"
+        $batched = Join-Path $batchOutput "$($scene.Name).png"
+        if (-not (Test-Path -LiteralPath $sequential) -or -not (Test-Path -LiteralPath $batched)) {
+            throw "Missing output for $($scene.Name)"
+        }
+        $sequentialHash = (Get-FileHash -LiteralPath $sequential -Algorithm SHA256).Hash
+        $batchHash = (Get-FileHash -LiteralPath $batched -Algorithm SHA256).Hash
+        if ($sequentialHash -ne $batchHash) {
+            throw "PNG contents differ for $($scene.Name)"
+        }
+    }
+    $totalTime.Stop()
+    Write-Host "All $($scenes.Count) sequential and batch PNG pairs match."
+    Write-Host ('Comparison end-to-end time: {0:N1} ms' -f $totalTime.Elapsed.TotalMilliseconds)
+    Write-Host "Finished PNGs are in $outputRoot"
+    Get-ChildItem -LiteralPath $outputRoot -Filter '*.png' -Recurse | Select-Object FullName, Length
+    return
+}
+
 # The server retains the expensive renderer state between requests. Its output is captured
 # beside the PNGs so the example remains easy to inspect after it finishes.
 $serverStdout = Join-Path $outputRoot 'server.stdout.txt'
@@ -89,18 +130,46 @@ try {
         throw "Server did not become ready within 120 seconds. See $serverStderr"
     }
 
-    # Requests are handled in order, but each client returns after the server starts its
-    # background PNG encode, allowing encoding to overlap the following render.
-    foreach ($scene in $scenes) {
-        $output = Join-Path $outputRoot "$($scene.Name).png"
-        Write-Host "Rendering $($scene.Name) -> $output"
-        & $cli --connect --endpoint $endpoint `
-            --render-algorithm GpuHDRx32PerturbedLAv2 `
-            --center-x $scene.X --center-y $scene.Y --zoom $scene.Zoom `
-            --iterations $scene.Iterations --width 3840 --height 2160 `
-            --antialiasing 1 --out $output --quiet
+    if ($Mode -eq 'Sequential') {
+        # Preserve the original one-image-per-connection path as a baseline.
+        foreach ($scene in $scenes) {
+            $output = Join-Path $sequentialOutput "$($scene.Name).png"
+            Write-Host "Rendering $($scene.Name) -> $output"
+            & $cli --connect --endpoint $endpoint `
+                --render-algorithm GpuHDRx32PerturbedLAv2 `
+                --center-x $scene.X --center-y $scene.Y --zoom $scene.Zoom `
+                --iterations $scene.Iterations --width 3840 --height 2160 `
+                --antialiasing 1 --out $output --quiet
+            if ($LASTEXITCODE -ne 0) {
+                throw "Sequential render failed with exit code $LASTEXITCODE"
+            }
+        }
+    }
+
+    if ($Mode -eq 'Batch') {
+        $batchFile = Join-Path $outputRoot 'scenes.batch'
+        $batchResults = Join-Path $outputRoot 'batch-results.txt'
+        $lines = [System.Collections.Generic.List[string]]::new()
+        $lines.Add('[defaults]')
+        $lines.Add('render-algorithm = GpuHDRx32PerturbedLAv2')
+        $lines.Add('width = 3840')
+        $lines.Add('height = 2160')
+        $lines.Add('antialiasing = 1')
+        $lines.Add('quiet = true')
+        $lines.Add('out = batch/{name}.png')
+        foreach ($scene in $scenes) {
+            $lines.Add('')
+            $lines.Add("[image $($scene.Name)]")
+            $lines.Add("center-x = $($scene.X)")
+            $lines.Add("center-y = $($scene.Y)")
+            $lines.Add("zoom = $($scene.Zoom)")
+            $lines.Add("iterations = $($scene.Iterations)")
+        }
+        [System.IO.File]::WriteAllLines($batchFile, $lines.ToArray())
+        & $cli --connect --endpoint $endpoint --batch $batchFile 2>&1 |
+            Tee-Object -FilePath $batchResults
         if ($LASTEXITCODE -ne 0) {
-            throw "Render failed with exit code $LASTEXITCODE"
+            throw "Batch render failed with exit code $LASTEXITCODE"
         }
     }
 }
@@ -128,4 +197,58 @@ finally {
 $totalTime.Stop()
 Write-Host ('Total end-to-end time: {0:N1} ms' -f $totalTime.Elapsed.TotalMilliseconds)
 Write-Host "Finished PNGs are in $outputRoot"
-Get-ChildItem -LiteralPath $outputRoot -Filter '*.png' | Select-Object Name, Length
+if ($Mode -eq 'Batch') {
+    $pattern = '^\[(?<frame>\d+)/(?<total>\d+)\] (?<name>\S+) status=(?<status>ok|failed) ' +
+        'cli_image_ms=(?<cliImage>\d+)(?: overall_ms=(?<overall>\d+) ' +
+        'per_pixel_ms=(?<pixel>\d+) ref_orbit_ms=(?<orbit>\d+))?'
+    $timings = @(
+        foreach ($line in Get-Content -LiteralPath $batchResults) {
+            $match = [regex]::Match($line, $pattern)
+            if ($match.Success) {
+                if ([int]$match.Groups['total'].Value -ne $scenes.Count) {
+                    throw "Unexpected image count in batch result: $line"
+                }
+                [PSCustomObject]@{
+                    Frame = [int]$match.Groups['frame'].Value
+                    Name = $match.Groups['name'].Value
+                    Status = $match.Groups['status'].Value
+                    'Overall (ms)' = if ($match.Groups['overall'].Success) {
+                        [long]$match.Groups['overall'].Value
+                    } else { $null }
+                    'Per pixel (ms)' = if ($match.Groups['pixel'].Success) {
+                        [long]$match.Groups['pixel'].Value
+                    } else { $null }
+                    'RefOrbit (ms)' = if ($match.Groups['orbit'].Success) {
+                        [long]$match.Groups['orbit'].Value
+                    } else { $null }
+                    'CLI image (ms)' = [long]$match.Groups['cliImage'].Value
+                }
+            }
+        }
+    )
+    if ($timings.Count -ne $scenes.Count) {
+        throw "Expected $($scenes.Count) batch timing rows, found $($timings.Count). See $batchResults"
+    }
+    for ($index = 0; $index -lt $scenes.Count; ++$index) {
+        if ($timings[$index].Frame -ne ($index + 1) -or
+            $timings[$index].Name -ne $scenes[$index].Name -or
+            $timings[$index].Status -ne 'ok' -or
+            $null -eq $timings[$index].'Overall (ms)' -or
+            $null -eq $timings[$index].'Per pixel (ms)' -or
+            $null -eq $timings[$index].'RefOrbit (ms)') {
+            throw "Missing or invalid timing for image $($index + 1). See $batchResults"
+        }
+    }
+    $timingsCsv = Join-Path $outputRoot 'batch-timings.csv'
+    $timings | Export-Csv -LiteralPath $timingsCsv -NoTypeInformation
+    Write-Host 'Per-image timings (ms):'
+    $timingTable = $timings | Format-Table Frame, Name, 'Overall (ms)', 'Per pixel (ms)',
+        'RefOrbit (ms)', 'CLI image (ms)' -AutoSize |
+        Out-String
+    Write-Host $timingTable.TrimEnd()
+    Write-Host "Saved batch results to $batchResults and $timingsCsv"
+}
+if (-not $outputRootProvided) {
+    Get-ChildItem -LiteralPath $outputRoot -Filter '*.png' -Recurse |
+        Select-Object FullName, Length
+}

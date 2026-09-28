@@ -51,9 +51,11 @@
   <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="LocalIpc.cpp" />
+    <ClCompile Include="BatchFile.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LocalIpc.h" />
+    <ClInclude Include="BatchFile.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">

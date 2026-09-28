@@ -14,6 +14,7 @@ target_sources(FractalSharkLib PRIVATE
     FeatureFinderOrchestrator.cpp
     FeatureSummary.cpp
     Fractal.cpp
+    FractalSaveThreadPool.cpp
     FractalPalette.cpp
     ImaginaOrbit.cpp
     ItersMemoryContainer.cpp

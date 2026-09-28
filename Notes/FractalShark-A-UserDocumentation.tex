@@ -962,6 +962,7 @@ FractalSharkCli --server [--endpoint NAME] [--width W --height H]
 FractalSharkCli --connect [--endpoint NAME] --render-algorithm NAME
                 [--out FILE.png] [--console] [--color] [options] {view-source}
 FractalSharkCli --connect [--endpoint NAME] --shutdown
+FractalSharkCli [--connect [--endpoint NAME]] --batch FILE
 FractalSharkCli --list-render-algorithms
 FractalSharkCli --help
 \end{lstlisting}
@@ -1069,11 +1070,67 @@ fractal calculation; the client's frame time also covers the local request and
 response. Neither time includes a background PNG encode that continues after a
 server response.
 
+\subsubsection*{Batch rendering}
+
+A batch file submits multiple images through one connection, or renders them
+locally when \code{-{}-connect} is omitted. It contains an optional
+\code{[defaults]} section followed by one or more uniquely named
+\code{[image NAME]} sections. Each setting uses \code{key = value}; keys are
+the render option names without their leading dashes. Image settings override
+defaults. An empty value clears an inherited optional setting. Boolean values
+are \code{true} or \code{false}. Lines beginning with \code{\#} or
+\code{;} are comments. Names contain letters, digits, underscores, or hyphens.
+
+\begin{lstlisting}
+[defaults]
+render-algorithm = Cpu64
+width = 1280
+height = 720
+out = renders/{name}.png
+quiet = true
+
+[image first]
+center-x = -0.75
+center-y = 0
+zoom = 1000
+iterations = 2000
+
+[image second]
+center-x = -0.7435
+center-y = 0.1314
+zoom = 100000
+iterations = 4000
+\end{lstlisting}
+
+The batch file is read by the client. Its output, palette-map, and saved-location
+paths are resolved relative to the batch file's directory before submission.
+The \code{\{name\}} placeholder in an output path expands to the image name.
+Create output directories, such as \code{renders} above, before running the batch.
+The server receives all valid images before it begins rendering. Invalid image
+sections are reported while valid images continue; malformed file structure or
+invalid Boolean values or conflicting view sources in \code{[defaults]} stop
+the command before rendering.
+
+Every image prints a named status line with \code{overall\_ms},
+\code{per\_pixel\_ms}, and \code{ref\_orbit\_ms}, matching the verbose
+\code{Overall (ms)}, \code{Per pixel (ms)}, and \code{RefOrbit (ms)} values.
+The reference-orbit time belongs to the selected orbit, so reuse can report its
+original generation time. The line also includes \code{cli\_image\_ms}, actual
+dimensions, iteration count, and output path when available. This CLI image time
+includes the overall rendering time and request setup through PNG save submission;
+it does not wait for background PNG encoding. The line remains visible with
+\code{-{}-quiet} in the batch file. The batch command also prints elapsed time
+and success/failure counts. The server shutdown command drains outstanding PNG
+writes. \code{tools/run\_cli\_server\_example.ps1} runs the same six scenes
+sequentially or as one batch and can compare their PNG outputs. The batch run
+also saves its client output in \code{batch-results.txt} and per-image timings
+in \code{batch-timings.csv} beside the PNGs.
+
 \subsubsection*{Implementation}
 
 The executable parses and validates render options in single-shot and client
 modes. A client forwards the render arguments or a shutdown request over a
-versioned local IPC protocol. The server validates render arguments again,
+local IPC protocol. The server validates render arguments again,
 processes one connection at a time, and returns a status plus captured standard
 output and error. It owns one \code{Fractal} instance across requests, retaining
 initialized renderer state. In single-shot mode, the executable creates a new

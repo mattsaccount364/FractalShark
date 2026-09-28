@@ -355,13 +355,6 @@ jobs:
           "YASM_PATH=$binDir\"       | Out-File -FilePath $env:GITHUB_ENV -Append
           "YASM_NAME=vsyasm.exe"     | Out-File -FilePath $env:GITHUB_ENV -Append
 
-          try {
-            & $exe.FullName /?
-          } catch {
-            # ignore
-          }
-          $LASTEXITCODE = 0
-
       # Originally it wouldn't load.  Used this to sort out it was missing the VC runtime dependency.
       - name: Dump DLL dependencies (vsyasm)
         shell: pwsh

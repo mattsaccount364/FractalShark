@@ -101,8 +101,9 @@ PrefetchHighPrec(const mpf_t &target)
 
 RefOrbitCalc::RefOrbitCalc(const Fractal &fractal, uint64_t commitLimitInBytes)
     : m_PerturbationAlg{PerturbationAlg::Auto}, m_Fractal(fractal), m_PerturbationGuessCalcX(0),
-      m_PerturbationGuessCalcY(0), m_RefOrbitOptions{AddPointOptions::DontSave}, m_GuessReserveSize(),
-      m_GenerationNumber(), m_CommitLimitInBytes{commitLimitInBytes}
+      m_PerturbationGuessCalcY(0), m_HasPerturbationGuess(false),
+      m_RefOrbitOptions{AddPointOptions::DontSave}, m_GuessReserveSize(), m_GenerationNumber(),
+      m_CommitLimitInBytes{commitLimitInBytes}
 {
 
     m_NumCpuCores = Environment::LogicalProcessorCount();
@@ -222,9 +223,10 @@ template <typename IterType,
 void
 RefOrbitCalc::AddPerturbationReferencePoint(const PointZoomBBConverter &ptz)
 {
-    if (m_PerturbationGuessCalcX == HighPrecision{} && m_PerturbationGuessCalcY == HighPrecision{}) {
+    if (!m_HasPerturbationGuess) {
         m_PerturbationGuessCalcX = (ptz.GetMaxX() + ptz.GetMinX()) / HighPrecision(2);
         m_PerturbationGuessCalcY = (ptz.GetMaxY() + ptz.GetMinY()) / HighPrecision(2);
+        m_HasPerturbationGuess = true;
     }
 
     if (GetPerturbationAlg() == PerturbationAlg::ST) {
@@ -2321,9 +2323,10 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
     };
 
     if (RequiresReuse()) {
-        if (m_PerturbationGuessCalcX == HighPrecision{} && m_PerturbationGuessCalcY == HighPrecision{}) {
+        if (!m_HasPerturbationGuess) {
             m_PerturbationGuessCalcX = (ptz.GetMaxX() + ptz.GetMinX()) / HighPrecision{2};
             m_PerturbationGuessCalcY = (ptz.GetMaxY() + ptz.GetMinY()) / HighPrecision{2};
+            m_HasPerturbationGuess = true;
         }
 
         PerturbationResults<IterType, T, PExtrasHackYay> *results =
@@ -2614,8 +2617,7 @@ RefOrbitCalc::ClearPerturbationResults([[maybe_unused]] PerturbationResultType t
 
     m_C.clear();
 
-    m_PerturbationGuessCalcX = {};
-    m_PerturbationGuessCalcY = {};
+    ResetGuess();
 
     ResetLastUsedOrbit();
 }
@@ -2627,10 +2629,19 @@ RefOrbitCalc::ResetLastUsedOrbit()
 }
 
 void
+RefOrbitCalc::ResetGuess()
+{
+    m_PerturbationGuessCalcX = {};
+    m_PerturbationGuessCalcY = {};
+    m_HasPerturbationGuess = false;
+}
+
+void
 RefOrbitCalc::ResetGuess(HighPrecision x, HighPrecision y)
 {
-    m_PerturbationGuessCalcX = x;
-    m_PerturbationGuessCalcY = y;
+    m_PerturbationGuessCalcX = std::move(x);
+    m_PerturbationGuessCalcY = std::move(y);
+    m_HasPerturbationGuess = true;
 }
 
 void

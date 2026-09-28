@@ -2,6 +2,7 @@
 #include "FeatureSummary.h"
 #include "Fractal.h"
 #include "FractalPalette.h"
+#include "FractalSaveThreadPool.h"
 #include "GuiFileOperations.h"
 #include "ItersMemoryContainer.h"
 #include "OrbitEndpointEvaluator.h"
@@ -13,12 +14,19 @@
 #include "RenderToPng.h"
 #include "TestFramework.h"
 
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <limits>
+#include <mutex>
+#include <set>
 #include <sstream>
+#include <stdexcept>
 #include <string>
+#include <thread>
 
 namespace {
 
@@ -401,7 +409,7 @@ TEST(FractalSharkLib_LAFeatureFinderHandlesIncompleteSearch)
     Fractal fractal(
         32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
     ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
-    fractal.SetNumIterations<uint32_t>(256);
+    fractal.SetNumIterations<uint32_t>(32);
     const PointZoomBBConverter view(HighPrecision{"-0.743643887037151"},
                                     HighPrecision{"0.13182590420533"},
                                     HighPrecision{1000},
@@ -413,6 +421,27 @@ TEST(FractalSharkLib_LAFeatureFinderHandlesIncompleteSearch)
     ASSERT_TRUE(fractal.ChooseClosestFeatureToScreenPoint(20, 16) == nullptr);
     fractal.TryFindPeriodicPoint(20, 16, FeatureFinderMode::LA);
     ASSERT_TRUE(fractal.ChooseClosestFeatureToScreenPoint(20, 16) == nullptr);
+}
+
+TEST(FractalSharkLib_PTFeatureFinderFindsPeriod43)
+{
+    Fractal fractal(
+        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
+    fractal.SetNumIterations<uint32_t>(256);
+    const PointZoomBBConverter view(HighPrecision{"-0.743643887037151"},
+                                    HighPrecision{"0.13182590420533"},
+                                    HighPrecision{1000},
+                                    PointZoomBBConverter::TestMode::Enabled);
+    ASSERT_TRUE(fractal.RecenterViewCalc(view));
+    fractal.CalcFractal(true);
+
+    fractal.TryFindPeriodicPoint(20, 16, FeatureFinderMode::PT);
+    const FeatureSummary *feature = fractal.ChooseClosestFeatureToScreenPoint(20, 16);
+    ASSERT_TRUE(feature != nullptr);
+    ASSERT_EQ(feature->GetPeriod(), IterTypeFull{43});
+    ASSERT_NEAR(static_cast<double>(feature->GetFoundX()), -0.7431325047313953, 1e-10);
+    ASSERT_NEAR(static_cast<double>(feature->GetFoundY()), 0.1317911288697174, 1e-10);
 }
 
 TEST(FractalSharkLib_OrbitEndpointCpuBackendsAgree)
@@ -541,6 +570,53 @@ TEST(FractalSharkLib_RenderPoolSeparatesMutationFromCommand)
     ASSERT_EQ(fractal.GetCurIters().m_OutputHeight, size_t{16});
 }
 
+TEST(FractalSharkLib_RecenterViewScreenHandlesDragPastLastRow)
+{
+    Fractal fractal(
+        800, 800, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(
+        GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64PerturbedBLA)));
+
+    const PointZoomBBConverter oldView = fractal.GetPtz();
+    const HighPrecision expectedCenterX = oldView.XFromScreenToCalc(HighPrecision{192}, 800, 1);
+    const HighPrecision expectedCenterY = oldView.YFromScreenToCalc(HighPrecision{800}, 800, 1);
+
+    ASSERT_TRUE(fractal.RecenterViewScreen(Environment::ScreenRect{184, 790, 200, 810}));
+    const HighPrecision centerX = (fractal.GetMinX() + fractal.GetMaxX()) / HighPrecision{2};
+    const HighPrecision centerY = (fractal.GetMinY() + fractal.GetMaxY()) / HighPrecision{2};
+    ASSERT_NEAR(static_cast<double>(centerX), static_cast<double>(expectedCenterX), 1e-12);
+    ASSERT_NEAR(static_cast<double>(centerY), static_cast<double>(expectedCenterY), 1e-12);
+}
+
+TEST(FractalSharkLib_RecenterViewScreenHandlesOffscreenAndReversedDrag)
+{
+    Fractal fractal(
+        16, 16, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(
+        GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64PerturbedBLA)));
+    fractal.ResetDimensions(16, 16, 2);
+
+    const PointZoomBBConverter oldView = fractal.GetPtz();
+    const HighPrecision reversedCenterX = oldView.XFromScreenToCalc(HighPrecision{14}, 16, 1);
+    const HighPrecision reversedCenterY = oldView.YFromScreenToCalc(HighPrecision{14}, 16, 1);
+    ASSERT_TRUE(fractal.RecenterViewScreen(Environment::ScreenRect{20, 20, 8, 8}));
+    ASSERT_NEAR(static_cast<double>((fractal.GetMinX() + fractal.GetMaxX()) / HighPrecision{2}),
+                static_cast<double>(reversedCenterX),
+                1e-12);
+    ASSERT_NEAR(static_cast<double>((fractal.GetMinY() + fractal.GetMaxY()) / HighPrecision{2}),
+                static_cast<double>(reversedCenterY),
+                1e-12);
+
+    const PointZoomBBConverter currentView = fractal.GetPtz();
+    const HighPrecision expectedCenterX = currentView.XFromScreenToCalc(HighPrecision{20}, 16, 1);
+    const HighPrecision expectedCenterY = currentView.YFromScreenToCalc(HighPrecision{20}, 16, 1);
+    ASSERT_TRUE(fractal.RecenterViewScreen(Environment::ScreenRect{24, 24, 16, 16}));
+    const HighPrecision centerX = (fractal.GetMinX() + fractal.GetMaxX()) / HighPrecision{2};
+    const HighPrecision centerY = (fractal.GetMinY() + fractal.GetMaxY()) / HighPrecision{2};
+    ASSERT_NEAR(static_cast<double>(centerX), static_cast<double>(expectedCenterX), 1e-12);
+    ASSERT_NEAR(static_cast<double>(centerY), static_cast<double>(expectedCenterY), 1e-12);
+}
+
 TEST(FractalSharkLib_RenderToConsoleProducesTextAndColorModes)
 {
     Fractal fractal(
@@ -564,11 +640,160 @@ TEST(FractalSharkLib_RenderToConsoleProducesTextAndColorModes)
                 color.str().find("All pixels are set-interior") != std::string::npos);
 }
 
-TEST(FractalSharkLib_AsyncPngSaveReclaimsWorkerBeforeCleanup)
+TEST(FractalSharkLib_SavePoolBoundsAndReusesWorkers)
 {
-    const auto output = std::filesystem::temp_directory_path() / "fractalshark-async-save-test.png";
+    FractalSaveThreadPool pool(2, [] { return uint32_t{0}; });
+    std::mutex mutex;
+    std::condition_variable condition;
+    std::set<std::thread::id> workerIds;
+    size_t started = 0;
+    bool release = false;
+
+    const auto makeBlockedTask = [&] {
+        return FractalSaveThreadPool::Task([&] {
+            std::unique_lock lock(mutex);
+            workerIds.insert(std::this_thread::get_id());
+            ++started;
+            condition.notify_all();
+            condition.wait(lock, [&] { return release; });
+        });
+    };
+    pool.Submit(makeBlockedTask);
+    pool.Submit(makeBlockedTask);
+
+    bool bothStarted = false;
+    {
+        std::unique_lock lock(mutex);
+        bothStarted = condition.wait_for(lock, std::chrono::seconds(5), [&] { return started == 2; });
+    }
+
+    std::atomic<bool> attempting = false;
+    std::atomic<bool> submitted = false;
+    std::thread submitter([&] {
+        attempting.store(true);
+        attempting.notify_one();
+        pool.Submit([&] {
+            return FractalSaveThreadPool::Task([&] {
+                std::lock_guard lock(mutex);
+                workerIds.insert(std::this_thread::get_id());
+            });
+        });
+        submitted.store(true);
+    });
+    attempting.wait(false);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    const bool blockedAtCapacity = !submitted.load();
+    const bool noEarlyCompletion = !pool.Cleanup(false);
+
+    {
+        std::lock_guard lock(mutex);
+        release = true;
+    }
+    condition.notify_all();
+    submitter.join();
+    const bool hadWork = pool.Cleanup(true);
+
+    ASSERT_TRUE(bothStarted);
+    ASSERT_TRUE(blockedAtCapacity);
+    ASSERT_TRUE(noEarlyCompletion);
+    ASSERT_TRUE(hadWork);
+    ASSERT_EQ(workerIds.size(), size_t{2});
+    ASSERT_EQ(started, size_t{2});
+}
+
+TEST(FractalSharkLib_SavePoolRechecksMemoryPressure)
+{
+    std::atomic<uint32_t> memoryLoad = 95;
+    FractalSaveThreadPool pool(2, [&] { return memoryLoad.load(); });
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool firstStarted = false;
+    bool releaseFirst = false;
+    bool secondSubmitted = false;
+
+    pool.Submit([&] {
+        return FractalSaveThreadPool::Task([&] {
+            std::unique_lock lock(mutex);
+            firstStarted = true;
+            condition.notify_all();
+            condition.wait(lock, [&] { return releaseFirst; });
+        });
+    });
+    {
+        std::unique_lock lock(mutex);
+        condition.wait(lock, [&] { return firstStarted; });
+    }
+
+    std::thread submitter([&] {
+        pool.Submit([] { return FractalSaveThreadPool::Task([] {}); });
+        {
+            std::lock_guard lock(mutex);
+            secondSubmitted = true;
+        }
+        condition.notify_all();
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    bool blockedUnderPressure;
+    {
+        std::lock_guard lock(mutex);
+        blockedUnderPressure = !secondSubmitted;
+    }
+    memoryLoad.store(50);
+    bool resumedAfterPressureDropped;
+    {
+        std::unique_lock lock(mutex);
+        resumedAfterPressureDropped =
+            condition.wait_for(lock, std::chrono::seconds(5), [&] { return secondSubmitted; });
+        releaseFirst = true;
+    }
+    condition.notify_all();
+    submitter.join();
+    pool.Cleanup(true);
+
+    ASSERT_TRUE(blockedUnderPressure);
+    ASSERT_TRUE(resumedAfterPressureDropped);
+}
+
+TEST(FractalSharkLib_SavePoolReleasesFailedSubmission)
+{
+    FractalSaveThreadPool pool(1, [] { return uint32_t{0}; });
+    ASSERT_THROWS(pool.Submit([]() -> FractalSaveThreadPool::Task {
+        throw std::runtime_error("task construction failed");
+    }),
+                  std::runtime_error);
+    ASSERT_FALSE(pool.Cleanup(false));
+
+    std::atomic<bool> completed = false;
+    pool.Submit([&] { return FractalSaveThreadPool::Task([&] { completed.store(true); }); });
+    ASSERT_TRUE(pool.Cleanup(true));
+    ASSERT_TRUE(completed.load());
+}
+
+TEST(FractalSharkLib_SavePoolContinuesAfterTaskFailure)
+{
+    FractalSaveThreadPool pool(1, [] { return uint32_t{0}; });
+    pool.Submit([] {
+        return FractalSaveThreadPool::Task([] { throw std::runtime_error("save task failed"); });
+    });
+
+    std::atomic<bool> completed = false;
+    pool.Submit([&] { return FractalSaveThreadPool::Task([&] { completed.store(true); }); });
+    ASSERT_TRUE(pool.Cleanup(true));
+    ASSERT_TRUE(completed.load());
+    ASSERT_FALSE(pool.Cleanup(false));
+}
+
+TEST(FractalSharkLib_SavePoolPreservesImageSnapshotsAcrossResize)
+{
+    const auto directory = std::filesystem::temp_directory_path();
+    const auto copiedOutput = directory / "fractalshark-save-pool-copied.png";
+    const auto movedOutput = directory / "fractalshark-save-pool-moved.png";
+    const auto resizedOutput = directory / "fractalshark-save-pool-resized.png";
+    const auto textOutput = directory / "fractalshark-save-pool-iters.txt";
     std::error_code error;
-    std::filesystem::remove(output, error);
+    for (const auto &output : {copiedOutput, movedOutput, resizedOutput, textOutput}) {
+        std::filesystem::remove(output, error);
+    }
 
     Fractal fractal(
         16, 16, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
@@ -576,11 +801,27 @@ TEST(FractalSharkLib_AsyncPngSaveReclaimsWorkerBeforeCleanup)
     fractal.SetNumIterations<uint32_t>(64);
     fractal.CalcFractal(true);
 
-    ASSERT_EQ(fractal.SaveCurrentFractal(output.wstring(), true), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(copiedOutput.wstring(), true), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(movedOutput.wstring(), false), 0);
+    fractal.CalcFractal(true);
+    ASSERT_EQ(fractal.SaveItersAsText(textOutput.wstring()), 0);
+    fractal.ResetDimensions(24, 12);
+    fractal.CalcFractal(true);
+    ASSERT_EQ(fractal.SaveCurrentFractal(resizedOutput.wstring(), true), 0);
     ASSERT_TRUE(fractal.CleanupThreads(true));
-    ASSERT_TRUE(std::filesystem::is_regular_file(output));
+    for (const auto &output : {copiedOutput, movedOutput, resizedOutput}) {
+        ASSERT_TRUE(std::filesystem::is_regular_file(output));
+        WPngImage image;
+        ASSERT_TRUE(image.loadImage(output.string()) == WPngImage::kIOStatus_Ok);
+        ASSERT_EQ(image.width(), output == resizedOutput ? 24 : 16);
+        ASSERT_EQ(image.height(), output == resizedOutput ? 12 : 16);
+    }
+    ASSERT_TRUE(std::filesystem::is_regular_file(textOutput));
+    ASSERT_TRUE(std::filesystem::file_size(textOutput) > 0);
 
-    std::filesystem::remove(output, error);
+    for (const auto &output : {copiedOutput, movedOutput, resizedOutput, textOutput}) {
+        std::filesystem::remove(output, error);
+    }
     ASSERT_FALSE(static_cast<bool>(error));
 }
 

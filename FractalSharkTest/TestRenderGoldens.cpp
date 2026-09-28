@@ -86,14 +86,14 @@ const GoldenCase kCases[] = {
     {"view0-cpu64-aa4", 0, "Cpu64", 4, "39671027bacf2567"},
     {"view1-cpu-bla", 1, "Cpu64PerturbedBLAHDR", 1, "d0c8921c878f6dc3"},
     {"view0-cpuhdr", 0, "CpuHDR32", 1, "66ba2caaaa7f8013"},
-    {"view5-cpu-bla-v2", 5, "Cpu32PerturbedBLAV2HDR", 1, "1233a56b293e7b08"},
+    {"view5-cpu-bla-v2", 5, "Cpu32PerturbedBLAV2HDR", 1, "3bdf2228562f73be"},
     {"view0-cpuhdr64", 0, "CpuHDR64", 1, "1275500d639ad02e"},
     {"view5-cpu-perturbed-bla", 5, "Cpu64PerturbedBLA", 1, "f201db00ade569fc"},
     {"view5-cpu32-bla-hdr", 5, "Cpu32PerturbedBLAHDR", 1, "634d826801d54979"},
     {"view5-cpu64-bla-hdr", 5, "Cpu64PerturbedBLAHDR", 1, "c91e33c3eb85b33d"},
-    {"view5-cpu64-bla-v2", 5, "Cpu64PerturbedBLAV2HDR", 1, "ca7ad7c5f9cf750e"},
-    {"view5-cpu32-rc-bla-v2", 5, "Cpu32PerturbedRCBLAV2HDR", 1, "b956600cfdfe431a"},
-    {"view5-cpu64-rc-bla-v2", 5, "Cpu64PerturbedRCBLAV2HDR", 1, "68df9ceecaf1a667"},
+    {"view5-cpu64-bla-v2", 5, "Cpu64PerturbedBLAV2HDR", 1, "c71c26dc805d43c0"},
+    {"view5-cpu32-rc-bla-v2", 5, "Cpu32PerturbedRCBLAV2HDR", 1, "4a315f9f25b87dcc"},
+    {"view5-cpu64-rc-bla-v2", 5, "Cpu64PerturbedRCBLAV2HDR", 1, "2bbfb34f449b2fa2"},
 };
 
 void

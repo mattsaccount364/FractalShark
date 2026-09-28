@@ -10,7 +10,9 @@
 
 #include "BLAS.h"
 #include "FeatureFinderOrchestrator.h"
+#include "FractalSaveThreadPool.h"
 
+#include <algorithm>
 #include <fstream>
 #include <stdexcept>
 #include <thread>
@@ -121,6 +123,9 @@ Fractal::Initialize(int width, int height, void *nativeWindow, bool UseSensoCurs
     // Allocate the iterations array.
     InitializeMemory();
 
+    m_SavePool = std::make_unique<FractalSaveThreadPool>(std::thread::hardware_concurrency(),
+                                                         [] { return Environment::GetMemoryLoad(); });
+
     // Initialize the render thread pool
     m_RenderPool = std::make_unique<RenderThreadPool>(this, m_NativeWindow, m_HostOwnedGlPresentation);
 
@@ -132,16 +137,20 @@ void
 Fractal::InitializeMemory()
 {
     // Wait until anyone using any of this memory is done.
-    m_FractalSavesInProgress.clear();
+    if (m_SavePool) {
+        m_SavePool->Cleanup(true);
+    }
 
     // Set up new memory.
-    // 1 for m_CurIters + NumRenderers for pool workers + 2 spare for PngParallelSave
+    // 1 for m_CurIters + NumRenderers for render workers + 2 spare for saves
     static constexpr size_t NumContainers = 1 + NumRenderers + 2;
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
     m_ItersMemoryStorage.clear();
+    // Returned save buffers must fit without allocating from a destructor.
+    m_ItersMemoryStorage.reserve(NumContainers);
     for (size_t i = 0; i < NumContainers; i++) {
-        const size_t total_aa = GetGpuAntialiasing();
-        ItersMemoryContainer container(GetIterType(), m_ScrnWidth, m_ScrnHeight, total_aa);
+        const size_t totalAntialiasing = GetGpuAntialiasing();
+        ItersMemoryContainer container(GetIterType(), m_ScrnWidth, m_ScrnHeight, totalAntialiasing);
         m_ItersMemoryStorage.push_back(std::move(container));
     }
 
@@ -246,7 +255,10 @@ Fractal::Uninitialize()
         m_RenderPool.reset();
     }
 
-    CleanupThreads(true);
+    if (m_SavePool) {
+        m_SavePool->Shutdown();
+        m_SavePool.reset();
+    }
 
     // Get rid of the abort thread, if we created one.
     m_AbortMonitor.reset();
@@ -379,85 +391,25 @@ Fractal::RecenterViewScreen(Environment::ScreenRect rect)
         return false;
     }
 
-    // By default, don't guess.
+    // An offscreen selection has no visible region to use for a reference guess.
     m_RefOrbit.ResetGuess();
 
     if (GetRenderAlgorithm().RequiresReferencePoints) {
-        auto lambda = [&](auto **ItersArray) {
-            double geometricMeanX = 0;
-            double geometricMeanSum = 0;
-            double geometricMeanY = 0;
+        const int64_t left = std::max<int64_t>(std::min(rect.left, rect.right), 0);
+        const int64_t right =
+            std::min<int64_t>(std::max(rect.left, rect.right), static_cast<int64_t>(m_ScrnWidth));
+        const int64_t top = std::max<int64_t>(std::min(rect.top, rect.bottom), 0);
+        const int64_t bottom =
+            std::min<int64_t>(std::max(rect.top, rect.bottom), static_cast<int64_t>(m_ScrnHeight));
 
-            Environment::ScreenRect antiRect = rect;
-            antiRect.left *= GetGpuAntialiasing();
-            antiRect.right *= GetGpuAntialiasing();
-            antiRect.top *= GetGpuAntialiasing();
-            antiRect.bottom *= GetGpuAntialiasing();
-
-            double totaliters = 0;
-            for (auto y = antiRect.top; y < antiRect.bottom; y++) {
-                for (auto x = antiRect.left; x < antiRect.right; x++) {
-                    totaliters += ItersArray[y][x];
-                }
-            }
-
-            double avgiters =
-                totaliters / ((antiRect.bottom - antiRect.top) * (antiRect.right - antiRect.left));
-
-            for (auto y = antiRect.top; y < antiRect.bottom; y++) {
-                for (auto x = antiRect.left; x < antiRect.right; x++) {
-                    if (ItersArray[y][x] < avgiters) {
-                        continue;
-                    }
-
-                    double sq = (double)(ItersArray[y][x]) * (ItersArray[y][x]);
-                    geometricMeanSum += sq;
-                    geometricMeanX += sq * x;
-                    geometricMeanY += sq * y;
-                }
-            }
-
-            if (geometricMeanSum != 0) {
-                double meanX = geometricMeanX / geometricMeanSum / GetGpuAntialiasing();
-                double meanY = geometricMeanY / geometricMeanSum / GetGpuAntialiasing();
-                // m_PerturbationGuessCalcX = meanX * (double)m_ScrnWidth / (double)(rect.right -
-                // rect.left); m_PerturbationGuessCalcY = meanY * (double)m_ScrnHeight /
-                // (double)(rect.bottom - rect.top);
-
-                auto tempMeanX = HighPrecision{meanX};
-                auto tempMeanY = HighPrecision{meanY};
-
-                tempMeanX = XFromScreenToCalc(tempMeanX);
-                tempMeanY = YFromScreenToCalc(tempMeanY);
-
-                m_RefOrbit.ResetGuess(tempMeanX, tempMeanY);
-
-                // assert(!std::isnan(m_PerturbationGuessCalcX));
-                // assert(!std::isnan(m_PerturbationGuessCalcY));
-
-                // if (m_PerturbationGuessCalcX >= m_ScrnWidth || m_PerturbationGuessCalcX < 0 ||
-                // std::isnan(m_PerturbationGuessCalcX)) {
-                //     m_PerturbationGuessCalcX = 0;
-                // }
-
-                // if (m_PerturbationGuessCalcY >= m_ScrnHeight || m_PerturbationGuessCalcY < 0 ||
-                // std::isnan(m_PerturbationGuessCalcY)) {
-                //     m_PerturbationGuessCalcY = 0;
-                // }
-            } else {
-                // Do nothing.  This case can occur if we e.g. change dimension, change antialiasing
-                // etc.
-            }
-        };
-
-        if (GetIterType() == IterTypeEnum::Bits32) {
-            lambda(m_CurIters.GetItersArray<uint32_t>());
-        } else {
-            lambda(m_CurIters.GetItersArray<uint64_t>());
+        if (left < right && top < bottom) {
+            const HighPrecision centerX =
+                (HighPrecision{left} + HighPrecision{right}) / HighPrecision{2};
+            const HighPrecision centerY =
+                (HighPrecision{top} + HighPrecision{bottom}) / HighPrecision{2};
+            m_RefOrbit.ResetGuess(XFromScreenToCalc(centerX), YFromScreenToCalc(centerY));
         }
     }
-
-    // Set m_PerturbationGuessCalc<X|Y> = ... above.
 
     m_Ptz = PointZoomBBConverter{
         newMinX, newMinY, newMaxX, newMaxY, PointZoomBBConverter::TestMode::Enabled};
@@ -2982,57 +2934,26 @@ Fractal::MessageBoxCudaError(uint32_t result, const char *file, int line)
 }
 
 int
-Fractal::SaveCurrentFractal(std::wstring filename_base, bool copy_the_iters)
+Fractal::SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters)
 {
-    return SaveFractalData<PngParallelSave::Type::PngImg>(filename_base, copy_the_iters);
+    return SaveFractalData<PngParallelSave::Type::PngImg>(std::move(filenameBase), copyTheIters);
 }
 
 template <PngParallelSave::Type Typ>
 int
-Fractal::SaveFractalData(std::wstring filename_base, bool copy_the_iters)
+Fractal::SaveFractalData(std::wstring filenameBase, bool copyTheIters)
 {
-    for (;;) {
-        uint32_t memoryLoad = Environment::GetMemoryLoad();
-
-        if (m_FractalSavesInProgress.size() > std::thread::hardware_concurrency() ||
-            (memoryLoad > 90 && !m_FractalSavesInProgress.empty())) {
-            if (!CleanupThreads(false)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
-            }
-        } else {
-            auto newPtr = std::make_unique<PngParallelSave>(Typ, filename_base, copy_the_iters, *this);
-            m_FractalSavesInProgress.push_back(std::move(newPtr));
-            m_FractalSavesInProgress.back()->StartThread();
-            break;
-        }
-    }
-
+    m_SavePool->Submit([this, filenameBase = std::move(filenameBase), copyTheIters] {
+        auto save = std::make_unique<PngParallelSave>(Typ, filenameBase, copyTheIters, *this);
+        return FractalSaveThreadPool::Task([save = std::move(save)] { save->Run(); });
+    });
     return 0;
 }
 
 bool
 Fractal::CleanupThreads(bool all)
 {
-    bool ret = false;
-    bool continueCriteria = true;
-
-    while (continueCriteria) {
-        for (size_t i = 0; i < m_FractalSavesInProgress.size(); i++) {
-            auto &it = m_FractalSavesInProgress[i];
-            if (it->m_Destructable.load(std::memory_order_acquire)) {
-                m_FractalSavesInProgress.erase(m_FractalSavesInProgress.begin() + i);
-                ret = true;
-                break;
-            }
-        }
-
-        if (all) {
-            continueCriteria = !m_FractalSavesInProgress.empty();
-        } else {
-            break;
-        }
-    }
-    return ret;
+    return m_SavePool ? m_SavePool->Cleanup(all) : false;
 }
 
 const BenchmarkDataCollection &

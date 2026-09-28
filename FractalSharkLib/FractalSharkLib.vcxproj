@@ -24,6 +24,7 @@
     <ClInclude Include="FeatureFinderMode.h" />
     <ClInclude Include="FeatureSummary.h" />
     <ClInclude Include="Fractal.h" />
+    <ClInclude Include="FractalSaveThreadPool.h" />
 
     <ClInclude Include="RenderThreadPool.h" />
     <ClInclude Include="CrummyTest.h" />
@@ -87,6 +88,7 @@
     <ClCompile Include="FeatureFinderOrchestrator.cpp" />
     <ClCompile Include="FeatureSummary.cpp" />
     <ClCompile Include="Fractal.cpp" />
+    <ClCompile Include="FractalSaveThreadPool.cpp" />
     <ClCompile Include="RenderThreadPool.cpp" />
     <ClCompile Include="CrummyTest.cpp" />
     <ClCompile Include="ImaginaOrbit.cpp" />

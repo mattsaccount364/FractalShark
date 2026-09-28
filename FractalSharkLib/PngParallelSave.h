@@ -3,9 +3,7 @@
 #include "GPU_Types.h"
 #include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
-#include <atomic>
 #include <stdint.h>
-#include <thread>
 #include <vector>
 
 class Fractal;
@@ -17,10 +15,9 @@ class PngParallelSave {
 public:
     enum class Type { ItersText, PngImg };
 
-    PngParallelSave(enum Type typ, std::wstring filename_base, bool copy_the_iters, Fractal &fractal);
+    PngParallelSave(enum Type typ, std::wstring filenameBase, bool copyTheIters, Fractal &fractal);
     ~PngParallelSave();
     void Run();
-    void StartThread();
 
     PngParallelSave(PngParallelSave &&) = delete;
 
@@ -40,6 +37,4 @@ public:
     ItersMemoryContainer m_CurIters;
     bool m_CopyTheIters;
     std::wstring m_FilenameBase;
-    std::unique_ptr<std::thread> m_Thread;
-    std::atomic_bool m_Destructable;
 };

@@ -87,6 +87,12 @@ import names. Spell out the namespace path at each use site for names from other
 aliases whose only purpose is shortening a qualified name; keep type aliases that define intentional
 domain or API types. Unqualified names remain valid inside their owning namespace.
 
+Do not add catch/except handlers by default, including in scripts and CI. Use RAII or language-native
+cleanup for resources, and propagate errors to an existing boundary. Add a narrow handler only where
+the code can recover, preserve a defined error contract, or keep exceptions from escaping a thread,
+callback, process, or protocol boundary. Avoid swallowing errors and catching solely to log and rethrow;
+test the intended failure behavior when a handler is necessary.
+
 Prefer typed C++ functions, templates, and explicit callsite arguments over preprocessor macros. Do not
 add function-like logging macros or wrappers for `__FILE__`/`__LINE__` when a non-inline function can be
 called directly; retain macros only when required by compiler, platform, or third-party contracts.

@@ -4,13 +4,13 @@ limiters for an NCU report.
 Answers the HWM (harmonic warp manager) questions the source-attribution pass
 cannot: how many shared LD/ST wavefronts there are, how many bank conflicts,
 how many LDGSTS async-copy wavefronts (the radix-2^15/16 large-stage page
-copies), global sector coalescing (sectors per request — 32.0 is one 32-byte
-sector per warp, 1.0 is a single 32-byte read), DRAM traffic, I-cache miss
+copies), global sector coalescing (1.0 means one 32-byte sector per request;
+32.0 means 32 sectors per request), DRAM traffic, I-cache miss
 behavior, and which resource (registers, shared mem, warps, threads, barriers)
 pins occupancy.
 
 Usage:
-    py -3 tools\NcuAnalysis\memory_analysis.py --report <rep> [--action 0]
+    py -3 tools\NcuAnalysis\memory_analysis.py --report <rep> [--kernel-name <name>] [--action <index>]
 
 Metric families are matched by candidate regex because NCU renames metrics
 across releases (e.g. Blackwell splits ld/st into op-level metrics, and uses
@@ -19,7 +19,6 @@ in the capture are reported as such.
 """
 
 import argparse
-import re
 
 import ncu_common as C
 
@@ -49,8 +48,8 @@ _GROUPS = [
         ("bytes/s", r"^dram__bytes\.sum\.per_second$"),
     ]),
     ("L1/L2 cache", [
-        ("l1tex hit rate (%)", r"^l1tex__t_sector_hit_rate\.avg\.pct$"),
-        ("ltc (L2) hit rate (%)", r"^lts__t_sector_hit_rate\.avg\.pct$"),
+        ("l1tex hit rate (%)", r"^l1tex__t_sector_hit_rate(?:\.avg)?\.pct$"),
+        ("ltc (L2) hit rate (%)", r"^lts__t_sector_hit_rate(?:\.avg)?\.pct$"),
         ("ltc read sectors", r"^lts__t_sectors_srcunit_tex_op_read\.sum$"),
     ]),
     ("I-cache / instruction miss", [
@@ -74,52 +73,14 @@ _GROUPS = [
 ]
 
 
-def _resolve(act, regex):
-    pattern = re.compile(regex)
-    for name in list(act.metric_names() or []):
-        if pattern.match(name):
-            try:
-                v = act.metric_by_name(name).value()
-            except Exception:
-                continue
-            return (v is not None and v != 0) and name
-    return None
-
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--report", required=True)
-    ap.add_argument("--action", type=int, default=0)
-    args = ap.parse_args()
-
-    C.import_ncu_report(C.find_ncu_python_dir())
-    import ncu_report
-    ctx = ncu_report.load_report(args.report)
-    rng = ctx.range_by_idx(0)
-    act = rng.action_by_idx(args.action)
-    print("Action %d: %s" % (args.action, act.name()[:90]))
-
-    for group_title, items in _GROUPS:
-        rows = []
-        for disp, regex in items:
-            hit = _resolve(act, regex)
-            if hit:
-                v = act.metric_by_name(hit).value()
-                unit = ""
-                try:
-                    unit = (act.metric_by_name(hit).unit() or "").strip()
-                except Exception:
-                    pass
-                rows.append((disp, v, unit, hit))
-        if not rows:
-            print("\n== %s ==" % group_title)
-            print("  (no metrics in this capture for this group)")
-            continue
-        rows.sort(key=lambda r: abs(r[1] or 0), reverse=True)
-        print("\n== %s ==" % group_title)
-        for disp, v, unit, _name in rows:
-            print("  %-48s %s %s" % (disp, v, unit))
+    parser = argparse.ArgumentParser(description=__doc__)
+    C.add_selection_arguments(parser)
+    args = parser.parse_args()
+    for view in C.selected_runs(args):
+        C.print_metric_groups(view, _GROUPS)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

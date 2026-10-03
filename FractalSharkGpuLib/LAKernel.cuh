@@ -174,9 +174,6 @@ mandel_1xHDR_float_perturb_lav2(IterType *OutputIterMatrix,
             }
         };
 
-        //    for (;;) {
-        __syncthreads();
-
         perturbLoop(maxIterations);
     }
 
@@ -215,8 +212,6 @@ mandel_1xHDR_float_perturb_lav2(IterType *OutputIterMatrix,
     //        break;
     //    }
     //}
-
-    __syncthreads();
 
     OutputIterMatrix[idx] = iter;
 }

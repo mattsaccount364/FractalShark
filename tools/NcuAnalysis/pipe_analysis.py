@@ -6,7 +6,7 @@ scheduler issue rate, the SASS instruction mix by instruction class, the
 per-reason scheduler stall mix, and warp divergence.
 
 Usage:
-    py -3 tools\NcuAnalysis\pipe_analysis.py --report <rep> [--action 0]
+    py -3 tools\NcuAnalysis\pipe_analysis.py --report <rep> [--kernel-name <name>] [--action <index>]
 
 Metric names are matched by candidate regex because NCU renames pipes across
 architectures (e.g. Blackwell exposes `cbu`, `lsu`, `tma`, `uniform`, `fma_type_*`).
@@ -15,7 +15,6 @@ Metric families that are not present in the capture are skipped silently
 """
 
 import argparse
-import re
 
 import ncu_common as C
 
@@ -65,52 +64,14 @@ _GROUPS = [
 ]
 
 
-def _resolve(act, regex):
-    pattern = re.compile(regex)
-    for name in list(act.metric_names() or []):
-        if pattern.match(name):
-            try:
-                v = act.metric_by_name(name).value()
-            except Exception:
-                continue
-            return (v is not None and v != 0) and name
-    return None
-
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--report", required=True)
-    ap.add_argument("--action", type=int, default=0)
-    args = ap.parse_args()
-
-    C.import_ncu_report(C.find_ncu_python_dir())
-    import ncu_report
-    ctx = ncu_report.load_report(args.report)
-    rng = ctx.range_by_idx(0)
-    act = rng.action_by_idx(args.action)
-    print("Action %d: %s" % (args.action, act.name()[:90]))
-
-    for group_title, items in _GROUPS:
-        rows = []
-        for disp, regex in items:
-            hit = _resolve(act, regex)
-            if hit:
-                v = act.metric_by_name(hit).value()
-                unit = ""
-                try:
-                    unit = (act.metric_by_name(hit).unit() or "").strip()
-                except Exception:
-                    pass
-                rows.append((disp, v, unit, hit))
-        if not rows:
-            print("\n== %s ==" % group_title)
-            print("  (no metrics in this capture for this group)")
-            continue
-        rows.sort(key=lambda r: abs(r[1] or 0), reverse=True)
-        print("\n== %s ==" % group_title)
-        for disp, v, unit, _name in rows:
-            print("  %-48s %s %s" % (disp, v, unit))
+    parser = argparse.ArgumentParser(description=__doc__)
+    C.add_selection_arguments(parser)
+    args = parser.parse_args()
+    for view in C.selected_runs(args):
+        C.print_metric_groups(view, _GROUPS)
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()

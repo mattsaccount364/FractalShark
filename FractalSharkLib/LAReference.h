@@ -38,6 +38,8 @@ private:
     using FloatComplexT =
         std::conditional<IsHDR, ::HDRFloatComplex<SubType>, ::FloatComplex<SubType>>::type;
 
+    template <typename OtherIterType, class OtherFloat, class OtherSubType> friend class GPU_LAReference;
+
     // TODO this is overly broad -- many types don't need these friends
     friend class LAReference<IterType, float, float, PExtras>;
     friend class LAReference<IterType, double, double, PExtras>;
@@ -221,16 +223,18 @@ public:
         return m_IsValid;
     }
 
-    bool
-    UseAT() const
+    void
+    InitializePixel(IterType maxIterations,
+                    const FloatComplexT &deltaC,
+                    IterType &iterations,
+                    FloatComplexT &deltaZ) const
     {
-        return m_UseAT;
-    }
-
-    const ATInfo<IterType, Float, SubType> &
-    GetAT() const
-    {
-        return m_AT;
+        m_AT.InitializePixel(m_IsValid && m_UseAT,
+                             maxIterations,
+                             deltaC,
+                             FloatComplexT{SubType{0}, SubType{0}},
+                             iterations,
+                             deltaZ);
     }
 
     IterType
@@ -349,6 +353,37 @@ public:
     IterType getLAIndex(IterType CurrentLAStage);
     IterType getMacroItCount(IterType CurrentLAStage);
 
-    LAstep<IterType, Float, SubType, PExtras> getLA(
-        IterType LAIndex, FloatComplexT dz, IterType j, IterType iterations, IterType maxIterations);
+    // Make preparation visible to the shared traversal so the step stays in the pixel loop.
+#if defined(_MSC_VER) && !defined(__CUDACC__)
+    __forceinline
+#endif
+        LAstep<IterType, Float, SubType, PExtras>
+        getLA(IterType laIndex,
+              FloatComplexT deltaZ,
+              IterType stageIteration,
+              IterType iterations,
+              IterType maxIterations)
+    {
+        const IterType entryIndex = laIndex + stageIteration;
+        const LAInfoI<IterType> &metadata = m_LAs[entryIndex].GetLAi();
+        LAstep<IterType, Float, SubType, PExtras> step;
+
+        const IterType stepLength = metadata.StepLength;
+        const bool usable = iterations + stepLength <= maxIterations;
+        if (usable) {
+            LAInfoDeep<IterType, Float, SubType, PExtras> &laEntry = m_LAs[entryIndex];
+            step = laEntry.Prepare(deltaZ);
+            if (!step.unusable) {
+                step.LAjdeep = &laEntry;
+                step.Refp1Deep = (FloatComplexT)m_LAs[entryIndex + 1].getRef();
+                step.step = metadata.StepLength;
+            }
+        } else {
+            step = LAstep<IterType, Float, SubType, PExtras>();
+            step.unusable = true;
+        }
+
+        step.nextStageLAindex = metadata.NextStageLAIndex;
+        return step;
+    }
 };

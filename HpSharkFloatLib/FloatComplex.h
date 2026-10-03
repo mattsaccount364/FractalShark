@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CudaDblflt.h"
+#include "HDRFloat.h"
 #include "dblflt.h"
 
 #include <cmath>

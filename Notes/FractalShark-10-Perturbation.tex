@@ -374,15 +374,20 @@ The bailout test is then performed on
 \[
 |z|^2 = x^2 + y^2,
 \]
-with the canonical threshold \(4\). For HDR and related types, the norm and the
-comparison are performed on reduced values using specialized reduced
-comparators to keep the escape decision stable at deep zoom.
+with a squared bailout threshold of~256 in this CUDA entry point.
+The loop continues only while $|z|^2<256$, so equality stops evaluation.
+The mathematical Mandelbrot escape radius~2 gives squared magnitude~4;
+the implemented rendering bailout is later, at radius~16. The newly
+reconstructed value is tested before the stored iteration count is
+increased for that update. For HDR and related types, the norm and
+comparison use reduced values and specialized reduced comparators.
 
 \subsection{Reference index management and rebasing}
 \label{sec:perturb-only-rebase}
 
-The perturbation loop advances a reference-orbit index \code{RefIteration} in
-lockstep with \code{iter}, fetching \(z^\star\) samples from \code{Perturb}. The
+The perturbation loop advances a reference-orbit index \code{RefIteration} by
+one sample per update, fetching \(z^\star\) samples from \code{Perturb}. Rebasing
+resets that index while preserving the accumulated \code{iter} count. The
 kernel includes a \emph{rebasing} mechanism that resets the delta
 representation when it becomes ill-conditioned. Conceptually, if the delta
 becomes comparable to or larger than the reconstructed orbit, the decomposition

@@ -18,7 +18,6 @@
 #include <thread>
 #include <utility>
 
-#include "ATInfo.h"
 #include "AutoZoomer.h"
 #include "FeatureFinder.h"
 #include "FeatureSummary.h"
@@ -40,6 +39,36 @@
 #include <chrono>
 
 namespace {
+// Compile the shared LA traversal separately so it does not increase register pressure
+// in the CPU perturbation loop. This call occurs once per pixel, before that loop.
+template <class Reference, typename IterType, class Complex, class OrbitReader>
+#if defined(_MSC_VER)
+__declspec(noinline)
+#endif
+void
+AdvanceCpuLaPixel(Reference &reference,
+                  IterType maxIterations,
+                  const Complex &deltaC,
+                  IterType maxRefIteration,
+                  IterType referencePeriod,
+                  const OrbitReader &readOrbit,
+                  IterType &iterations,
+                  IterType &referenceIteration,
+                  Complex &deltaZ,
+                  Complex &z)
+{
+    FractalShark::LA::AdvancePixel(reference,
+                                   maxIterations,
+                                   deltaC,
+                                   maxRefIteration,
+                                   referencePeriod,
+                                   readOrbit,
+                                   iterations,
+                                   referenceIteration,
+                                   deltaZ,
+                                   z);
+}
+
 template <class T>
 bool
 IsRenderCoordinateZero(const T &value)
@@ -2524,13 +2553,13 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
     T centerY = (T)(results->GetHiY() - maxY);
     HdrReduce(centerY);
 
-    const size_t num_threads = std::thread::hardware_concurrency();
+    const size_t numThreads = std::thread::hardware_concurrency();
     std::deque<std::atomic_uint64_t> atomics;
     std::vector<std::thread> threads;
     atomics.resize(m_ScrnHeight * GetGpuAntialiasing());
-    threads.reserve(num_threads);
+    threads.reserve(numThreads);
 
-    auto one_thread = [&]() {
+    auto oneThread = [&]() {
         Environment::SetCurrentThreadName(L"CalcCpuPerturbationFractalLAV2 thread");
 
         auto compressionHelper{std::make_unique<RuntimeDecompressor<IterType, T, PExtras>>(*results)};
@@ -2546,10 +2575,6 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
             }
 
             for (size_t x = 0; x < m_ScrnWidth * GetGpuAntialiasing(); x++) {
-                IterType BLA2SkippedIterations;
-
-                BLA2SkippedIterations = 0;
-
                 TComplex DeltaSub0;
                 TComplex DeltaSubN;
 
@@ -2565,79 +2590,24 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
                 HdrReduce(deltaImaginary);
 
                 DeltaSub0 = {deltaReal, deltaImaginary};
-                DeltaSubN = {0, 0};
-
-                if (LaReference.IsValid() && LaReference.UseAT() &&
-                    LaReference.GetAT().isValid(DeltaSub0)) {
-                    ATResult<IterType, T, SubType> res;
-                    LaReference.GetAT().PerformAT(GetNumIterations<IterType>(), DeltaSub0, res);
-                    BLA2SkippedIterations = res.bla_iterations;
-                    DeltaSubN = res.dz;
-                }
 
                 IterType iterations = 0;
                 IterType RefIteration = 0;
-                IterType MaxRefIteration = (IterType)results->GetCountOrbitEntries() - 1;
-
-                iterations = BLA2SkippedIterations;
-
-                TComplex complex0{deltaReal, deltaImaginary};
-
-                if (iterations != 0 && RefIteration < MaxRefIteration) {
-                    complex0 = results->template GetComplex<SubType>(*compressionHelper, RefIteration) +
-                               DeltaSubN;
-                } else if (iterations != 0 && results->GetPeriodMaybeZero() != 0) {
-                    RefIteration = RefIteration % results->GetPeriodMaybeZero();
-                    complex0 = results->template GetComplex<SubType>(*compressionHelper, RefIteration) +
-                               DeltaSubN;
-                }
-
-                auto CurrentLAStage = LaReference.IsValid() ? LaReference.GetLAStageCount() : 0;
-
-                while (CurrentLAStage > 0) {
-                    CurrentLAStage--;
-
-                    auto LAIndex = LaReference.getLAIndex(CurrentLAStage);
-
-                    if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
-                        continue;
-                    }
-
-                    auto MacroItCount = LaReference.getMacroItCount(CurrentLAStage);
-                    auto j = RefIteration;
-
-                    while (iterations < GetNumIterations<IterType>()) {
-                        auto las = LaReference.getLA(LAIndex,
-                                                     DeltaSubN,
-                                                     (IterType)j,
-                                                     (IterType)iterations,
-                                                     GetNumIterations<IterType>());
-
-                        if (las.unusable) {
-                            RefIteration = las.nextStageLAindex;
-                            break;
-                        }
-
-                        iterations += las.step;
-                        DeltaSubN = las.Evaluate(DeltaSub0);
-                        complex0 = las.getZ(DeltaSubN);
-                        j++;
-
-                        auto lhs = complex0.chebychevNorm();
-                        HdrReduce(lhs);
-                        auto rhs = DeltaSubN.chebychevNorm();
-                        HdrReduce(rhs);
-
-                        if (HdrCompareToBothPositiveReducedLT(lhs, rhs) || j >= MacroItCount) {
-                            DeltaSubN = complex0;
-                            j = 0;
-                        }
-                    }
-
-                    if (iterations >= GetNumIterations<IterType>()) {
-                        break;
-                    }
-                }
+                const IterType MaxRefIteration = (IterType)results->GetCountOrbitEntries() - 1;
+                TComplex complex0{};
+                const auto readOrbit = [&](IterType index) {
+                    return results->template GetComplex<SubType>(*compressionHelper, index);
+                };
+                AdvanceCpuLaPixel(LaReference,
+                                  GetNumIterations<IterType>(),
+                                  DeltaSub0,
+                                  MaxRefIteration,
+                                  results->GetPeriodMaybeZero(),
+                                  readOrbit,
+                                  iterations,
+                                  RefIteration,
+                                  DeltaSubN,
+                                  complex0);
 
                 T normSquared{};
 
@@ -2684,12 +2654,12 @@ Fractal::CalcCpuPerturbationFractalLAV2(CalcContext &ctx)
 
     m_BenchmarkData.m_PerPixel.StartTimer();
 
-    for (size_t cur_thread = 0; cur_thread < num_threads; cur_thread++) {
-        threads.emplace_back(one_thread);
+    for (size_t curThread = 0; curThread < numThreads; curThread++) {
+        threads.emplace_back(oneThread);
     }
 
-    for (size_t cur_thread = 0; cur_thread < threads.size(); cur_thread++) {
-        threads[cur_thread].join();
+    for (size_t curThread = 0; curThread < threads.size(); curThread++) {
+        threads[curThread].join();
     }
 }
 

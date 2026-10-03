@@ -16,7 +16,7 @@ mandel_1xHDR_float_perturb_lav2(IterType *OutputIterMatrix,
                                 const T dy,
                                 const T centerX,
                                 const T centerY,
-                                IterType n_iterations)
+                                IterType maxIterations)
 {
     static constexpr bool IsHDR = std::is_same<T, ::HDRFloat<float>>::value ||
                                   std::is_same<T, ::HDRFloat<double>>::value ||
@@ -58,69 +58,23 @@ mandel_1xHDR_float_perturb_lav2(IterType *OutputIterMatrix,
     DeltaSubN = {T(0), T(0)};
 
     if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::LAO) {
-        if (LaReference.isValid && LaReference.UseAT && LaReference.AT.isValid(DeltaSub0)) {
-            ATResult<IterType, T, SubType> res;
-            LaReference.AT.PerformAT(n_iterations, DeltaSub0, res);
-            iter = res.bla_iterations;
-            DeltaSubN = res.dz;
-        }
-
-        IterType MaxRefIteration = Perturb.GetCountOrbitEntries() - 1;
-        TComplex complex0{DeltaReal, DeltaImaginary};
-        IterType CurrentLAStage{LaReference.isValid ? LaReference.LAStageCount : 0};
-
-        if (iter != 0 && RefIteration < MaxRefIteration) {
-            T tempX;
-            T tempY;
-            Perturb.GetIterRandom(RefIteration, tempX, tempY);
-            complex0 = TComplex{tempX, tempY} + DeltaSubN;
-        } else if (iter != 0 && Perturb.GetPeriodMaybeZero() != 0) {
-            RefIteration = RefIteration % Perturb.GetPeriodMaybeZero();
-
-            T tempX;
-            T tempY;
-            Perturb.GetIterRandom(RefIteration, tempX, tempY);
-            complex0 = TComplex{tempX, tempY} + DeltaSubN;
-        }
-
-        while (CurrentLAStage > 0) {
-            CurrentLAStage--;
-
-            const IterType LAIndex{LaReference.getLAIndex(CurrentLAStage)};
-
-            if (LaReference.isLAStageInvalid(LAIndex, DeltaSub0)) {
-                continue;
-            }
-
-            const IterType MacroItCount{LaReference.getMacroItCount(CurrentLAStage)};
-            IterType j = RefIteration;
-
-            while (iter < n_iterations) {
-                const GPU_LAstep las{LaReference.getLA(LAIndex, DeltaSubN, j, iter, n_iterations)};
-
-                if (las.unusable) {
-                    RefIteration = las.nextStageLAindex;
-                    break;
-                }
-
-                iter += las.step;
-                DeltaSubN = las.Evaluate(DeltaSub0);
-                complex0 = las.getZ(DeltaSubN);
-                j++;
-
-                const auto complex0Norm{HdrReduce(complex0.chebychevNorm())};
-                const auto DeltaSubNNorm{HdrReduce(DeltaSubN.chebychevNorm())};
-                if (HdrCompareToBothPositiveReducedLT(complex0Norm, DeltaSubNNorm) ||
-                    j >= MacroItCount) {
-                    DeltaSubN = complex0;
-                    j = 0;
-                }
-            }
-
-            if (iter >= n_iterations) {
-                break;
-            }
-        }
+        TComplex complex0{};
+        const auto readOrbit = [&](IterType index) {
+            T real;
+            T imaginary;
+            Perturb.GetIterRandom(index, real, imaginary);
+            return TComplex{real, imaginary};
+        };
+        FractalShark::LA::AdvancePixel(LaReference,
+                                       maxIterations,
+                                       DeltaSub0,
+                                       Perturb.GetCountOrbitEntries() - 1,
+                                       Perturb.GetPeriodMaybeZero(),
+                                       readOrbit,
+                                       iter,
+                                       RefIteration,
+                                       DeltaSubN,
+                                       complex0);
     }
 
     if constexpr (Mode == LAv2Mode::Full || Mode == LAv2Mode::PO) {
@@ -223,7 +177,7 @@ mandel_1xHDR_float_perturb_lav2(IterType *OutputIterMatrix,
         //    for (;;) {
         __syncthreads();
 
-        perturbLoop(n_iterations);
+        perturbLoop(maxIterations);
     }
 
     // TODO
@@ -257,7 +211,7 @@ mandel_1xHDR_float_perturb_lav2(IterType *OutputIterMatrix,
     //        HdrReduce(dzdcY);
     //    }
     //    else {
-    //        //iter = n_iterations;
+    //        //iter = maxIterations;
     //        break;
     //    }
     //}

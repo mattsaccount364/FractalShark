@@ -35,6 +35,74 @@ Evaluate(const Complex &preparedDz, const Complex &dc, const Complex &zCoeff, co
     return preparedDz * zCoeff + dc * cCoeff;
 }
 
+// Advance a fresh rendering pixel through initialization and the LA hierarchy.
+// The orbit reader keeps CPU decompression and GPU storage outside this operation.
+template <class Reference, typename IterType, class Complex, class OrbitReader>
+#if defined(_MSC_VER) && !defined(__CUDACC__)
+// Inline into the CPU caller; the renderer chooses the compilation boundary.
+__forceinline
+#endif
+    CUDA_CRAP void
+    AdvancePixel(Reference &reference,
+                 IterType maxIterations,
+                 const Complex &deltaC,
+                 IterType maxRefIteration,
+                 IterType referencePeriod,
+                 const OrbitReader &readOrbit,
+                 IterType &iterations,
+                 IterType &referenceIteration,
+                 Complex &deltaZ,
+                 Complex &z)
+{
+    reference.InitializePixel(maxIterations, deltaC, iterations, deltaZ);
+    referenceIteration = 0;
+    z = deltaC;
+
+    if (iterations != 0 && referenceIteration < maxRefIteration) {
+        z = readOrbit(referenceIteration) + deltaZ;
+    } else if (iterations != 0 && referencePeriod != 0) {
+        referenceIteration %= referencePeriod;
+        z = readOrbit(referenceIteration) + deltaZ;
+    }
+
+    IterType currentStage = reference.IsValid() ? reference.GetLAStageCount() : 0;
+    while (currentStage > 0) {
+        --currentStage;
+        const IterType laIndex = reference.getLAIndex(currentStage);
+        if (reference.isLAStageInvalid(laIndex, deltaC)) {
+            continue;
+        }
+
+        const IterType macroItCount = reference.getMacroItCount(currentStage);
+        IterType j = referenceIteration;
+        while (iterations < maxIterations) {
+            const auto step = reference.getLA(laIndex, deltaZ, j, iterations, maxIterations);
+            if (step.unusable) {
+                referenceIteration = step.nextStageLAindex;
+                break;
+            }
+
+            iterations += step.step;
+            deltaZ = step.Evaluate(deltaC);
+            z = step.getZ(deltaZ);
+            ++j;
+
+            auto zNorm = z.chebychevNorm();
+            HdrReduce(zNorm);
+            auto deltaNorm = deltaZ.chebychevNorm();
+            HdrReduce(deltaNorm);
+            if (HdrCompareToBothPositiveReducedLT(zNorm, deltaNorm) || j >= macroItCount) {
+                deltaZ = z;
+                j = 0;
+            }
+        }
+
+        if (iterations >= maxIterations) {
+            break;
+        }
+    }
+}
+
 } // namespace FractalShark::LA
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras> class LAstep {

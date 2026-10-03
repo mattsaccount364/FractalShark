@@ -49,7 +49,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="TestATInfo.cpp" />
+    <ClCompile Include="TestLAEvaluation.cpp" />
     <ClCompile Include="TestBLA.cpp" />
     <ClCompile Include="TestCudaDblflt.cpp" />
     <ClCompile Include="TestFloatComplex.cpp" />

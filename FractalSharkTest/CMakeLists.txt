@@ -2,7 +2,7 @@ add_executable(FractalSharkTest)
 
 target_sources(FractalSharkTest PRIVATE
     main.cpp
-    TestATInfo.cpp
+    TestLAEvaluation.cpp
     TestBLA.cpp
     TestCudaDblflt.cpp
     TestFloatComplex.cpp

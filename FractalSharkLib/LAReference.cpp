@@ -977,40 +977,6 @@ LAReference<IterType, Float, SubType, PExtras>::getMacroItCount(IterType Current
     return m_LAStages[CurrentLAStage].MacroItCount;
 }
 
-template <typename IterType, class Float, class SubType, PerturbExtras PExtras>
-LAstep<IterType, Float, SubType, PExtras>
-LAReference<IterType, Float, SubType, PExtras>::getLA(
-    IterType LAIndex, FloatComplexT dz, IterType j, IterType iterations, IterType maxIterations)
-{
-
-    IterType LAIndexj = LAIndex + j;
-    const LAInfoI<IterType> &LAIj = m_LAs[LAIndexj].GetLAi();
-
-    LAstep<IterType, Float, SubType, PExtras> las;
-
-    IterType l = LAIj.StepLength;
-    bool usable = iterations + l <= maxIterations;
-
-    if (usable) {
-        LAInfoDeep<IterType, Float, SubType, PExtras> &LAj = m_LAs[LAIndexj];
-
-        las = LAj.Prepare(dz);
-
-        if (!las.unusable) {
-            las.LAjdeep = &LAj;
-            las.Refp1Deep = (FloatComplexT)m_LAs[LAIndexj + 1].getRef();
-            las.step = LAIj.StepLength;
-        }
-    } else {
-        las = LAstep<IterType, Float, SubType, PExtras>();
-        las.unusable = true;
-    }
-
-    las.nextStageLAindex = LAIj.NextStageLAIndex;
-
-    return las;
-}
-
 #define InitializeLAReference(IterType, T, SubType, PExtras)                                            \
     template class LAReference<IterType, T, SubType, PExtras>;
 

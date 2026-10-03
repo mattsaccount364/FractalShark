@@ -3,10 +3,10 @@
 #include <complex>
 #include <fstream>
 
-#include "ATResult.h"
 #include "HDRFloat.h"
 #include "HDRFloatComplex.h"
 
+// Cached coefficients for Approximation Transform (AT) pixel initialization.
 template <typename IterType, class HDRFloat, class SubType> class ATInfo {
     static constexpr bool IsHDR = std::is_same<HDRFloat, ::HDRFloat<float>>::value ||
                                   std::is_same<HDRFloat, ::HDRFloat<double>>::value ||
@@ -109,9 +109,18 @@ public:
     CUDA_CRAP HDRFloatComplex getC(HDRFloatComplex dc) const;
     CUDA_CRAP HDRFloatComplex getDZ(HDRFloatComplex z) const;
 
-    CUDA_CRAP void PerformAT(IterType max_iterations,
-                             HDRFloatComplex DeltaSub0,
-                             ATResult<IterType, HDRFloat, SubType> &result) const;
+    CUDA_CRAP void InitializePixel(bool enabled,
+                                   IterType maxIterations,
+                                   HDRFloatComplex deltaC,
+                                   const HDRFloatComplex &fallbackDeltaZ,
+                                   IterType &iterations,
+                                   HDRFloatComplex &deltaZ) const;
+
+private:
+    CUDA_CRAP void PerformAT(IterType maxIterations,
+                             HDRFloatComplex deltaC,
+                             IterType &iterations,
+                             HDRFloatComplex &deltaZ) const;
 };
 
 template <typename IterType, class HDRFloat, class SubType>
@@ -154,14 +163,31 @@ ATInfo<IterType, HDRFloat, SubType>::getDZ(HDRFloatComplex z) const
 
 template <typename IterType, class HDRFloat, class SubType>
 CUDA_CRAP void
-ATInfo<IterType, HDRFloat, SubType>::PerformAT(IterType max_iterations,
-                                               HDRFloatComplex DeltaSub0,
-                                               ATResult<IterType, HDRFloat, SubType> &result) const
+ATInfo<IterType, HDRFloat, SubType>::InitializePixel(bool enabled,
+                                                     IterType maxIterations,
+                                                     HDRFloatComplex deltaC,
+                                                     const HDRFloatComplex &fallbackDeltaZ,
+                                                     IterType &iterations,
+                                                     HDRFloatComplex &deltaZ) const
 {
-    // int ATMaxIt = (max_iterations - 1) / StepLength + 1;
+    iterations = 0;
+    // CPU and CUDA rendering use different HDR zero exponents; preserve the caller's form.
+    deltaZ = fallbackDeltaZ;
+    if (enabled && StepLength != 0 && isValid(deltaC)) {
+        PerformAT(maxIterations, deltaC, iterations, deltaZ);
+    }
+}
+
+template <typename IterType, class HDRFloat, class SubType>
+CUDA_CRAP void
+ATInfo<IterType, HDRFloat, SubType>::PerformAT(IterType maxIterations,
+                                               HDRFloatComplex deltaC,
+                                               IterType &iterations,
+                                               HDRFloatComplex &deltaZ) const
+{
     HDRFloat nsq;
-    const IterType ATMaxIt = max_iterations / StepLength;
-    const HDRFloatComplex c = getC((HDRFloatComplex)DeltaSub0);
+    const IterType ATMaxIt = maxIterations / StepLength;
+    const HDRFloatComplex c = getC(deltaC);
     HDRFloatComplex z{};
     IterType i;
 
@@ -182,7 +208,6 @@ ATInfo<IterType, HDRFloat, SubType>::PerformAT(IterType max_iterations,
         z = z * z + c;
     }
 
-    result.dz = getDZ(z);
-    result.bla_iterations = i * StepLength;
-    result.bla_steps = i;
+    deltaZ = getDZ(z);
+    iterations = i * StepLength;
 }

@@ -2674,6 +2674,18 @@ WPngImage::IOStatus WPngImage::saveImageToRAM(std::vector<unsigned char> &dest,
     return performSaveImageToRAM(&dest, 0, fileFormat);
 }
 
+WPngImage::IOStatus WPngImage::SaveImageToRAM(std::vector<unsigned char> &dest,
+    PngFileFormat fileFormat, const PngEncodingOptions &options) const {
+    return PerformSaveImageToRAM(&dest, 0, fileFormat, options);
+}
+
+WPngImage::IOStatus WPngImage::performSaveImageToRAM
+(std::vector<unsigned char> *destVector, ByteStreamOutputFunc destFunc,
+    PngFileFormat fileFormat) const {
+    const PngEncodingOptions options = {true, true, 128};
+    return PerformSaveImageToRAM(destVector, destFunc, fileFormat, options);
+}
+
 WPngImage::IOStatus WPngImage::saveImageToRAM(std::vector<unsigned char> &dest,
     PngWriteConvert conversion) const {
     return saveImageToRAM
@@ -2878,9 +2890,9 @@ WPngImage::performSaveImage(const char *fileName, PngFileFormat fileFormat) cons
 //----------------------------------------------------------------------------
 // Write PNG data to RAM
 //----------------------------------------------------------------------------
-WPngImage::IOStatus WPngImage::performSaveImageToRAM
+WPngImage::IOStatus WPngImage::PerformSaveImageToRAM
 (std::vector<unsigned char> *destVector, ByteStreamOutputFunc destFunc,
-    PngFileFormat fileFormat) const {
+    PngFileFormat fileFormat, const PngEncodingOptions &options) const {
     if (!mData) return kIOStatus_Ok;
 
     if (fileFormat == kPngFileFormat_none)
@@ -2938,8 +2950,17 @@ WPngImage::IOStatus WPngImage::performSaveImageToRAM
     std::vector<unsigned char> buffer;
     if (!destVector) destVector = &buffer;
 
-    unsigned errorCode = lodepng::encode(*destVector, rawImageData, imageWidth, imageHeight,
-        colorType, bitDepth);
+    lodepng::State state;
+    state.info_raw.colortype = colorType;
+    state.info_raw.bitdepth = bitDepth;
+    state.info_png.color.colortype = colorType;
+    state.info_png.color.bitdepth = bitDepth;
+    state.encoder.auto_convert = options.AutoConvert;
+    state.encoder.zlibsettings.lazymatching = options.LazyMatching;
+    state.encoder.zlibsettings.nicematch = options.NiceMatch;
+
+    const unsigned errorCode = lodepng::encode(*destVector, rawImageData,
+        imageWidth, imageHeight, state);
 
     if (errorCode != 0)
         return IOStatus(kIOStatus_Error_PNGLibraryError, lodepng_error_text(errorCode));
@@ -3299,9 +3320,9 @@ static void pngDataWriter(png_structp png_ptr, png_bytep data, png_size_t length
 static void pngDataFlush(png_structp) {
 }
 
-WPngImage::IOStatus WPngImage::performSaveImageToRAM
+WPngImage::IOStatus WPngImage::PerformSaveImageToRAM
 (std::vector<unsigned char> *destVector, ByteStreamOutputFunc destFunc,
-    PngFileFormat fileFormat) const {
+    PngFileFormat fileFormat, const PngEncodingOptions &) const {
     if (!mData) return kIOStatus_Ok;
 
     PngStructs structs(false);

@@ -13,6 +13,7 @@
 #include "RenderToConsole.h"
 #include "RenderToPng.h"
 #include "TestFramework.h"
+#include "WPngImage/lodepng.h"
 
 #include <atomic>
 #include <chrono>
@@ -27,6 +28,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -815,6 +817,7 @@ TEST(FractalSharkLib_SavePoolPreservesImageSnapshotsAcrossResize)
         ASSERT_TRUE(image.loadImage(output.string()) == WPngImage::kIOStatus_Ok);
         ASSERT_EQ(image.width(), output == resizedOutput ? 24 : 16);
         ASSERT_EQ(image.height(), output == resizedOutput ? 12 : 16);
+        ASSERT_EQ(image.originalFileFormat(), WPngImage::kPngFileFormat_RGBA16);
     }
     ASSERT_TRUE(std::filesystem::is_regular_file(textOutput));
     ASSERT_TRUE(std::filesystem::file_size(textOutput) > 0);
@@ -837,4 +840,99 @@ TEST(FractalSharkLib_RenderToPngRejectsMissingViewSource)
     std::string error;
     ASSERT_EQ(RenderToPng(request, fractal, &error), 2);
     ASSERT_TRUE(error.find("ViewSource must be set") != std::string::npos);
+}
+
+namespace {
+
+void
+AppendPngChannel(std::vector<unsigned char> &pixels, uint16_t channel)
+{
+    pixels.push_back(static_cast<unsigned char>(channel >> 8));
+    pixels.push_back(static_cast<unsigned char>(channel & 0xff));
+}
+
+void
+VerifyPngEncodingRoundTrip(const WPngImage &image, unsigned colorType)
+{
+    std::vector<unsigned char> expected;
+    for (int y = 0; y < image.height(); ++y) {
+        for (int x = 0; x < image.width(); ++x) {
+            const WPngImage::Pixel16 pixel = image.get16(x, y);
+            AppendPngChannel(expected, pixel.r);
+            AppendPngChannel(expected, pixel.g);
+            AppendPngChannel(expected, pixel.b);
+            AppendPngChannel(expected, pixel.a);
+        }
+    }
+
+    const WPngImage::PngEncodingOptions optimized{false, false, 32};
+    std::vector<unsigned char> encoded;
+    ASSERT_TRUE(image.SaveImageToRAM(encoded, WPngImage::kPngFileFormat_RGBA16, optimized) ==
+                WPngImage::kIOStatus_Ok);
+    ASSERT_TRUE(encoded.size() >= 33);
+    ASSERT_EQ(encoded[24], 16);
+    ASSERT_EQ(encoded[25], colorType);
+
+    std::vector<unsigned char> decoded;
+    unsigned width = 0;
+    unsigned height = 0;
+    ASSERT_EQ(lodepng::decode(decoded, width, height, encoded, LCT_RGBA, 16), 0u);
+    ASSERT_EQ(width, static_cast<unsigned>(image.width()));
+    ASSERT_EQ(height, static_cast<unsigned>(image.height()));
+    ASSERT_TRUE(decoded == expected);
+
+    std::vector<unsigned char> legacy;
+    ASSERT_TRUE(image.saveImageToRAM(legacy, WPngImage::kPngFileFormat_RGBA16) ==
+                WPngImage::kIOStatus_Ok);
+    decoded.clear();
+    ASSERT_EQ(lodepng::decode(decoded, width, height, legacy, LCT_RGBA, 16), 0u);
+    ASSERT_TRUE(decoded == expected);
+
+    const WPngImage::PngEncodingOptions original{true, true, 128};
+    std::vector<unsigned char> explicitOriginal;
+    ASSERT_TRUE(image.SaveImageToRAM(explicitOriginal, WPngImage::kPngFileFormat_RGBA16, original) ==
+                WPngImage::kIOStatus_Ok);
+    ASSERT_TRUE(explicitOriginal == legacy);
+}
+
+} // namespace
+
+TEST(FractalSharkLib_PngEncodingPreserves16BitGradientsAndTransparency)
+{
+    WPngImage opaque(17, 9, WPngImage::Pixel16(0, 0, 0));
+    WPngImage transparent(17, 9, WPngImage::Pixel16(0, 0, 0, 0));
+    for (int y = 0; y < opaque.height(); ++y) {
+        for (int x = 0; x < opaque.width(); ++x) {
+            const auto red = static_cast<uint16_t>(0x0102 + x * 257 + y * 13);
+            const auto green = static_cast<uint16_t>(0x2345 + x * 19 + y * 511);
+            const auto blue = static_cast<uint16_t>(0xabcd - x * 31 - y * 127);
+            const auto alpha = static_cast<uint16_t>(x * 4093 + y * 17);
+            opaque.set(x, y, WPngImage::Pixel16(red, green, blue));
+            transparent.set(x, y, WPngImage::Pixel16(red, green, blue, alpha));
+        }
+    }
+    VerifyPngEncodingRoundTrip(opaque, 2);
+    VerifyPngEncodingRoundTrip(transparent, 6);
+}
+
+TEST(FractalSharkLib_PngEncodingKeepsRgb16ForSimpleImages)
+{
+    VerifyPngEncodingRoundTrip(WPngImage(1, 1, WPngImage::Pixel16(0x0102, 0x2345, 0xabcd)), 2);
+    VerifyPngEncodingRoundTrip(WPngImage(8, 5, WPngImage::Pixel16(0, 0, 0)), 2);
+
+    WPngImage repeated(32, 8, WPngImage::Pixel16(0x1111, 0x7777, 0xeeee));
+    for (int y = 0; y < repeated.height(); ++y) {
+        for (int x = 0; x < repeated.width(); ++x) {
+            if ((x + y) % 2 == 0) {
+                repeated.set(x, y, WPngImage::Pixel16(0x3333, 0xaaaa, 0x5555));
+            }
+        }
+    }
+    VerifyPngEncodingRoundTrip(repeated, 2);
+
+    std::vector<unsigned char> legacy;
+    ASSERT_TRUE(repeated.saveImageToRAM(legacy, WPngImage::kPngFileFormat_RGBA16) ==
+                WPngImage::kIOStatus_Ok);
+    ASSERT_TRUE(legacy.size() >= 33);
+    ASSERT_TRUE(legacy[24] <= 8);
 }

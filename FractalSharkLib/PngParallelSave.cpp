@@ -190,8 +190,9 @@ PngParallelSave::Run()
         }
 
         std::vector<unsigned char> pngBytes;
-        const auto status =
-            image.saveImageToRAM(pngBytes, WPngImage::PngFileFormat::kPngFileFormat_RGBA16);
+        const WPngImage::PngEncodingOptions encodingOptions{false, false, 32};
+        const auto status = image.SaveImageToRAM(
+            pngBytes, WPngImage::PngFileFormat::kPngFileFormat_RGBA16, encodingOptions);
         if (status != WPngImage::kIOStatus_Ok) {
             std::wstring message = L"PNG encoder failed";
             if (!status.pngLibErrorMsg.empty()) {

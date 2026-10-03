@@ -119,6 +119,14 @@ public:
         kPngWriteConvert_closestMatch
     };
 
+    // FractalShark extension: options for the LodePNG backend. The optional
+    // libpng backend retains its existing encoding behavior.
+    struct PngEncodingOptions {
+        bool AutoConvert;
+        bool LazyMatching;
+        unsigned NiceMatch;
+    };
+
 
     //------------------------------------------------------------------------
     // Constructors, assignment, destructor
@@ -204,6 +212,8 @@ public:
     IOStatus saveImageToRAM(std::vector<unsigned char> &dest,
         PngWriteConvert = kPngWriteConvert_closestMatch) const;
     IOStatus saveImageToRAM(std::vector<unsigned char> &dest, PngFileFormat) const;
+    IOStatus SaveImageToRAM(std::vector<unsigned char> &dest, PngFileFormat,
+        const PngEncodingOptions &options) const;
 
 #if WPNGIMAGE_RESTRICT_TO_CPP98
     typedef void(*ByteStreamOutputFunc)(const unsigned char *, std::size_t);
@@ -385,6 +395,9 @@ private:
     IOStatus performSaveImage(const char *, PngFileFormat) const;
     IOStatus performSaveImageToRAM
     (std::vector<unsigned char> *, ByteStreamOutputFunc, PngFileFormat) const;
+    IOStatus PerformSaveImageToRAM
+    (std::vector<unsigned char> *, ByteStreamOutputFunc, PngFileFormat,
+        const PngEncodingOptions &) const;
 #endif
 };
 

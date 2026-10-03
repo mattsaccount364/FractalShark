@@ -1,12 +1,27 @@
 param(
     [ValidateSet('Batch', 'Sequential', 'Compare')]
     [string]$Mode = 'Batch',
-    [string]$OutputRoot
+    [string]$OutputRoot,
+    [switch]$ClientOnly,
+    [string]$Endpoint
 )
 
 # Submit the same scenes sequentially or as one batch. Compare uses a fresh server
 # for each pass so reference-orbit state from the first pass cannot affect the second.
+# To use an existing server without stopping it:
+# .\tools\run_cli_server_example.ps1 -ClientOnly -Mode Batch -Endpoint '\\.\pipe\FractalSharkCli-Matthew'
 $ErrorActionPreference = 'Stop'
+if ($ClientOnly) {
+    if ([string]::IsNullOrWhiteSpace($Endpoint)) {
+        throw '-ClientOnly requires a nonblank -Endpoint.'
+    }
+    if ($Mode -eq 'Compare') {
+        throw '-ClientOnly cannot be used with -Mode Compare; Compare requires fresh servers.'
+    }
+}
+elseif ($PSBoundParameters.ContainsKey('Endpoint')) {
+    throw '-Endpoint requires -ClientOnly.'
+}
 $totalTime = [System.Diagnostics.Stopwatch]::StartNew()
 $outputRootProvided = [bool]$OutputRoot
 
@@ -16,10 +31,10 @@ $runName = 'cli-server-example-{0}-{1}' -f (Get-Date -Format 'yyyyMMdd-HHmmss'),
 if (-not $OutputRoot) {
     $OutputRoot = Join-Path (Split-Path $PSScriptRoot -Parent) $runName
 }
-$outputRoot = $OutputRoot
+$outputRoot = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputRoot)
 $batchOutput = Join-Path $outputRoot 'batch'
 $sequentialOutput = Join-Path $outputRoot 'sequential'
-$endpoint = "FractalSharkCli-example-$PID"
+$resolvedEndpoint = if ($ClientOnly) { $Endpoint } else { "FractalSharkCli-example-$PID" }
 New-Item -ItemType Directory -Path $outputRoot -Force | Out-Null
 if ($Mode -eq 'Batch' -or $Mode -eq 'Compare') {
     New-Item -ItemType Directory -Path $batchOutput -Force | Out-Null
@@ -99,35 +114,40 @@ if ($Mode -eq 'Compare') {
 
 # The server retains the expensive renderer state between requests. Its output is captured
 # beside the PNGs so the example remains easy to inspect after it finishes.
-$serverStdout = Join-Path $outputRoot 'server.stdout.txt'
-$serverStderr = Join-Path $outputRoot 'server.stderr.txt'
-$server = Start-Process -FilePath $cli `
-    -ArgumentList @('--server', '--endpoint', $endpoint, '--width', '3840', '--height', '2160') `
-    -WindowStyle Hidden `
-    -RedirectStandardOutput $serverStdout `
-    -RedirectStandardError $serverStderr `
-    -PassThru
+$server = $null
+if (-not $ClientOnly) {
+    $serverStdout = Join-Path $outputRoot 'server.stdout.txt'
+    $serverStderr = Join-Path $outputRoot 'server.stderr.txt'
+    $server = Start-Process -FilePath $cli `
+        -ArgumentList @('--server', '--endpoint', $resolvedEndpoint, '--width', '3840', '--height', '2160') `
+        -WindowStyle Hidden `
+        -RedirectStandardOutput $serverStdout `
+        -RedirectStandardError $serverStderr `
+        -PassThru
+}
 
 $serverReady = $false
 try {
-    # The client frame timer includes time spent waiting for the server to accept its first
-    # connection, so wait for the server's flushed listening message before submitting work.
-    $startupWait = [System.Diagnostics.Stopwatch]::StartNew()
-    while ($startupWait.Elapsed.TotalSeconds -lt 120) {
-        if ($server.HasExited) {
-            throw "Server exited before it was ready. See $serverStderr"
-        }
-        if (Test-Path -LiteralPath $serverStdout) {
-            $serverOutput = Get-Content -LiteralPath $serverStdout -Raw -ErrorAction SilentlyContinue
-            if ($serverOutput -and $serverOutput.Contains('FractalSharkCli server listening on ')) {
-                $serverReady = $true
-                break
+    if ($server) {
+        # The client frame timer includes time spent waiting for the server to accept its first
+        # connection, so wait for the server's flushed listening message before submitting work.
+        $startupWait = [System.Diagnostics.Stopwatch]::StartNew()
+        while ($startupWait.Elapsed.TotalSeconds -lt 120) {
+            if ($server.HasExited) {
+                throw "Server exited before it was ready. See $serverStderr"
             }
+            if (Test-Path -LiteralPath $serverStdout) {
+                $serverOutput = Get-Content -LiteralPath $serverStdout -Raw -ErrorAction SilentlyContinue
+                if ($serverOutput -and $serverOutput.Contains('FractalSharkCli server listening on ')) {
+                    $serverReady = $true
+                    break
+                }
+            }
+            Start-Sleep -Milliseconds 100
         }
-        Start-Sleep -Milliseconds 100
-    }
-    if (-not $serverReady) {
-        throw "Server did not become ready within 120 seconds. See $serverStderr"
+        if (-not $serverReady) {
+            throw "Server did not become ready within 120 seconds. See $serverStderr"
+        }
     }
 
     if ($Mode -eq 'Sequential') {
@@ -135,7 +155,7 @@ try {
         foreach ($scene in $scenes) {
             $output = Join-Path $sequentialOutput "$($scene.Name).png"
             Write-Host "Rendering $($scene.Name) -> $output"
-            & $cli --connect --endpoint $endpoint `
+            & $cli --connect --endpoint $resolvedEndpoint `
                 --render-algorithm GpuHDRx32PerturbedLAv2 `
                 --center-x $scene.X --center-y $scene.Y --zoom $scene.Zoom `
                 --iterations $scene.Iterations --width 3840 --height 2160 `
@@ -166,7 +186,7 @@ try {
             $lines.Add("iterations = $($scene.Iterations)")
         }
         [System.IO.File]::WriteAllLines($batchFile, $lines.ToArray())
-        & $cli --connect --endpoint $endpoint --batch $batchFile 2>&1 |
+        & $cli --connect --endpoint $resolvedEndpoint --batch $batchFile 2>&1 |
             Tee-Object -FilePath $batchResults
         if ($LASTEXITCODE -ne 0) {
             throw "Batch render failed with exit code $LASTEXITCODE"
@@ -176,12 +196,12 @@ try {
 finally {
     # Shutdown drains all outstanding PNG encoders before replying, so every output file is
     # complete when the server exits.
-    if (-not $server.HasExited -and -not $serverReady) {
+    if ($server -and -not $server.HasExited -and -not $serverReady) {
         Stop-Process -Id $server.Id -Force
         $server.WaitForExit()
     }
-    elseif (-not $server.HasExited) {
-        & $cli --connect --endpoint $endpoint --shutdown
+    elseif ($server -and -not $server.HasExited) {
+        & $cli --connect --endpoint $resolvedEndpoint --shutdown
         $shutdownExitCode = $LASTEXITCODE
         if (-not $server.WaitForExit(60000)) {
             Stop-Process -Id $server.Id -Force
@@ -193,10 +213,17 @@ finally {
     }
 }
 
-# This includes script setup, server startup, every request, PNG completion, and shutdown.
 $totalTime.Stop()
-Write-Host ('Total end-to-end time: {0:N1} ms' -f $totalTime.Elapsed.TotalMilliseconds)
-Write-Host "Finished PNGs are in $outputRoot"
+if ($ClientOnly) {
+    Write-Host ('Total client request time: {0:N1} ms' -f $totalTime.Elapsed.TotalMilliseconds)
+    Write-Host "Render requests succeeded. Output directory: $outputRoot"
+    Write-Host 'The server remains running; PNG encoding may continue after this script exits.'
+}
+else {
+    # This includes script setup, server startup, every request, PNG completion, and shutdown.
+    Write-Host ('Total end-to-end time: {0:N1} ms' -f $totalTime.Elapsed.TotalMilliseconds)
+    Write-Host "Finished PNGs are in $outputRoot"
+}
 if ($Mode -eq 'Batch') {
     $pattern = '^\[(?<frame>\d+)/(?<total>\d+)\] (?<name>\S+) status=(?<status>ok|failed) ' +
         'cli_image_ms=(?<cliImage>\d+)(?: overall_ms=(?<overall>\d+) ' +

@@ -1,7 +1,7 @@
 // Golden-CRC regression tests for the headless render path.
 //
 // Each case uses RenderToPng (FractalSharkLib) to render a fixed view + CPU
-// algorithm to a PNG, then CRC-64s the file bytes and compares against a
+// algorithm to a PNG, then CRC-64s decoded RGBA16 pixels and compares against a
 // hardcoded value. The CRC only catches drift; baseline correctness must be
 // confirmed by visually inspecting the PNG when seeding a new case (run with
 // FRACTALSHARK_UPDATE_GOLDENS=1, look at the kept PNG, then bake the printed
@@ -11,6 +11,7 @@
 #include "RenderAlgorithm.h"
 #include "RenderToPng.h"
 #include "TestFramework.h"
+#include "WPngImage/lodepng.h"
 
 #include <cstdint>
 #include <cstdlib>
@@ -18,6 +19,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -68,7 +70,9 @@ ReadFileBytes(const std::filesystem::path &p)
 }
 
 // Hardcoded golden CRCs. The CPU render paths covered here are expected to
-// produce byte-identical PNG output across supported platforms. "PENDING" =
+// produce identical decoded RGBA16 pixels across supported platforms. Channel
+// values use PNG's big-endian byte order, independently of the host byte order.
+// "PENDING" =
 // unbaked; first run will print actual + pass.
 struct GoldenCase {
     const char *Name;
@@ -82,18 +86,18 @@ constexpr int kGoldenWidth = 256;
 constexpr int kGoldenHeight = 256;
 
 const GoldenCase kCases[] = {
-    {"view0-cpu64", 0, "Cpu64", 1, "1275500d639ad02e"},
-    {"view0-cpu64-aa4", 0, "Cpu64", 4, "39671027bacf2567"},
-    {"view1-cpu-bla", 1, "Cpu64PerturbedBLAHDR", 1, "d0c8921c878f6dc3"},
-    {"view0-cpuhdr", 0, "CpuHDR32", 1, "66ba2caaaa7f8013"},
-    {"view5-cpu-bla-v2", 5, "Cpu32PerturbedBLAV2HDR", 1, "3bdf2228562f73be"},
-    {"view0-cpuhdr64", 0, "CpuHDR64", 1, "1275500d639ad02e"},
-    {"view5-cpu-perturbed-bla", 5, "Cpu64PerturbedBLA", 1, "f201db00ade569fc"},
-    {"view5-cpu32-bla-hdr", 5, "Cpu32PerturbedBLAHDR", 1, "634d826801d54979"},
-    {"view5-cpu64-bla-hdr", 5, "Cpu64PerturbedBLAHDR", 1, "c91e33c3eb85b33d"},
-    {"view5-cpu64-bla-v2", 5, "Cpu64PerturbedBLAV2HDR", 1, "c71c26dc805d43c0"},
-    {"view5-cpu32-rc-bla-v2", 5, "Cpu32PerturbedRCBLAV2HDR", 1, "4a315f9f25b87dcc"},
-    {"view5-cpu64-rc-bla-v2", 5, "Cpu64PerturbedRCBLAV2HDR", 1, "2bbfb34f449b2fa2"},
+    {"view0-cpu64", 0, "Cpu64", 1, "8eee9f298276208d"},
+    {"view0-cpu64-aa4", 0, "Cpu64", 4, "ccb0a5811b8c13b8"},
+    {"view1-cpu-bla", 1, "Cpu64PerturbedBLAHDR", 1, "408ab08e4feb17f1"},
+    {"view0-cpuhdr", 0, "CpuHDR32", 1, "accf6b90d46ad55e"},
+    {"view5-cpu-bla-v2", 5, "Cpu32PerturbedBLAV2HDR", 1, "00579b31ca3aa41e"},
+    {"view0-cpuhdr64", 0, "CpuHDR64", 1, "8eee9f298276208d"},
+    {"view5-cpu-perturbed-bla", 5, "Cpu64PerturbedBLA", 1, "b7221b9cad319c8f"},
+    {"view5-cpu32-bla-hdr", 5, "Cpu32PerturbedBLAHDR", 1, "8e2e1d1730c2e8f4"},
+    {"view5-cpu64-bla-hdr", 5, "Cpu64PerturbedBLAHDR", 1, "f64dad356c7780ba"},
+    {"view5-cpu64-bla-v2", 5, "Cpu64PerturbedBLAV2HDR", 1, "88184a0787aa341c"},
+    {"view5-cpu32-rc-bla-v2", 5, "Cpu32PerturbedRCBLAV2HDR", 1, "3a8313703a7428b6"},
+    {"view5-cpu64-rc-bla-v2", 5, "Cpu64PerturbedRCBLAV2HDR", 1, "2258571d542f1530"},
 };
 
 void
@@ -147,14 +151,28 @@ RunGoldenCase(const GoldenCase &c)
         TestFramework::Fail(__FILE__, __LINE__, oss.str());
     }
 
-    auto actualCrc = Crc64::ToHex(Crc64::Compute(bytes.data(), bytes.size()));
+    std::vector<unsigned char> pixels;
+    unsigned width = 0;
+    unsigned height = 0;
+    const unsigned decodeError = lodepng::decode(pixels, width, height, bytes, LCT_RGBA, 16);
+    if (decodeError != 0) {
+        std::ostringstream message;
+        message << "could not decode golden PNG: " << lodepng_error_text(decodeError) << " (png kept at "
+                << pngPath.string() << ")";
+        TestFramework::Fail(__FILE__, __LINE__, message.str());
+    }
+    ASSERT_EQ(width, static_cast<unsigned>(kGoldenWidth));
+    ASSERT_EQ(height, static_cast<unsigned>(kGoldenHeight));
+    ASSERT_EQ(pixels.size(), static_cast<size_t>(width) * height * 8);
+
+    auto actualCrc = Crc64::ToHex(Crc64::Compute(pixels.data(), pixels.size()));
     const char *expected = c.ExpectedCrc;
 
     bool updateMode = IsUpdateMode();
     bool pending = std::strcmp(expected, "PENDING") == 0;
 
     if (updateMode || pending) {
-        std::cout << "  GOLDEN " << c.Name << " CRC(base16) " << actualCrc
+        std::cout << "  GOLDEN " << c.Name << " decoded RGBA16 CRC(base16) " << actualCrc
                   << "    (png: " << pngPath.string() << ")\n";
         if (pending && !updateMode) {
             std::cout << "         (PENDING placeholder — passing; bake CRC after visual check)\n";
@@ -165,11 +183,11 @@ RunGoldenCase(const GoldenCase &c)
     // Keep the PNG around on mismatch for inspection; otherwise clean up.
     if (actualCrc != expected) {
         std::ostringstream oss;
-        oss << "CRC(base16) mismatch for " << c.Name << ": expected " << expected << ", got "
-            << actualCrc << " (png kept at " << pngPath.string() << ")";
+        oss << "decoded RGBA16 CRC(base16) mismatch for " << c.Name << ": expected " << expected
+            << ", got " << actualCrc << " (png kept at " << pngPath.string() << ")";
         TestFramework::Fail(__FILE__, __LINE__, oss.str());
     }
-    std::cout << "  GOLDEN " << c.Name << " CRC(base16) " << actualCrc << " OK"
+    std::cout << "  GOLDEN " << c.Name << " decoded RGBA16 CRC(base16) " << actualCrc << " OK"
               << "    (png: " << pngPath.string() << ")\n";
 }
 

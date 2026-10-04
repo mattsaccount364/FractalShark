@@ -57,6 +57,6 @@ struct RenderRequest {
 // Returns 0 on success, non-zero on failure (message appended to *err if non-null).
 // Exceptions from the underlying render path propagate to the caller.
 // PreserveIterationBuffer keeps the computed frame available for additional output.
-// Background PNG completion is drained later by the owning Fractal.
+// Background CPU PNG completion is drained later by the owning Fractal; GPU saves finish inline.
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err);
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);

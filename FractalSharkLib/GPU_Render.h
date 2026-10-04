@@ -14,7 +14,13 @@
 
 #include <atomic>
 #include <condition_variable>
+#include <memory>
 #include <mutex>
+#include <vector>
+
+namespace FractalShark::Png {
+class GpuPngEncoder;
+}
 
 // This is the main class that does the rendering on the GPU
 class GPURenderer {
@@ -116,6 +122,13 @@ public:
                            bool progressive = false);
 
     uint32_t SyncComputeStream();
+
+    // The caller must drain rendering before uploading a save snapshot. Encoding is synchronous.
+    template <typename IterType>
+    uint32_t EncodePng(const IterType *hostIters,
+                       size_t rowStrideElements,
+                       IterType numIterations,
+                       std::vector<unsigned char> &pngBytes);
     uint32_t SyncDisplayStream();
     uint32_t QueryComputeStream();
     uint32_t EnqueueComputeDoneCallback();
@@ -212,6 +225,7 @@ private:
     std::condition_variable *m_ComputeDoneCV{nullptr};
 
     PerturbResultsCollection m_PerturbResults;
+    std::unique_ptr<FractalShark::Png::GpuPngEncoder> m_PngEncoder;
 };
 
 #endif // GPGPU_RENDER_GPU_HPP

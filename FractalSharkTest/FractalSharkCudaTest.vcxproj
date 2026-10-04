@@ -57,6 +57,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="GpuTestRuntime.cpp" />
     <ClCompile Include="TestLACudaRender.cpp" />
+    <ClCompile Include="TestPngSave.cpp" />
     <CudaCompile Include="TestLAUpload.cu" />
     <CudaCompile Include="TestPngCudaEncoder.cu" />
   </ItemGroup>

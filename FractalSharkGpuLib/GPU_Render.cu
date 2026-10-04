@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 #include "GPU_Render.h"
+#include "PngEncoder.cuh"
 #include "QuadDouble/gqd_basic.cuh"
 #include "QuadFloat/gqf_basic.cuh"
 #include "dbldbl.cuh"
@@ -25,6 +26,7 @@
 #include "GPU_LAInfoDeep.h"
 #include "LAReference.h"
 
+#include <limits>
 #include <stdint.h>
 #include <type_traits>
 // #include <cuda/pipeline>
@@ -606,6 +608,61 @@ template uint32_t GPURenderer::RenderCurrent(uint64_t n_iterations,
                                              Color16 *color_buffer,
                                              ReductionResults *reduction_results,
                                              bool progressive);
+
+template <typename IterType>
+uint32_t
+GPURenderer::EncodePng(const IterType *hostIters,
+                       size_t rowStrideElements,
+                       IterType numIterations,
+                       std::vector<unsigned char> &pngBytes)
+{
+    pngBytes.clear();
+    // Save palettes are snapshot-owned; their host address must not outlive the snapshot as a cache key.
+    Pals.cached_hostPalInterleaved = nullptr;
+    if (!MemoryInitialized() || hostIters == nullptr || m_Width == 0 || m_Height == 0 ||
+        m_IterTypeSize != sizeof(IterType) || rowStrideElements < m_Width ||
+        rowStrideElements > std::numeric_limits<size_t>::max() / sizeof(IterType)) {
+        return cudaErrorInvalidValue;
+    }
+
+    if (!m_PngEncoder) {
+        m_PngEncoder = std::make_unique<FractalShark::Png::GpuPngEncoder>();
+    }
+    uint32_t result = cudaMemcpy2DAsync(OutputIterMatrix,
+                                        static_cast<size_t>(w_block) * NB_THREADS_W * sizeof(IterType),
+                                        hostIters,
+                                        rowStrideElements * sizeof(IterType),
+                                        static_cast<size_t>(m_Width) * sizeof(IterType),
+                                        m_Height,
+                                        cudaMemcpyHostToDevice,
+                                        m_ComputeStream);
+    if (result == cudaSuccess) {
+        result = RunAntialiasing(numIterations, m_ComputeStream);
+    }
+    if (result == cudaSuccess) {
+        result = cudaGetLastError();
+    }
+    if (result == cudaSuccess) {
+        result = m_PngEncoder->Encode(OutputColorMatrix.aa_colors,
+                                      m_ColorWidth,
+                                      m_ColorHeight,
+                                      static_cast<size_t>(m_ColorWidth) * sizeof(Color16),
+                                      m_ComputeStream,
+                                      pngBytes);
+    }
+    // The snapshot and palette may be released as soon as this method returns, even on failure.
+    const auto syncResult = cudaStreamSynchronize(m_ComputeStream);
+    return result == cudaSuccess ? syncResult : result;
+}
+
+template uint32_t GPURenderer::EncodePng<uint32_t>(const uint32_t *hostIters,
+                                                   size_t rowStrideElements,
+                                                   uint32_t numIterations,
+                                                   std::vector<unsigned char> &pngBytes);
+template uint32_t GPURenderer::EncodePng<uint64_t>(const uint64_t *hostIters,
+                                                   size_t rowStrideElements,
+                                                   uint64_t numIterations,
+                                                   std::vector<unsigned char> &pngBytes);
 
 uint32_t
 GPURenderer::SyncComputeStream()

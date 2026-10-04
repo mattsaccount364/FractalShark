@@ -68,7 +68,7 @@ endif()
 target_link_libraries(FractalSharkTest PRIVATE CUDA::cudart_static FractalSharkLib FractalSharkGpuLib FractalSharkPlatform)
 
 # Separate hardware suite; the portable CPU suite remains runnable without CUDA hardware.
-add_executable(FractalSharkCudaTest main.cpp GpuTestRuntime.cpp TestLAUpload.cu TestLACudaRender.cpp TestPngCudaEncoder.cu)
+add_executable(FractalSharkCudaTest main.cpp GpuTestRuntime.cpp TestLAUpload.cu TestLACudaRender.cpp TestPngCudaEncoder.cu TestPngSave.cpp)
 target_include_directories(FractalSharkCudaTest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}

@@ -14,14 +14,20 @@ enum FractalPaletteType : size_t { Basic = 0, Default, Patriotic, Summer, Random
 class PngParallelSave {
 public:
     enum class Type { ItersText, PngImg };
+    enum class EncoderBackend { Cpu, Gpu };
 
-    PngParallelSave(enum Type typ, std::wstring filenameBase, bool copyTheIters, Fractal &fractal);
+    PngParallelSave(Type typ,
+                    EncoderBackend backend,
+                    std::wstring filenameBase,
+                    bool copyTheIters,
+                    Fractal &fractal);
     ~PngParallelSave();
-    void Run();
+    int Run();
 
     PngParallelSave(PngParallelSave &&) = delete;
 
     Type m_Type;
+    EncoderBackend m_Backend;
     Fractal &m_Fractal;
     size_t m_ScrnWidth;
     size_t m_ScrnHeight;
@@ -34,7 +40,12 @@ public:
     FractalPaletteType m_WhichPalette;
     std::vector<Color16> m_PaletteColors;
     uint32_t m_NumPaletteColors;
+    uint64_t m_PaletteGeneration;
+    IterTypeEnum m_IterType;
     ItersMemoryContainer m_CurIters;
     bool m_CopyTheIters;
     std::wstring m_FilenameBase;
+
+private:
+    template <typename IterType> uint32_t EncodeGpuPng(std::vector<unsigned char> &pngBytes);
 };

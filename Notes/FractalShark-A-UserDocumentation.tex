@@ -1056,10 +1056,12 @@ are resolved from the server's working directory.
 
 The client prints the server's output and returns its status as an exit code.
 It also prints a frame time covering the request and response. For server
-renders, PNG encoding can continue after the client returns; a successful
-response does not guarantee that the PNG is complete. The shutdown command
-waits for outstanding PNG
-encoders before the server exits. The full PowerShell batch example is
+renders using a CPU algorithm, PNG encoding runs in the save thread pool and
+can continue after the client returns; a successful response does not guarantee
+that the PNG is complete. GPU algorithms use the CUDA PNG encoder on the calling
+thread, and finish encoding and writing the PNG before returning a successful
+response. AUTO follows the backend of the resolved algorithm. The shutdown
+command waits for outstanding CPU PNG saves before the server exits. The full PowerShell batch example is
 \code{tools/run\_cli\_server\_example.ps1}.
 
 After each successful non-quiet render, the CLI prints the same rendering
@@ -1067,8 +1069,9 @@ details shown by the GUI's Show Rendering Details command, without the GUI's
 clipboard notice. The report includes the selected algorithm, render settings,
 reference-orbit details, and benchmark timings. Its Overall time measures
 fractal calculation; the client's frame time also covers the local request and
-response. Neither time includes a background PNG encode that continues after a
-server response.
+response, including GPU PNG encoding and writing. Overall time excludes PNG
+saving. A CPU PNG encode that continues after a server response is excluded
+from the client's frame time.
 
 \subsubsection*{Batch rendering}
 
@@ -1117,8 +1120,10 @@ Every image prints a named status line with \code{overall\_ms},
 The reference-orbit time belongs to the selected orbit, so reuse can report its
 original generation time. The line also includes \code{cli\_image\_ms}, actual
 dimensions, iteration count, and output path when available. This CLI image time
-includes the overall rendering time and request setup through PNG save submission;
-it does not wait for background PNG encoding. The line remains visible with
+includes the overall rendering time and request setup through PNG saving. For
+CPU algorithms, the interval ends at save submission and excludes background
+encoding. For GPU algorithms, the interval includes completed PNG encoding and
+writing. The line remains visible with
 \code{-{}-quiet} in the batch file. The batch command also prints elapsed time
 and success/failure counts. The server shutdown command drains outstanding PNG
 writes. \code{tools/run\_cli\_server\_example.ps1} runs the same six scenes
@@ -1142,7 +1147,8 @@ the view and algorithm, then uses the direct rendering path
 (\cref{subsec:two-render-paths}): \code{Drain()} followed by
 \code{CalcFractal(true)} and, when PNG output is requested,
 \code{SaveCurrentFractal}. Single-shot mode waits for PNG completion; server
-mode starts encoding in the background so it can overlap a later render.
+mode queues CPU PNG encoding in the background so it can overlap a later render.
+GPU PNG encoding and writing run synchronously on the calling thread in both modes.
 
 The same \code{RenderToPng} helper is used by
 \code{TestRenderGoldens} (\cref{subsec:crummy-test}) to produce

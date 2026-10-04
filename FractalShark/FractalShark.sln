@@ -28,12 +28,18 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkTest", "..\Frac
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkCli", "..\FractalSharkCli\FractalSharkCli.vcxproj", "{A1B2C3D4-1234-5678-9ABC-DEF012345678}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FractalSharkCudaTest", "..\FractalSharkTest\FractalSharkCudaTest.vcxproj", "{11183716-3341-4C35-9A13-BA83A105AB82}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{11183716-3341-4C35-9A13-BA83A105AB82}.Debug|x64.ActiveCfg = Debug|x64
+		{11183716-3341-4C35-9A13-BA83A105AB82}.Debug|x64.Build.0 = Debug|x64
+		{11183716-3341-4C35-9A13-BA83A105AB82}.Release|x64.ActiveCfg = Release|x64
+		{11183716-3341-4C35-9A13-BA83A105AB82}.Release|x64.Build.0 = Release|x64
 		{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}.Debug|x64.ActiveCfg = Debug|x64
 		{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}.Debug|x64.Build.0 = Debug|x64
 		{BED28EC7-7C85-4AA7-A4BE-EBC09C166F58}.Release|x64.ActiveCfg = Release|x64

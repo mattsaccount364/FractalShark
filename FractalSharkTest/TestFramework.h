@@ -4,8 +4,10 @@
 #include <cstdlib>
 #include <functional>
 #include <iostream>
+#include <span>
 #include <sstream>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace TestFramework {
@@ -45,46 +47,179 @@ Fail(const char *file, int line, const std::string &msg)
     throw f;
 }
 
-inline int
-RunAllTests()
+struct RunOptions {
+    std::vector<std::string> Filters;
+    std::vector<std::string> Exclusions;
+    bool ListTests{};
+    bool FailFast{};
+    bool Help{};
+};
+
+inline bool
+Matches(std::string_view pattern, std::string_view name)
 {
-    int passed = 0;
-    int failed = 0;
-    const int total = static_cast<int>(Registry().size());
+    size_t patternIndex = 0;
+    size_t nameIndex = 0;
+    size_t star = std::string_view::npos;
+    size_t retry = 0;
+    while (nameIndex < name.size()) {
+        if (patternIndex < pattern.size() &&
+            (pattern[patternIndex] == '?' || pattern[patternIndex] == name[nameIndex])) {
+            ++patternIndex;
+            ++nameIndex;
+        } else if (patternIndex < pattern.size() && pattern[patternIndex] == '*') {
+            star = patternIndex++;
+            retry = nameIndex;
+        } else if (star != std::string_view::npos) {
+            patternIndex = star + 1;
+            nameIndex = ++retry;
+        } else {
+            return false;
+        }
+    }
+    while (patternIndex < pattern.size() && pattern[patternIndex] == '*') {
+        ++patternIndex;
+    }
+    return patternIndex == pattern.size();
+}
 
-    std::cout << "Running " << total << " test(s)...\n\n";
+inline bool
+IsSelected(std::string_view name, const RunOptions &options)
+{
+    bool included = options.Filters.empty();
+    for (const auto &pattern : options.Filters) {
+        included = included || Matches(pattern, name);
+    }
+    for (const auto &pattern : options.Exclusions) {
+        if (Matches(pattern, name)) {
+            return false;
+        }
+    }
+    return included;
+}
 
-    for (const auto &test : Registry()) {
+inline bool
+ParseArguments(int argc, const char *const *argv, RunOptions &options, std::string &error)
+{
+    options = RunOptions{};
+    error.clear();
+    for (int i = 1; i < argc; ++i) {
+        const std::string_view argument{argv[i]};
+        if (argument == "--help") {
+            options.Help = true;
+        } else if (argument == "--list-tests") {
+            options.ListTests = true;
+        } else if (argument == "--fail-fast") {
+            options.FailFast = true;
+        } else {
+            const auto equals = argument.find('=');
+            const auto option = argument.substr(0, equals);
+            if (option != "--filter" && option != "--exclude") {
+                error = "unknown argument: " + std::string{argument};
+                return false;
+            }
+            std::string_view value;
+            if (equals != std::string_view::npos) {
+                value = argument.substr(equals + 1);
+            } else if (i + 1 < argc && !std::string_view{argv[i + 1]}.starts_with("--")) {
+                value = argv[++i];
+            }
+            if (value.empty()) {
+                error = std::string{option} + " requires a nonempty pattern";
+                return false;
+            }
+            auto &patterns = option == "--filter" ? options.Filters : options.Exclusions;
+            patterns.emplace_back(value);
+        }
+    }
+    return true;
+}
+
+inline void
+PrintHelp(std::ostream &output)
+{
+    output << "Usage: FractalSharkTest [--filter PATTERN] [--exclude PATTERN]\n"
+              "                        [--list-tests] [--fail-fast] [--help]\n"
+              "Patterns match full names case-sensitively: * matches any sequence, ? one character.\n"
+              "Repeat --filter to include groups; exclusions take precedence. No filters runs all.\n"
+              "Examples:\n"
+              "  FractalSharkTest --filter \"LA*\"\n"
+              "  FractalSharkTest --exclude \"RenderGolden_*\"\n"
+              "  FractalSharkTest --list-tests --filter \"*LA*\"\n";
+}
+
+inline int
+RunTests(std::span<const TestCase> tests,
+         const RunOptions &options,
+         std::ostream &output,
+         std::ostream &errors)
+{
+    size_t passed = 0;
+    size_t failed = 0;
+    size_t selected = 0;
+    for (const auto &test : tests) {
+        selected += IsSelected(test.name, options);
+    }
+    if (selected == 0) {
+        errors << "error: no tests selected (" << tests.size() << " registered)\n";
+        return 2;
+    }
+    if (options.ListTests) {
+        for (const auto &test : tests) {
+            if (IsSelected(test.name, options)) {
+                output << test.name << '\n';
+            }
+        }
+        return 0;
+    }
+
+    output << "Running " << selected << " of " << tests.size() << " registered test(s)...\n\n";
+
+    for (const auto &test : tests) {
+        if (!IsSelected(test.name, options)) {
+            continue;
+        }
         try {
             test.func();
-            std::cout << "  PASS: " << test.name << "\n";
+            output << "  PASS: " << test.name << "\n";
             ++passed;
         } catch (const TestFailure &e) {
-            std::cerr << "  FAIL: " << test.name << "\n"
-                      << "        " << e.file << ":" << e.line << " - " << e.message << "\n";
+            errors << "  FAIL: " << test.name << "\n"
+                   << "        " << e.file << ":" << e.line << " - " << e.message << "\n";
             ++failed;
         } catch (const std::exception &e) {
-            std::cerr << "  FAIL: " << test.name << "\n"
-                      << "        Unhandled exception: " << e.what() << "\n";
+            errors << "  FAIL: " << test.name << "\n"
+                   << "        Unhandled exception: " << e.what() << "\n";
             ++failed;
         } catch (...) {
             // Unknown exception types still fail only this test and keep the suite running.
-            std::cerr << "  FAIL: " << test.name << "\n"
-                      << "        Unknown exception\n";
+            errors << "  FAIL: " << test.name << "\n"
+                   << "        Unknown exception\n";
             ++failed;
+        }
+        if (options.FailFast && failed != 0) {
+            break;
         }
     }
 
-    std::cout << "\n========================================\n"
-              << passed << " passed, " << failed << " failed, " << total << " total\n";
+    output << "\n========================================\n"
+           << tests.size() << " registered, " << selected << " selected, " << passed + failed
+           << " executed, " << passed << " passed, " << failed << " failed, "
+           << selected - passed - failed << " selected but unexecuted\n";
 
     if (failed > 0) {
-        std::cout << "RESULT: FAILED\n";
+        output << "RESULT: FAILED\n";
         return 1;
     }
 
-    std::cout << "RESULT: PASSED\n";
+    output << "RESULT: PASSED\n";
     return 0;
+}
+
+inline int
+RunAllTests()
+{
+    return RunTests(Registry(), RunOptions{}, std::cout, std::cerr);
 }
 
 } // namespace TestFramework

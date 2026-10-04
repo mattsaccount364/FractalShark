@@ -2,7 +2,9 @@ add_executable(FractalSharkTest)
 
 target_sources(FractalSharkTest PRIVATE
     main.cpp
+    TestTestFramework.cpp
     TestLAEvaluation.cpp
+    TestLAStorage.cpp
     TestBLA.cpp
     TestCudaDblflt.cpp
     TestFloatComplex.cpp
@@ -50,3 +52,19 @@ target_include_directories(FractalSharkTest PRIVATE
 )
 
 target_link_libraries(FractalSharkTest PRIVATE FractalSharkLib FractalSharkGpuLib FractalSharkPlatform)
+
+# Separate hardware suite; the portable CPU suite remains runnable without CUDA hardware.
+add_executable(FractalSharkCudaTest main.cpp TestLAUpload.cu TestLACudaRender.cpp)
+target_include_directories(FractalSharkCudaTest PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}
+    ${CMAKE_SOURCE_DIR}/FractalSharkGpuLib
+    ${CMAKE_SOURCE_DIR}/FractalSharkLib
+    ${CMAKE_SOURCE_DIR}/HpSharkFloatLib
+)
+target_compile_options(FractalSharkCudaTest PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--expt-relaxed-constexpr>
+    $<$<COMPILE_LANGUAGE:CUDA>:--threads=0>
+)
+target_link_libraries(FractalSharkCudaTest PRIVATE
+    FractalSharkLib FractalSharkGpuLib FractalSharkPlatform)

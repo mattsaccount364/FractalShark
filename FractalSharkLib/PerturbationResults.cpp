@@ -680,17 +680,17 @@ requires Introspection::TestPExtras<PExtras>::value
         return false;
     }
 
-    std::string descriptor_string_junk;
+    std::string descriptorJunk;
 
     {
         uint32_t prec;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> prec;
 
         MPIRPrecision p{prec};
 
         std::string shiX;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> shiX;
 
         this->m_OrbitX.precisionInBits(prec);
@@ -700,13 +700,13 @@ requires Introspection::TestPExtras<PExtras>::value
 
     {
         uint32_t prec;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> prec;
 
         MPIRPrecision p{prec};
 
         std::string shiY;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> shiY;
 
         this->m_OrbitY.precisionInBits(prec);
@@ -716,13 +716,13 @@ requires Introspection::TestPExtras<PExtras>::value
 
     {
         uint32_t prec;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> prec;
 
         MPIRPrecision p{prec};
 
         std::string shiZ;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> shiZ;
 
         this->m_ZoomFactor.precisionInBits(prec);
@@ -738,7 +738,7 @@ requires Introspection::TestPExtras<PExtras>::value
 
     {
         std::string maxIterationsStr;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> maxIterationsStr;
 
         IterTypeFull maxIterationsFull = std::stoll(maxIterationsStr);
@@ -747,21 +747,21 @@ requires Introspection::TestPExtras<PExtras>::value
 
     {
         std::string periodMaybeZeroStr;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> periodMaybeZeroStr;
         m_PeriodMaybeZero = (IterType)std::stoll(periodMaybeZeroStr);
     }
 
     {
         std::string compressionErrorStr;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> compressionErrorStr;
         m_CompressionErrorExp = static_cast<int32_t>(std::stoll(compressionErrorStr));
     }
 
     {
         std::string intermediateCompressionErrorStr;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> intermediateCompressionErrorStr;
         m_IntermediateCompressionErrorExp =
             static_cast<int32_t>(std::stoll(intermediateCompressionErrorStr));
@@ -769,7 +769,7 @@ requires Introspection::TestPExtras<PExtras>::value
 
     {
         std::string uncompressedItersInOrbitStr;
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
         metafile >> uncompressedItersInOrbitStr;
         m_UncompressedItersInOrbit = (IterType)std::stoll(uncompressedItersInOrbitStr);
     }
@@ -777,7 +777,10 @@ requires Introspection::TestPExtras<PExtras>::value
     MapExistingFiles();
 
     if (m_LaReference != nullptr) {
-        m_LaReference->ReadMetadata(metafile);
+        if (!m_LaReference->ReadMetadata(metafile)) {
+            m_LaReference = nullptr;
+            return false;
+        }
 
         if (!m_LaReference->IsValid()) {
             m_LaReference = nullptr;
@@ -2325,6 +2328,14 @@ requires Introspection::TestPExtras<PExtras>::value
     }
 
     if (hasLaInfo) {
+        if (std::filesystem::file_size(Environment::ToFsPath(laInfoFilename)) %
+                    sizeof(LAInfoDeep<IterType, T, SubType, PExtras>) !=
+                0 ||
+            std::filesystem::file_size(Environment::ToFsPath(laStageFilename)) %
+                    sizeof(LAStageInfo<IterType, T>) !=
+                0) {
+            throw FractalSharkSeriousException("Invalid LA reference file length");
+        }
         m_LaReference = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
             GetRefOrbitOptions(), laInfoFilename, laStageFilename);
     }

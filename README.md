@@ -208,6 +208,29 @@ Linux is a fully supported platform and uses the same renderer and portable comm
 6. Run the portable tests with `./build-debug/FractalSharkTest/FractalSharkTest`.
 7. The Linux GUI binary is `build-release/FractalSharkGuiLinux/FractalSharkGuiLinux` after a Release build.
 
+The test runner supports exact names and case-sensitive wildcards (`*` and `?`). Repeat
+`--filter` to include multiple groups; `--exclude` takes precedence. With no arguments,
+the complete suite runs. Quote patterns so the shell does not expand them:
+
+```powershell
+.\Debug\FractalSharkTest.exe --list-tests --filter "*LA*"
+.\Debug\FractalSharkTest.exe --filter "LA*" --filter "HDRFloat*" --fail-fast
+.\Debug\FractalSharkTest.exe --exclude "RenderGolden_*"
+```
+
+`--list-tests` lists selected names without running tests. Invalid arguments and empty selections
+return exit code 2; test failures return 1. Selection does not save result files. The separate
+`FractalSharkCudaTest` executable uses the same options and exercises LA uploads, device lookups,
+and raw iteration regression renders in full, LA-only, and compressed modes;
+running it requires CUDA hardware. It is not part of the portable CPU test run.
+
+LA runtime rows use the same compact layout on the CPU and GPU. For HDR-float with 32-bit indices,
+rows occupy 52 bytes and stage descriptors occupy 16 bytes. Matching-type GPU uploads retain the
+bulk copy with compile-time layout checks. `MinMag` and per-row `LAThresholdC` live in parallel
+construction storage that is released after setup; each stage retains its first row's threshold.
+Native reference caches use version 0.545 and reject older versions. Imagina interchange formats
+retain their existing representation.
+
 If the Linux splash screen is missing in a local source build, check `file Pics/FractalShark.png`.  It should report PNG image data; `ASCII text` means Git LFS assets were not materialized, so run `git lfs pull`.
 
 Have fun, hopefully :)

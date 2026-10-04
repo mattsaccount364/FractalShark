@@ -959,8 +959,24 @@ InstantiateLAInfoDeepGrowableVector(uint64_t,
 
 #define InstantiateGrowableVector(EltT) template class GrowableVector<EltT>
 
-InstantiateGrowableVector(LAStageInfo<uint32_t>);
-InstantiateGrowableVector(LAStageInfo<uint64_t>);
+template class GrowableVector<LAStageInfo<uint32_t, float>>;
+template class GrowableVector<LAStageInfo<uint32_t, double>>;
+template class GrowableVector<LAStageInfo<uint32_t, CudaDblflt<MattDblflt>>>;
+template class GrowableVector<LAStageInfo<uint32_t, HDRFloat<float>>>;
+template class GrowableVector<LAStageInfo<uint32_t, HDRFloat<double>>>;
+template class GrowableVector<LAStageInfo<uint32_t, HDRFloat<CudaDblflt<MattDblflt>>>>;
+template class GrowableVector<LAStageInfo<uint64_t, float>>;
+template class GrowableVector<LAStageInfo<uint64_t, double>>;
+template class GrowableVector<LAStageInfo<uint64_t, CudaDblflt<MattDblflt>>>;
+template class GrowableVector<LAStageInfo<uint64_t, HDRFloat<float>>>;
+template class GrowableVector<LAStageInfo<uint64_t, HDRFloat<double>>>;
+template class GrowableVector<LAStageInfo<uint64_t, HDRFloat<CudaDblflt<MattDblflt>>>>;
+template class GrowableVector<LAConstructionInfo<float>>;
+template class GrowableVector<LAConstructionInfo<double>>;
+template class GrowableVector<LAConstructionInfo<CudaDblflt<MattDblflt>>>;
+template class GrowableVector<LAConstructionInfo<HDRFloat<float>>>;
+template class GrowableVector<LAConstructionInfo<HDRFloat<double>>>;
+template class GrowableVector<LAConstructionInfo<HDRFloat<CudaDblflt<MattDblflt>>>>;
 InstantiateGrowableVector(uint8_t);
 InstantiateGrowableVector(uint16_t);
 InstantiateGrowableVector(uint32_t);

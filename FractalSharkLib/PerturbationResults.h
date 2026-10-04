@@ -81,7 +81,7 @@ public:
     friend class SimpleIntermediateOrbitCompressor<IterType, T, PExtras>;
     friend class MaxIntermediateOrbitCompressor<IterType, T, PExtras>;
 
-    static constexpr char Version[] = "0.46";
+    static constexpr char Version[] = "0.545";
 
     static constexpr bool Is2X32 = (std::is_same<T, HDRFloat<CudaDblflt<MattDblflt>>>::value ||
                                     std::is_same<T, CudaDblflt<MattDblflt>>::value);

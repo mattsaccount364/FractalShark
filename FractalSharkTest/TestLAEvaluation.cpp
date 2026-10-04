@@ -177,13 +177,9 @@ struct EvaluationReference {
         return m_Stages.at(stage).m_MacroCount;
     }
     bool
-    isLAStageInvalid(uint64_t index, const FloatComplex<double> &) const
+    IsLAStageInvalid(uint64_t index, const FloatComplex<double> &) const
     {
-        for (const auto &stage : m_Stages) {
-            if (stage.m_Index == index)
-                return stage.m_Invalid;
-        }
-        TestFramework::Fail(__FILE__, __LINE__, "unexpected LA stage");
+        return m_Stages.at(index).m_Invalid;
     }
     EvaluationStep
     getLA(uint64_t index,

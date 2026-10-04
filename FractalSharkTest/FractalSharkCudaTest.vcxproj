@@ -11,9 +11,9 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{3B7F2A1D-8E4C-4D5F-9A6B-0C1D2E3F4A5B}</ProjectGuid>
-    <RootNamespace>FractalSharkTest</RootNamespace>
-    <ProjectName>FractalSharkTest</ProjectName>
+    <ProjectGuid>{11183716-3341-4C35-9A13-BA83A105AB82}</ProjectGuid>
+    <RootNamespace>FractalSharkCudaTest</RootNamespace>
+    <ProjectName>FractalSharkCudaTest</ProjectName>
   </PropertyGroup>
   <Import Project="$(SolutionDir)Directory.FractalShark.props" />
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -24,6 +24,9 @@
     <UseDebugLibraries Condition="'$(Configuration)'=='Release'">false</UseDebugLibraries>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup>
+    <IntDir>x64\$(Configuration)\CudaTests\</IntDir>
+  </PropertyGroup>
   <ImportGroup Label="ExtensionSettings">
     <Import Project="$(SolutionDir)CudaAuto.props" />
   </ImportGroup>
@@ -37,6 +40,9 @@
     <LinkIncremental>true</LinkIncremental>
   </PropertyGroup>
   <ItemDefinitionGroup>
+    <CudaCompile>
+      <CudaRuntime>Static</CudaRuntime>
+    </CudaCompile>
     <ClCompile>
       <PreprocessorDefinitions>_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
@@ -49,26 +55,8 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
-    <ClCompile Include="TestTestFramework.cpp" />
-    <ClCompile Include="TestLAEvaluation.cpp" />
-    <ClCompile Include="TestLAStorage.cpp" />
-    <ClCompile Include="TestBLA.cpp" />
-    <ClCompile Include="TestCudaDblflt.cpp" />
-    <ClCompile Include="TestFloatComplex.cpp" />
-    <ClCompile Include="TestHeapAllocator.cpp" />
-    <ClCompile Include="TestHDRFloat.cpp" />
-    <ClCompile Include="TestHDRFloatComplex.cpp" />
-    <ClCompile Include="TestHighPrecisionStrings.cpp" />
-    <ClCompile Include="TestLAParameters.cpp" />
-    <ClCompile Include="MenuStateTest.cpp" />
-    <ClCompile Include="TestMpirOrbitEval.cpp" />
-    <ClCompile Include="TestMpirSerialization.cpp" />
-    <ClCompile Include="TestPointZoomBBConverter.cpp" />
-    <ClCompile Include="TestPrecisionCalculator.cpp" />
-    <ClCompile Include="TestRenderGoldens.cpp" />
-    <ClCompile Include="TestGuiShared.cpp" />
-    <ClCompile Include="TestGrowableVector.cpp" />
-    <ClCompile Include="TestFractalSharkLib.cpp" />
+    <ClCompile Include="TestLACudaRender.cpp" />
+    <CudaCompile Include="TestLAUpload.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Crc64.h" />

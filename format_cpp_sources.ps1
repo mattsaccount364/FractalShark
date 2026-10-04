@@ -3,7 +3,9 @@ param(
     [ValidateRange(1, 256)]
     [int]$ThrottleLimit = [Math]::Max(1, [Environment]::ProcessorCount),
 
-    [switch]$All
+    [switch]$All,
+
+    [string]$IncludeUntrackedPath
 )
 
 Set-StrictMode -Version Latest
@@ -21,6 +23,14 @@ $excludedSourcePatterns = @(
 )
 $repositoryRoot = $PSScriptRoot
 $script:excludedSourcePathCount = 0
+$additionalRelativePaths = @()
+if ($IncludeUntrackedPath) {
+    $additionalRelativePaths = & git -C $repositoryRoot ls-files --others --exclude-standard -z -- $IncludeUntrackedPath
+    if ($LASTEXITCODE -ne 0) {
+        throw 'git failed while locating explicitly requested untracked files.'
+    }
+    $additionalRelativePaths = @($additionalRelativePaths -split [char]0 | Where-Object { $_ })
+}
 
 function Get-ClangFormatPath {
     $attemptedLocations = [System.Collections.Generic.List[string]]::new()
@@ -99,7 +109,13 @@ function Get-TrackedSourcePaths {
     $sourcePaths = [System.Collections.Generic.List[string]]::new()
     $script:excludedSourcePathCount = 0
 
-    foreach ($relativePath in $relativePaths -split [char]0) {
+    $pathsToFormat = @($relativePaths -split [char]0) + @(
+        $additionalRelativePaths | Where-Object {
+            $path = $_
+            @($sourcePatterns | Where-Object { $path -like $_ }).Count -ne 0
+        }
+    )
+    foreach ($relativePath in $pathsToFormat | Select-Object -Unique) {
         if (-not $relativePath) {
             continue
         }
@@ -137,7 +153,13 @@ function Get-TrackedLineEndingOnlyPaths {
     }
 
     $paths = [System.Collections.Generic.List[string]]::new()
-    foreach ($relativePath in $relativePaths -split [char]0) {
+    $pathsToNormalize = @($relativePaths -split [char]0) + @(
+        $additionalRelativePaths | Where-Object {
+            $path = $_
+            @($lineEndingOnlyPatterns | Where-Object { $path -like $_ }).Count -ne 0
+        }
+    )
+    foreach ($relativePath in $pathsToNormalize | Select-Object -Unique) {
         if (-not $relativePath) {
             continue
         }
@@ -268,11 +290,11 @@ $lineEndingPaths = @($sourcePaths + $lineEndingOnlyPaths | Sort-Object -Unique)
 
 $missingPaths = @($lineEndingPaths | Where-Object { -not (Test-Path -LiteralPath $_ -PathType Leaf) })
 if ($missingPaths) {
-    throw "Tracked formatter files are absent from the working tree: $($missingPaths -join '; ')"
+    throw "Requested formatter files are absent from the working tree: $($missingPaths -join '; ')"
 }
 
 if (-not $sourcePaths -and -not $lineEndingOnlyPaths) {
-    Write-Host 'No changed tracked formatter files were found.'
+    Write-Host 'No requested formatter files were found.'
     exit 0
 }
 
@@ -282,7 +304,7 @@ if ($sourcePaths) {
 }
 
 if ($changedOnly) {
-    Write-Host "Formatting $($sourcePaths.Count) tracked C++/CUDA files changed from HEAD."
+        Write-Host "Formatting $($sourcePaths.Count) C++/CUDA files selected from changes and requested paths."
 } else {
     Write-Host "Formatting $($sourcePaths.Count) tracked C++/CUDA files."
 }

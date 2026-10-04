@@ -8,13 +8,14 @@
 #include "LAstep.h"
 #include "Vectors.h"
 #include <cmath>
+#include <cstring>
 
 #include <thread>
 #include <vector>
 
 template <typename IterType, class HDRFloat, class SubType> class ATInfo;
 
-template <typename IterType> class LAStageInfo;
+template <typename IterType, class Float> class LAStageInfo;
 
 class RefOrbitCalc;
 
@@ -111,10 +112,10 @@ public:
     bool
     ReadMetadata(std::ifstream &metafile)
     {
-        std::string descriptor_string_junk;
+        std::string descriptorJunk;
 
         // "LAReference:"
-        metafile >> descriptor_string_junk;
+        metafile >> descriptorJunk;
 
         auto convert = []<typename T>(const std::string &str) {
             return static_cast<T>(std::stoll(str));
@@ -122,30 +123,34 @@ public:
 
         {
             std::string addPointOptions;
-            metafile >> descriptor_string_junk;
+            metafile >> descriptorJunk;
             metafile >> addPointOptions;
             m_AddPointOptions = convert.template operator()<AddPointOptions>(addPointOptions);
         }
 
         {
-            std::string use_at;
-            metafile >> descriptor_string_junk;
-            metafile >> use_at;
-            m_UseAT = convert.template operator()<bool>(use_at);
+            std::string useAt;
+            metafile >> descriptorJunk;
+            metafile >> useAt;
+            m_UseAT = convert.template operator()<bool>(useAt);
         }
 
         {
-            std::string la_stage_count;
-            metafile >> descriptor_string_junk;
-            metafile >> la_stage_count;
-            m_LAStageCount = convert.template operator()<IterType>(la_stage_count);
+            std::string laStageCount;
+            metafile >> descriptorJunk;
+            metafile >> laStageCount;
+            const uint64_t count = std::stoull(laStageCount);
+            if (count > MaxLAStages) {
+                return false;
+            }
+            m_LAStageCount = static_cast<IterType>(count);
         }
 
         {
-            std::string is_valid;
-            metafile >> descriptor_string_junk;
-            metafile >> is_valid;
-            m_IsValid = convert.template operator()<bool>(is_valid);
+            std::string isValid;
+            metafile >> descriptorJunk;
+            metafile >> isValid;
+            m_IsValid = convert.template operator()<bool>(isValid);
         }
 
         bool res = m_LAParameters.ReadMetadata(metafile);
@@ -153,7 +158,27 @@ public:
             return false;
         }
 
-        return m_AT.ReadMetadata(metafile);
+        return m_AT.ReadMetadata(metafile) && ValidateTables();
+    }
+
+    bool
+    ValidateTables() const
+    {
+        if (m_LAStageCount > MaxLAStages || m_LAStageCount > m_LAStages.GetSize()) {
+            return false;
+        }
+        size_t nextIndex = 0;
+        for (IterType stage = 0; stage < m_LAStageCount; ++stage) {
+            const auto &descriptor = m_LAStages[stage];
+            const size_t index = descriptor.LAIndex;
+            const size_t count = descriptor.MacroItCount;
+            if (index != nextIndex || index >= m_LAs.GetSize() || count == 0 ||
+                count >= m_LAs.GetSize() - index) {
+                return false;
+            }
+            nextIndex = index + count + 1;
+        }
+        return !m_IsValid || m_LAStageCount != 0;
     }
 
     template <class OtherT, class Other>
@@ -255,13 +280,13 @@ public:
         return m_LAs;
     }
 
-    GrowableVector<LAStageInfo<IterType>> &
+    GrowableVector<LAStageInfo<IterType, Float>> &
     GetLAStages()
     {
         return m_LAStages;
     }
 
-    const GrowableVector<LAStageInfo<IterType>> &
+    const GrowableVector<LAStageInfo<IterType, Float>> &
     GetLAStages() const
     {
         return m_LAStages;
@@ -277,12 +302,82 @@ private:
 
     static constexpr int MaxLAStages = 1024;
     GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> m_LAs;
-    GrowableVector<LAStageInfo<IterType>> m_LAStages;
+    GrowableVector<LAStageInfo<IterType, Float>> m_LAStages;
 
     BenchmarkData m_BenchmarkDataLA;
 
+    using ConstructionEntry = LAConstructionEntry<IterType, Float, SubType, PExtras>;
+    class ConstructionTable {
+        GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &m_Rows;
+        GrowableVector<LAConstructionInfo<Float>> m_Info;
+
+    public:
+        ConstructionTable(GrowableVector<LAInfoDeep<IterType, Float, SubType, PExtras>> &rows,
+                          AddPointOptions options,
+                          const std::wstring &filename)
+            : m_Rows{rows},
+              m_Info{options == AddPointOptions::DontSave ? options : AddPointOptions::EnableWithoutSave,
+                     filename.c_str()}
+        {
+        }
+        ConstructionTable(ConstructionTable &&) = default;
+        ConstructionTable(const ConstructionTable &) = delete;
+        size_t
+        GetSize() const
+        {
+            return m_Rows.GetSize();
+        }
+        ConstructionEntry
+        operator[](size_t index) const
+        {
+            return {m_Rows[index], m_Info[index]};
+        }
+        void
+        PushBack(const ConstructionEntry &entry)
+        {
+            if (m_Rows.GetSize() == m_Rows.GetCapacity()) {
+                constexpr size_t growth = 256 * 1024 * 1024 /
+                                          (sizeof(LAInfoDeep<IterType, Float, SubType, PExtras>) +
+                                           sizeof(LAConstructionInfo<Float>));
+                m_Rows.MutableReserveKeepFileSize(m_Rows.GetSize() + growth);
+            }
+            if (m_Info.GetCapacity() < m_Rows.GetCapacity()) {
+                m_Info.MutableReserveKeepFileSize(m_Rows.GetCapacity());
+            }
+            m_Rows.PushBack(entry);
+            m_Info.PushBack(entry.m_Construction);
+        }
+        void
+        PopBack()
+        {
+            m_Rows.PopBack();
+            m_Info.PopBack();
+        }
+        void
+        Append(const ConstructionTable &other)
+        {
+            if (other.GetSize() == 0) {
+                return;
+            }
+            const size_t begin = GetSize();
+            m_Rows.MutableResize(begin + other.GetSize());
+            m_Info.MutableResize(begin + other.GetSize());
+            std::memcpy(m_Rows.GetData() + begin,
+                        other.m_Rows.GetData(),
+                        other.GetSize() * sizeof(LAInfoDeep<IterType, Float, SubType, PExtras>));
+            std::memcpy(m_Info.GetData() + begin,
+                        other.m_Info.GetData(),
+                        other.GetSize() * sizeof(LAConstructionInfo<Float>));
+        }
+        Float
+        GetThresholdC(size_t index) const
+        {
+            return m_Info[index].LAThresholdC;
+        }
+    };
+
     struct OrbitStageState {
-        LAInfoDeep<IterType, Float, SubType, PExtras> m_LA;
+        ConstructionEntry m_LA;
         LAInfoI<IterType> m_LAI;
         IterType m_Index{};
         IterType m_Period{};
@@ -297,39 +392,44 @@ private:
                               const PerturbationResults<IterType, PerturbType, PExtras> &results,
                               IterType maxRefIteration,
                               RuntimeDecompressor<IterType, Float, PExtras> &decompressor,
-                              OrbitStageState &state)
+                              OrbitStageState &state,
+                              ConstructionTable &constructionTable)
     requires(PExtras != PerturbExtras::MaxCompression);
 
     template <typename PerturbType>
-    LAInfoDeep<IterType, Float, SubType, PExtras> MakeOrbitEntry(
-        const LAParametersRuntime<Float> &parameters,
-        const PerturbationResults<IterType, PerturbType, PExtras> &results,
-        RuntimeDecompressor<IterType, Float, PExtras> &decompressor,
-        IterType index,
-        bool appendNext);
+    ConstructionEntry MakeOrbitEntry(const LAParametersRuntime<Float> &parameters,
+                                     const PerturbationResults<IterType, PerturbType, PExtras> &results,
+                                     RuntimeDecompressor<IterType, Float, PExtras> &decompressor,
+                                     IterType index,
+                                     bool appendNext);
 
     void
-    AppendTerminalEntry(const LAParametersRuntime<Float> &parameters, FloatComplexT ref)
+    AppendTerminalEntry(const LAParametersRuntime<Float> &parameters,
+                        FloatComplexT ref,
+                        ConstructionTable &constructionTable)
     {
-        m_LAs.PushBack(LAInfoDeep<IterType, Float, SubType, PExtras>{parameters, ref});
+        constructionTable.PushBack(ConstructionEntry{parameters, ref});
     }
 
     template <typename PerturbType>
     bool CreateLAFromOrbit(
         const LAParametersRuntime<Float> &parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-        IterType maxRefIteration)
+        IterType maxRefIteration,
+        ConstructionTable &constructionTable)
     requires(PExtras != PerturbExtras::MaxCompression);
     template <typename PerturbType>
     bool CreateLAFromOrbitMT(
         const LAParametersRuntime<Float> &parameters,
         const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-        IterType maxRefIteration)
+        IterType maxRefIteration,
+        ConstructionTable &constructionTable)
     requires(PExtras != PerturbExtras::MaxCompression);
     template <typename PerturbType>
     bool CreateNewLAStage(const LAParametersRuntime<Float> &parameters,
                           const PerturbationResults<IterType, PerturbType, PExtras> &PerturbationResults,
-                          IterType maxRefIteration);
+                          IterType maxRefIteration,
+                          ConstructionTable &constructionTable);
 
 public:
     template <typename PerturbType>
@@ -349,7 +449,7 @@ private:
     void CreateATFromLA(Float radius, bool UseSmallExponents);
 
 public:
-    bool isLAStageInvalid(IterType LAIndex, FloatComplexT dc);
+    bool IsLAStageInvalid(IterType stageIndex, FloatComplexT dc) const;
     IterType getLAIndex(IterType CurrentLAStage);
     IterType getMacroItCount(IterType CurrentLAStage);
 

@@ -4,8 +4,16 @@
 #include "GPU_LAInfoDeep.h"
 #include "HDRFloatComplex.h"
 #include "LAInfoI.h"
+#include "LAReference.h"
 #include "LAstep.h"
+#include "Vectors.h"
+#include <algorithm>
 #include <cstddef>
+#include <memory>
+
+namespace FractalShark::LA {
+enum class StorageLocation { DevicePreferred, Host };
+}
 
 template <typename IterType, class Float, class SubType> class GPU_LAReference {
 private:
@@ -19,6 +27,10 @@ public:
     template <class T2, class SubType2, PerturbExtras OtherPExtras>
     __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras> &other,
                              cudaStream_t stream);
+    template <class T2, class SubType2, PerturbExtras OtherPExtras>
+    __host__ GPU_LAReference(const LAReference<IterType, T2, SubType2, OtherPExtras> &other,
+                             cudaStream_t stream,
+                             FractalShark::LA::StorageLocation location);
     __host__ GPU_LAReference(const GPU_LAReference &other);
     __host__ GPU_LAReference(GPU_LAReference &&other);
     __host__ GPU_LAReference();
@@ -51,10 +63,39 @@ private:
     static constexpr int MaxLAStages = 1024;
     static constexpr int DEFAULT_SIZE = 10000;
 
+    template <class Destination, class Source>
+    static cudaError_t
+    UploadConverted(Destination *destination, const GrowableVector<Source> &source, cudaStream_t stream)
+    {
+        constexpr size_t stagingBytes = 8 * 1024 * 1024;
+        const size_t chunkSize = std::min(source.GetSize(), stagingBytes / sizeof(Destination));
+        auto staging = std::make_unique<Destination[]>(chunkSize);
+        for (size_t begin = 0; begin < source.GetSize(); begin += chunkSize) {
+            const size_t count = std::min(chunkSize, source.GetSize() - begin);
+            for (size_t i = 0; i < count; ++i) {
+                staging[i] = source[begin + i];
+            }
+            const auto copied = cudaMemcpyAsync(destination + begin,
+                                                staging.get(),
+                                                count * sizeof(Destination),
+                                                cudaMemcpyDefault,
+                                                stream);
+            // Synchronize even after an error so staging storage is never released in flight.
+            const auto completed = cudaStreamSynchronize(stream);
+            if (copied != cudaSuccess) {
+                return copied;
+            }
+            if (completed != cudaSuccess) {
+                return completed;
+            }
+        }
+        return cudaSuccess;
+    }
+
     GPU_LAInfoDeep<IterType, Float, SubType> *__restrict__ LAs;
     size_t NumLAs;
 
-    LAStageInfo<IterType> *__restrict__ LAStages;
+    LAStageInfo<IterType, Float> *__restrict__ LAStages;
     size_t NumLAStages;
 
     bool AllocHostLA;
@@ -87,7 +128,7 @@ public:
                              deltaZ);
     }
 
-    CUDA_CRAP bool isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const;
+    CUDA_CRAP bool IsLAStageInvalid(IterType stageIndex, HDRFloatComplex dc) const;
     CUDA_CRAP IterType getLAIndex(IterType CurrentLAStage) const;
     CUDA_CRAP IterType getMacroItCount(IterType CurrentLAStage) const;
     CUDA_CRAP GPU_LAstep<IterType, Float, SubType> getLA(IterType LAIndex,
@@ -102,17 +143,36 @@ template <class T2, class SubType2, PerturbExtras OtherPExtras>
 __host__
 GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPExtras>(
     const LAReference<IterType, T2, SubType2, OtherPExtras> &other, cudaStream_t stream)
+    : GPU_LAReference{other, stream, FractalShark::LA::StorageLocation::DevicePreferred}
+{
+}
+
+template <typename IterType, class Float, class SubType>
+template <class T2, class SubType2, PerturbExtras OtherPExtras>
+__host__
+GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPExtras>(
+    const LAReference<IterType, T2, SubType2, OtherPExtras> &other,
+    cudaStream_t stream,
+    FractalShark::LA::StorageLocation location)
     : m_UseAT{other.m_UseAT}, m_AT{other.m_AT}, LAStageCount{other.GetLAStageCount()},
       isValid{other.IsValid()}, m_Err{}, m_Owned(true), LAs{}, NumLAs{}, LAStages{}, NumLAStages{},
       AllocHostLA{}, AllocHostLAStages{}, m_Stream{stream}
 {
 
-    GPU_LAInfoDeep<IterType, Float, SubType> *tempLAs;
-    LAStageInfo<IterType> *tempLAStages;
+    if (other.GetLAs().GetSize() == 0 || other.GetLAStages().GetSize() == 0) {
+        isValid = false;
+        LAStageCount = 0;
+        return;
+    }
+
+    GPU_LAInfoDeep<IterType, Float, SubType> *tempLAs{};
+    LAStageInfo<IterType, Float> *tempLAStages{};
 
     const auto LAMemToAllocate =
         other.GetLAs().GetSize() * sizeof(GPU_LAInfoDeep<IterType, Float, SubType>);
-    m_Err = cudaMallocAsync(&tempLAs, LAMemToAllocate, stream);
+    m_Err = location == FractalShark::LA::StorageLocation::Host
+                ? cudaErrorMemoryAllocation
+                : cudaMallocAsync(&tempLAs, LAMemToAllocate, stream);
     if (m_Err != cudaSuccess) {
         AllocHostLA = true;
         m_Err = cudaMallocHost(&tempLAs, LAMemToAllocate);
@@ -124,8 +184,11 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
     LAs = tempLAs;
     NumLAs = other.GetLAs().GetSize();
 
-    const auto LAStageMemoryToAllocate = other.GetLAStages().GetSize() * sizeof(LAStageInfo<IterType>);
-    m_Err = cudaMallocAsync(&tempLAStages, LAStageMemoryToAllocate, stream);
+    const auto LAStageMemoryToAllocate =
+        other.GetLAStages().GetSize() * sizeof(LAStageInfo<IterType, Float>);
+    m_Err = location == FractalShark::LA::StorageLocation::Host
+                ? cudaErrorMemoryAllocation
+                : cudaMallocAsync(&tempLAStages, LAStageMemoryToAllocate, stream);
     if (m_Err != cudaSuccess) {
         AllocHostLAStages = true;
         m_Err = cudaMallocHost(&tempLAStages, LAStageMemoryToAllocate);
@@ -146,10 +209,8 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
         check_size<typename GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat,
                    typename LAInfoDeep<IterType, Float, SubType, OtherPExtras>::HDRFloat>();
 
-        using GPU_LAInfoDeepT = GPU_LAInfoDeep<IterType, Float, SubType>;
-        using LAInfoDeepT = LAInfoDeep<IterType, Float, SubType, OtherPExtras>;
-
-        static_assert(offsetof(GPU_LAInfoDeepT, CCoeff) == offsetof(LAInfoDeepT, CCoeff), "!");
+        FractalShark::LA::CheckRowLayout<LAInfoDeep<IterType, Float, SubType, OtherPExtras>,
+                                         GPU_LAInfoDeep<IterType, Float, SubType>>();
 
         check_size<GPU_LAInfoDeep<IterType, Float, SubType>,
                    LAInfoDeep<IterType, Float, SubType, OtherPExtras>>();
@@ -164,20 +225,23 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference<T2, SubType2, OtherPE
             return;
         }
     } else {
-        for (size_t i = 0; i < other.GetLAs().GetSize(); i++) {
-            LAs[i] = other.GetLAs()[i];
+        m_Err = UploadConverted(LAs, other.GetLAs(), stream);
+        if (m_Err != cudaSuccess) {
+            return;
         }
     }
 
-    // for (size_t i = 0; i < other.m_LAStages.GetSize(); i++) {
-    //     m_LAStages[i] = other.m_LAStages[i];
-    // }
-
-    m_Err = cudaMemcpyAsync(LAStages,
-                            other.GetLAStages().GetData(),
-                            sizeof(LAStageInfo<IterType>) * other.GetLAStages().GetSize(),
-                            cudaMemcpyDefault,
-                            stream);
+    if constexpr (std::is_same_v<Float, T2>) {
+        static_assert(std::is_standard_layout_v<LAStageInfo<IterType, Float>>);
+        static_assert(std::is_trivially_copy_assignable_v<LAStageInfo<IterType, Float>>);
+        m_Err = cudaMemcpyAsync(LAStages,
+                                other.GetLAStages().GetData(),
+                                sizeof(LAStageInfo<IterType, Float>) * other.GetLAStages().GetSize(),
+                                cudaMemcpyDefault,
+                                stream);
+    } else {
+        m_Err = UploadConverted(LAStages, other.GetLAStages(), stream);
+    }
     if (m_Err != cudaSuccess) {
         return;
     }
@@ -187,6 +251,9 @@ template <typename IterType, class Float, class SubType>
 GPU_LAReference<IterType, Float, SubType>::~GPU_LAReference()
 {
     if (m_Owned) {
+        if (AllocHostLA || AllocHostLAStages) {
+            cudaStreamSynchronize(m_Stream);
+        }
         if (LAs != nullptr) {
             if (AllocHostLA) {
                 cudaFreeHost(LAs);
@@ -262,9 +329,10 @@ GPU_LAReference<IterType, Float, SubType>::GPU_LAReference(const GPU_LAReference
 
 template <typename IterType, class Float, class SubType>
 CUDA_CRAP bool
-GPU_LAReference<IterType, Float, SubType>::isLAStageInvalid(IterType LAIndex, HDRFloatComplex dc) const
+GPU_LAReference<IterType, Float, SubType>::IsLAStageInvalid(IterType stageIndex,
+                                                            HDRFloatComplex dc) const
 {
-    return FractalShark::LA::IsThresholdExceeded(dc, LAs[LAIndex].getLAThresholdC());
+    return FractalShark::LA::IsThresholdExceeded(dc, LAStages[stageIndex].LAThresholdC);
 }
 
 template <typename IterType, class Float, class SubType>

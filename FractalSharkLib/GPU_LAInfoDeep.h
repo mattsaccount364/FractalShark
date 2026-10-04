@@ -6,6 +6,34 @@
 #include "LAInfoDeep.h"
 #include "LAInfoI.h"
 #include "LAstep.h"
+#include <cstddef>
+#include <type_traits>
+
+namespace FractalShark::LA {
+
+template <class CpuRow, class GpuRow>
+constexpr void
+CheckRowLayout()
+{
+    static_assert(std::is_standard_layout_v<CpuRow> && std::is_standard_layout_v<GpuRow>);
+    // Legacy double-float copies normalize their components. Matching uploads intentionally
+    // preserve stored bits, as they did before compaction; assignment is a memberwise copy.
+    static_assert(std::is_trivially_copy_assignable_v<CpuRow> &&
+                  std::is_trivially_copy_assignable_v<GpuRow>);
+    static_assert(sizeof(CpuRow) == sizeof(GpuRow) && alignof(CpuRow) == alignof(GpuRow));
+    static_assert(offsetof(CpuRow, Ref) == offsetof(GpuRow, Ref));
+    static_assert(offsetof(CpuRow, ZCoeff) == offsetof(GpuRow, ZCoeff));
+    static_assert(offsetof(CpuRow, CCoeff) == offsetof(GpuRow, CCoeff));
+    static_assert(offsetof(CpuRow, LAThreshold) == offsetof(GpuRow, LAThreshold));
+    static_assert(offsetof(CpuRow, LAi) == offsetof(GpuRow, LAi));
+    if constexpr (std::is_same_v<typename CpuRow::HDRFloat, ::HDRFloat<float>> &&
+                  std::is_same_v<decltype(CpuRow{}.LAi.StepLength), uint32_t>) {
+        static_assert(sizeof(CpuRow) == 52 && sizeof(GpuRow) == 52);
+        static_assert(std::is_trivially_copyable_v<CpuRow> && std::is_trivially_copyable_v<GpuRow>);
+    }
+}
+
+} // namespace FractalShark::LA
 
 template <typename IterType, class Float, class SubType> class GPU_LAInfoDeep {
 public:
@@ -21,9 +49,11 @@ public:
     HDRFloatComplex ZCoeff;
     HDRFloatComplex CCoeff;
     HDRFloat LAThreshold;
-    HDRFloat LAThresholdC;
-    HDRFloat MinMag;
     LAInfoI<IterType> LAi;
+
+    GPU_LAInfoDeep() = default;
+    GPU_LAInfoDeep(const GPU_LAInfoDeep &) = default;
+    GPU_LAInfoDeep &operator=(const GPU_LAInfoDeep &) = default;
 
     template <class Float2, class SubType2>
     CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType> &operator=(
@@ -35,7 +65,6 @@ public:
 
     CUDA_CRAP GPU_LAstep<IterType, Float, SubType> Prepare(HDRFloatComplex dz) const;
     CUDA_CRAP HDRFloatComplex getRef() const;
-    CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat getLAThresholdC() const;
     CUDA_CRAP HDRFloatComplex Evaluate(HDRFloatComplex newdz, HDRFloatComplex dc) const;
     CUDA_CRAP const LAInfoI<IterType> &GetLAi() const;
 };
@@ -54,11 +83,7 @@ GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
     this->LAThreshold = HDRFloat(other.LAThreshold);
     this->ZCoeff = HDRFloatComplex(other.ZCoeff);
     this->CCoeff = HDRFloatComplex(other.CCoeff);
-    this->LAThresholdC = HDRFloat(other.LAThresholdC);
     this->LAi = other.LAi;
-
-    // Note: not copying MinMag
-    // Its not needed for GPU_LAInfoDeep but included for padding purposes
 
     return *this;
 }
@@ -74,7 +99,6 @@ GPU_LAInfoDeep<IterType, Float, SubType>::operator=(
     this->LAThreshold = HDRFloat(other.LAThreshold);
     this->ZCoeff = HDRFloatComplex(other.ZCoeff);
     this->CCoeff = HDRFloatComplex(other.CCoeff);
-    this->LAThresholdC = HDRFloat(other.LAThresholdC);
     this->LAi = other.LAi;
 
     return *this;
@@ -92,13 +116,6 @@ CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloatComplex
 GPU_LAInfoDeep<IterType, Float, SubType>::getRef() const
 {
     return Ref;
-}
-
-template <typename IterType, class Float, class SubType>
-CUDA_CRAP GPU_LAInfoDeep<IterType, Float, SubType>::HDRFloat
-GPU_LAInfoDeep<IterType, Float, SubType>::getLAThresholdC() const
-{
-    return LAThresholdC;
 }
 
 template <typename IterType, class Float, class SubType>

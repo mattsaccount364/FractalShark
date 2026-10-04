@@ -2341,7 +2341,7 @@ FeatureFinder<IterType, T, PExtras>::Evaluate_LA(
         }
 
         const IterType stageRefIteration = static_cast<IterType>(state.refIteration);
-        if (laRef.isLAStageInvalid(laIndex + stageRefIteration, dc)) {
+        if (laRef.IsLAStageInvalid(currentLAStage, dc)) {
             const auto stageEntry = laRef.getLA(laIndex,
                                                 state.dz,
                                                 stageRefIteration,

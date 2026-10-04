@@ -13,7 +13,7 @@ enum class AddPointOptions {
 
 template <typename IterType, class Float, class SubType, PerturbExtras PExtras> class LAInfoDeep;
 
-template <typename IterType> class LAStageInfo;
+template <typename IterType, class Float> class LAStageInfo;
 
 enum class GrowableVectorTypes {
     Metadata,

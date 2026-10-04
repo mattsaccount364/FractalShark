@@ -69,7 +69,7 @@ __forceinline
     while (currentStage > 0) {
         --currentStage;
         const IterType laIndex = reference.getLAIndex(currentStage);
-        if (reference.isLAStageInvalid(laIndex, deltaC)) {
+        if (reference.IsLAStageInvalid(currentStage, deltaC)) {
             continue;
         }
 

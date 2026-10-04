@@ -476,13 +476,7 @@ static const ::FractalShark::Node menu[] = {
                                    ::FractalShark::RadioGroup::RenderAlgorithm,
                                    ::FractalShark::Rule::EnableIfGpuActive),
 
-             ::FractalShark::Sep(),
-
-             FS_POPUP0(
-                 L"Tests",
-                 ::FractalShark::Item(L"Run Basic Test (saves files in local dir)",
-                                      ::FractalShark::FractalCommand::BasicTest),
-                 ::FractalShark::Item(L"Run View #27 test", ::FractalShark::FractalCommand::Test27))),
+             ::FractalShark::Sep()),
 
     FS_POPUP0(
         L"Iterations",

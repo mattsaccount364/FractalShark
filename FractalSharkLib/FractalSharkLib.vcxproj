@@ -27,7 +27,7 @@
     <ClInclude Include="FractalSaveThreadPool.h" />
 
     <ClInclude Include="RenderThreadPool.h" />
-    <ClInclude Include="CrummyTest.h" />
+    <ClInclude Include="RenderBenchmark.h" />
     <ClInclude Include="GPU_BLAS.h" />
     <ClInclude Include="GPU_LAInfoDeep.h" />
     <ClInclude Include="GPU_LAReference.h" />
@@ -90,7 +90,7 @@
     <ClCompile Include="Fractal.cpp" />
     <ClCompile Include="FractalSaveThreadPool.cpp" />
     <ClCompile Include="RenderThreadPool.cpp" />
-    <ClCompile Include="CrummyTest.cpp" />
+    <ClCompile Include="RenderBenchmark.cpp" />
     <ClCompile Include="ImaginaOrbit.cpp" />
     <ClCompile Include="ItersMemoryContainer.cpp" />
     <ClCompile Include="LAReference.cpp" />

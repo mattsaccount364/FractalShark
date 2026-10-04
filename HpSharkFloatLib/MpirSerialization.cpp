@@ -1,5 +1,7 @@
 #include "MpirSerialization.h"
 
+#include <cstdint>
+
 #ifdef _MSC_VER
 
 namespace MpirSerialization {
@@ -39,11 +41,10 @@ mpz_out_raw_stream(std::ostream &fp, mpz_srcptr x)
 size_t
 mpf_out_raw_stream(std::ostream &f, mpf_srcptr X)
 {
-    long int expt;
+    const int32_t exponent = static_cast<int32_t>(X->_mp_exp);
     mpz_t Z;
     int nz;
-    expt = X->_mp_exp;
-    f.write((char *)&expt, sizeof(long int));
+    f.write(reinterpret_cast<const char *>(&exponent), sizeof(exponent));
     nz = X->_mp_size;
     Z->_mp_alloc = std::abs(nz);
     Z->_mp_size = nz;
@@ -53,13 +54,13 @@ mpf_out_raw_stream(std::ostream &f, mpf_srcptr X)
 void
 mpf_inp_raw_stream(std::istream &f, mpf_ptr X)
 {
-    long int expt;
+    int32_t exponent;
     mpz_t Z;
     mpz_init(Z);
-    f.read((char *)&expt, sizeof(long int));
+    f.read(reinterpret_cast<char *>(&exponent), sizeof(exponent));
     mpz_inp_raw_stream(Z, f);
     mpf_set_z(X, Z);
-    X->_mp_exp = expt;
+    X->_mp_exp = exponent;
     mpz_clear(Z);
 }
 } // namespace MpirSerialization
@@ -154,8 +155,9 @@ mpz_inp_raw_stream(mpz_ptr x, std::istream &fp)
 size_t
 mpf_out_raw_stream(std::ostream &f, mpf_srcptr X)
 {
-    long int expt = X->_mp_exp;
-    f.write(reinterpret_cast<const char *>(&expt), sizeof(long int));
+    // Imagina and Windows MPIR store a signed 32-bit exponent, including on LP64 hosts.
+    const int32_t exponent = static_cast<int32_t>(X->_mp_exp);
+    f.write(reinterpret_cast<const char *>(&exponent), sizeof(exponent));
 
     // Non-owning mpz view over X's limb array, matching the Windows impl.
     mpz_t Z;
@@ -163,20 +165,19 @@ mpf_out_raw_stream(std::ostream &f, mpf_srcptr X)
     Z->_mp_alloc = std::abs(nz);
     Z->_mp_size = nz;
     Z->_mp_d = X->_mp_d;
-    // Preserve the Windows return-value quirk (sizeof(int), not sizeof(long int)).
-    return mpz_out_raw_stream(f, Z) + sizeof(int);
+    return mpz_out_raw_stream(f, Z) + sizeof(exponent);
 }
 
 void
 mpf_inp_raw_stream(std::istream &f, mpf_ptr X)
 {
-    long int expt;
+    int32_t exponent;
     mpz_t Z;
     mpz_init(Z);
-    f.read(reinterpret_cast<char *>(&expt), sizeof(long int));
+    f.read(reinterpret_cast<char *>(&exponent), sizeof(exponent));
     mpz_inp_raw_stream(Z, f);
     mpf_set_z(X, Z);
-    X->_mp_exp = expt;
+    X->_mp_exp = exponent;
     mpz_clear(Z);
 }
 

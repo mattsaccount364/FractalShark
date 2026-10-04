@@ -2,7 +2,6 @@
 #include "StdAfx.h"
 #include "CommandDispatcher.h"
 
-#include "CrummyTest.h"
 #include "DynamicPopupMenu.h"
 #include "Fractal.h"
 #include "MainWindow.h"

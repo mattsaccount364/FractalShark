@@ -210,16 +210,59 @@ Linux is a fully supported platform and uses the same renderer and portable comm
 
 The test runner supports exact names and case-sensitive wildcards (`*` and `?`). Repeat
 `--filter` to include multiple groups; `--exclude` takes precedence. With no arguments,
-the complete suite runs. Quote patterns so the shell does not expand them:
+CPU cases run and GPU cases are skipped unless `--use-gpu` is supplied. Quote patterns so the
+shell does not expand them:
 
 ```powershell
 .\Debug\FractalSharkTest.exe --list-tests --filter "*LA*"
 .\Debug\FractalSharkTest.exe --filter "LA*" --filter "HDRFloat*" --fail-fast
 .\Debug\FractalSharkTest.exe --exclude "RenderGolden_*"
+.\Release\FractalSharkTest.exe --use-gpu --filter "RenderGolden_*"
 ```
 
 `--list-tests` lists selected names without running tests. Invalid arguments and empty selections
-return exit code 2; test failures return 1. Selection does not save result files. The separate
+return exit code 2; test failures return 1. GPU opt-in requires working CUDA hardware and fails
+if initialization fails. Builds require the CUDA toolkit and link the static CUDA runtime.
+
+The former GUI `CrummyTest` suite now lives in `FractalSharkTest`. Its render matrix covers concrete
+algorithms and AUTO selection, 32/64-bit iteration buffers, storage, reference backends and reuse,
+compression levels 1–20, all six embedded Imagina fixtures, LA settings, precision steps, GPU coloring
+and reductions, and all twelve GPU reference precision buckets for float, double, and double-float.
+The `MTPeriodicity5` selection currently delegates to MT3; it has no separate kernel to cover.
+The two legacy non-HDR deep reuse selections check range rejection before rendering with their HDR variants.
+Additional deep float LA probes use a 50,000-iteration limit; intermediate reference reuse probes use
+500,000 iterations and verify both pixel variation and actual reference reuse.
+The render matrix uses 256×256 pixels in every build. Resize cases exercise their full original
+dimension sequences. Deep View 14 to View 12 transitions calculate and reuse references directly.
+Imagina comparisons render the built-in location before loading each fixture's saved settings.
+`RenderCoverage_Inventory` checks that required registrations are present. View 10, View 27, the
+billion-element vector stress test, unfinished `Gpu2x32PerturbedScaled`, and the documented broken
+MTMed4 backend remain disabled with `INCOMPLETE` checksum placeholders. Disabled cases never execute
+and are counted separately from passed tests.
+
+Renders retain PNGs and orbit files beneath `validation-render-goldens/<platform>-<configuration>/`
+in unique run directories; `--output-dir PATH` changes the root. `artifacts.tsv` maps render IDs to PNGs,
+`checksums.tsv` records candidate CRC-64 values, and `provenance.txt` identifies the build and GPU.
+PNG filenames identify each frame, such as `render-<id>.png`, `Original-<id>.png`,
+`ReusedAfterZoom-<id>.png`, or `Frame0-<id>.png`. Multi-frame cases retain each rendered image.
+Goldens hash decoded RGBA16 PNG bytes in big-endian channel order; reference bucket tests hash their
+canonical reference text, and the shared orbit fixture hashes its serialized bytes.
+Every platform and configuration checks the same Windows Release goldens. Missing goldens and
+checksum mismatches fail ordinary runs, including differences caused by toolchain or CUDA math settings.
+Platform/configuration names in output paths and manifests identify the producing build only.
+
+Use Windows Release to intentionally regenerate and promote baselines, then validate them:
+
+```powershell
+.\Release\FractalSharkTest.exe --use-gpu --generate-goldens --filter "RenderGolden_*"
+python tools/update_render_goldens.py <run-directory>/checksums.tsv
+# Rebuild after changing GoldenChecksums.h, then run without --generate-goldens.
+.\Release\FractalSharkTest.exe --use-gpu --filter "RenderGolden_*"
+```
+
+Generation retains candidate results and reports `GENERATED`; it does not silently accept missing
+checksums or modify the source table. Review retained imagery before intentionally changing future
+baselines. The separate
 `FractalSharkCudaTest` executable uses the same options and exercises LA uploads, device lookups,
 and raw iteration regression renders in full, LA-only, and compressed modes;
 running it requires CUDA hardware. It is not part of the portable CPU test run.

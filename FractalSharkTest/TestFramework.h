@@ -21,6 +21,9 @@ struct TestFailure {
 struct TestCase {
     std::string name;
     std::function<void()> func;
+    bool RequiresGpu{};
+    std::string DisabledReason;
+    bool Golden{};
 };
 
 inline std::vector<TestCase> &
@@ -34,6 +37,18 @@ inline bool
 Register(const char *name, std::function<void()> func)
 {
     Registry().push_back({name, std::move(func)});
+    return true;
+}
+
+inline bool
+RegisterCase(std::string name,
+             std::function<void()> function,
+             bool requiresGpu,
+             std::string disabledReason,
+             bool golden)
+{
+    Registry().push_back(
+        {std::move(name), std::move(function), requiresGpu, std::move(disabledReason), golden});
     return true;
 }
 
@@ -53,6 +68,28 @@ struct RunOptions {
     bool ListTests{};
     bool FailFast{};
     bool Help{};
+    bool UseGpu{};
+    bool GenerateGoldens{};
+    std::string OutputDirectory;
+};
+
+inline RunOptions &
+CurrentOptions()
+{
+    static RunOptions options;
+    return options;
+}
+
+class ScopedRunOptions {
+public:
+    explicit ScopedRunOptions(const RunOptions &options) : m_Previous{CurrentOptions()}
+    {
+        CurrentOptions() = options;
+    }
+    ~ScopedRunOptions() { CurrentOptions() = std::move(m_Previous); }
+
+private:
+    RunOptions m_Previous;
 };
 
 inline bool
@@ -111,10 +148,14 @@ ParseArguments(int argc, const char *const *argv, RunOptions &options, std::stri
             options.ListTests = true;
         } else if (argument == "--fail-fast") {
             options.FailFast = true;
+        } else if (argument == "--use-gpu") {
+            options.UseGpu = true;
+        } else if (argument == "--generate-goldens") {
+            options.GenerateGoldens = true;
         } else {
             const auto equals = argument.find('=');
             const auto option = argument.substr(0, equals);
-            if (option != "--filter" && option != "--exclude") {
+            if (option != "--filter" && option != "--exclude" && option != "--output-dir") {
                 error = "unknown argument: " + std::string{argument};
                 return false;
             }
@@ -128,8 +169,12 @@ ParseArguments(int argc, const char *const *argv, RunOptions &options, std::stri
                 error = std::string{option} + " requires a nonempty pattern";
                 return false;
             }
-            auto &patterns = option == "--filter" ? options.Filters : options.Exclusions;
-            patterns.emplace_back(value);
+            if (option == "--output-dir") {
+                options.OutputDirectory = value;
+            } else {
+                auto &patterns = option == "--filter" ? options.Filters : options.Exclusions;
+                patterns.emplace_back(value);
+            }
         }
     }
     return true;
@@ -140,6 +185,9 @@ PrintHelp(std::ostream &output)
 {
     output << "Usage: FractalSharkTest [--filter PATTERN] [--exclude PATTERN]\n"
               "                        [--list-tests] [--fail-fast] [--help]\n"
+              "                        [--use-gpu] [--generate-goldens] [--output-dir PATH]\n"
+              "GPU cases require --use-gpu; disabled incomplete cases never execute.\n"
+              "Generation writes candidate CRCs and retains images; it does not validate goldens.\n"
               "Patterns match full names case-sensitively: * matches any sequence, ? one character.\n"
               "Repeat --filter to include groups; exclusions take precedence. No filters runs all.\n"
               "Examples:\n"
@@ -154,8 +202,12 @@ RunTests(std::span<const TestCase> tests,
          std::ostream &output,
          std::ostream &errors)
 {
+    ScopedRunOptions scopedOptions{options};
     size_t passed = 0;
     size_t failed = 0;
+    size_t skipped = 0;
+    size_t disabled = 0;
+    size_t generated = 0;
     size_t selected = 0;
     for (const auto &test : tests) {
         selected += IsSelected(test.name, options);
@@ -167,7 +219,14 @@ RunTests(std::span<const TestCase> tests,
     if (options.ListTests) {
         for (const auto &test : tests) {
             if (IsSelected(test.name, options)) {
-                output << test.name << '\n';
+                output << test.name;
+                if (test.RequiresGpu) {
+                    output << " [requires --use-gpu]";
+                }
+                if (!test.DisabledReason.empty()) {
+                    output << " [disabled: " << test.DisabledReason << ']';
+                }
+                output << '\n';
             }
         }
         return 0;
@@ -179,10 +238,25 @@ RunTests(std::span<const TestCase> tests,
         if (!IsSelected(test.name, options)) {
             continue;
         }
+        if (!test.DisabledReason.empty()) {
+            output << "  DISABLED: " << test.name << " - " << test.DisabledReason << '\n';
+            ++disabled;
+            continue;
+        }
+        if (test.RequiresGpu && !options.UseGpu) {
+            output << "  SKIP: " << test.name << " - requires --use-gpu\n";
+            ++skipped;
+            continue;
+        }
         try {
             test.func();
-            output << "  PASS: " << test.name << "\n";
-            ++passed;
+            if (test.Golden && options.GenerateGoldens) {
+                output << "  GENERATED: " << test.name << '\n';
+                ++generated;
+            } else {
+                output << "  PASS: " << test.name << "\n";
+                ++passed;
+            }
         } catch (const TestFailure &e) {
             errors << "  FAIL: " << test.name << "\n"
                    << "        " << e.file << ":" << e.line << " - " << e.message << "\n";
@@ -203,16 +277,18 @@ RunTests(std::span<const TestCase> tests,
     }
 
     output << "\n========================================\n"
-           << tests.size() << " registered, " << selected << " selected, " << passed + failed
+           << tests.size() << " registered, " << selected << " selected, " << passed + failed + generated
            << " executed, " << passed << " passed, " << failed << " failed, "
-           << selected - passed - failed << " selected but unexecuted\n";
+           << selected - passed - failed - generated << " selected but unexecuted\n"
+           << generated << " generated, " << skipped << " skipped, " << disabled << " disabled\n";
 
     if (failed > 0) {
         output << "RESULT: FAILED\n";
         return 1;
     }
 
-    output << "RESULT: PASSED\n";
+    output << (options.GenerateGoldens ? "RESULT: GENERATION COMPLETED (goldens not validated)\n"
+                                       : "RESULT: PASSED\n");
     return 0;
 }
 

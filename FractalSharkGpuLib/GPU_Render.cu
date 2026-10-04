@@ -195,14 +195,14 @@ GPURenderer::ClearLocals()
 
     m_Width = 0;
     m_Height = 0;
-    local_color_width = 0;
-    local_color_height = 0;
+    m_ColorWidth = 0;
+    m_ColorHeight = 0;
     m_Antialiasing = 0;
     m_IterTypeSize = 0;
     w_block = 0;
     h_block = 0;
-    w_color_block = 0;
-    h_color_block = 0;
+    m_ColorWidthBlocks = 0;
+    m_ColorHeightBlocks = 0;
     N_cu = 0;
     N_color_cu = 0;
 
@@ -339,14 +339,14 @@ GPURenderer::InitializeMemory(uint32_t antialias_width,  // screen width
 
     const auto no_antialias_width = antialias_width / antialiasing;
     const auto no_antialias_height = antialias_height / antialiasing;
-    w_color_block = no_antialias_width / GPURenderer::NB_THREADS_W_AA +
-                    (no_antialias_width % GPURenderer::NB_THREADS_W_AA != 0);
-    h_color_block = no_antialias_height / GPURenderer::NB_THREADS_H_AA +
-                    (no_antialias_height % GPURenderer::NB_THREADS_H_AA != 0);
-    local_color_width = no_antialias_width;
-    local_color_height = no_antialias_height;
-    N_color_cu = static_cast<decltype(N_color_cu)>(w_color_block) * NB_THREADS_W_AA * h_color_block *
-                 NB_THREADS_H_AA;
+    m_ColorWidthBlocks = no_antialias_width / GPURenderer::NB_THREADS_W_AA +
+                         (no_antialias_width % GPURenderer::NB_THREADS_W_AA != 0);
+    m_ColorHeightBlocks = no_antialias_height / GPURenderer::NB_THREADS_H_AA +
+                          (no_antialias_height % GPURenderer::NB_THREADS_H_AA != 0);
+    m_ColorWidth = no_antialias_width;
+    m_ColorHeight = no_antialias_height;
+    N_color_cu = static_cast<decltype(N_color_cu)>(m_ColorWidthBlocks) * NB_THREADS_W_AA *
+                 m_ColorHeightBlocks * NB_THREADS_H_AA;
 
     ResetMemory(ResetLocals::No, ResetPalettes::No, ResetPerturb::Yes, ResetStreams::No);
 
@@ -1928,61 +1928,70 @@ template uint32_t GPURenderer::RenderPerturbBLA(
 
 template <typename IterType>
 __host__ uint32_t
-GPURenderer::RunAntialiasing(IterType n_iterations, cudaStream_t stream)
+GPURenderer::RunAntialiasing(IterType iterations, cudaStream_t stream)
 {
-    dim3 aa_blocks(w_color_block, h_color_block, 1);
-    dim3 aa_threads_per_block(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
+    dim3 aaBlocks(m_ColorWidthBlocks, m_ColorHeightBlocks, 1);
+    dim3 aaThreadsPerBlock(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
 
     switch (m_Antialiasing) {
         case 1:
-            antialiasing_kernel<IterType, 1, true><<<aa_blocks, aa_threads_per_block, 0, stream>>>(
-                static_cast<IterType *>(OutputIterMatrix),
-                m_Width,
-                m_Height,
-                OutputColorMatrix,
-                Pals,
-                local_color_width,
-                local_color_height,
-                n_iterations);
+            antialiasing_kernel<IterType, 1, true>
+                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
+                                                             m_Width,
+                                                             m_Height,
+                                                             OutputColorMatrix,
+                                                             Pals,
+                                                             m_ColorWidth,
+                                                             m_ColorHeight,
+                                                             iterations);
             break;
         case 2:
-            antialiasing_kernel<IterType, 2, true><<<aa_blocks, aa_threads_per_block, 0, stream>>>(
-                static_cast<IterType *>(OutputIterMatrix),
-                m_Width,
-                m_Height,
-                OutputColorMatrix,
-                Pals,
-                local_color_width,
-                local_color_height,
-                n_iterations);
+            antialiasing_kernel<IterType, 2, true>
+                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
+                                                             m_Width,
+                                                             m_Height,
+                                                             OutputColorMatrix,
+                                                             Pals,
+                                                             m_ColorWidth,
+                                                             m_ColorHeight,
+                                                             iterations);
             break;
         case 3:
-            antialiasing_kernel<IterType, 3, true><<<aa_blocks, aa_threads_per_block, 0, stream>>>(
-                static_cast<IterType *>(OutputIterMatrix),
-                m_Width,
-                m_Height,
-                OutputColorMatrix,
-                Pals,
-                local_color_width,
-                local_color_height,
-                n_iterations);
+            antialiasing_kernel<IterType, 3, true>
+                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
+                                                             m_Width,
+                                                             m_Height,
+                                                             OutputColorMatrix,
+                                                             Pals,
+                                                             m_ColorWidth,
+                                                             m_ColorHeight,
+                                                             iterations);
             break;
         case 4:
         default:
-            antialiasing_kernel<IterType, 4, true><<<aa_blocks, aa_threads_per_block, 0, stream>>>(
-                static_cast<IterType *>(OutputIterMatrix),
-                m_Width,
-                m_Height,
-                OutputColorMatrix,
-                Pals,
-                local_color_width,
-                local_color_height,
-                n_iterations);
+            antialiasing_kernel<IterType, 4, true>
+                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
+                                                             m_Width,
+                                                             m_Height,
+                                                             OutputColorMatrix,
+                                                             Pals,
+                                                             m_ColorWidth,
+                                                             m_ColorHeight,
+                                                             iterations);
             break;
     }
 
-    dim3 max_blocks(16, 16, 1);
-    max_kernel<IterType><<<max_blocks, aa_threads_per_block, 0, stream>>>(
+    // Reset before launching any reduction block; block-local barriers cannot order this globally.
+    auto resetResult = cudaMemsetAsync(OutputReductionResults, 0, sizeof(ReductionResults), stream);
+    if (resetResult != cudaSuccess) {
+        return resetResult;
+    }
+    resetResult = cudaMemsetAsync(&OutputReductionResults->Min, 0xff, sizeof(uint64_t), stream);
+    if (resetResult != cudaSuccess) {
+        return resetResult;
+    }
+    dim3 maxBlocks(16, 16, 1);
+    max_kernel<IterType><<<maxBlocks, aaThreadsPerBlock, 0, stream>>>(
         static_cast<IterType *>(OutputIterMatrix), m_Width, m_Height, OutputReductionResults);
     return cudaSuccess;
 }

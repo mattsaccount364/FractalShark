@@ -637,7 +637,7 @@ Fractal::ApproachTarget()
     // Drain any in-flight render pool work before running the animation.
     // ApproachTarget calls CalcFractal(true) and SaveCurrentFractal directly,
     // bypassing the pool, so we must ensure no workers are active to avoid
-    // data races on m_CurIters. Mirrors the pattern in CrummyTest::TestAll.
+    // data races on m_CurIters. Mirrors the pattern in the headless render tests.
     if (m_RenderPool) {
         m_RenderPool->Drain();
     }
@@ -983,7 +983,7 @@ Fractal::SetRenderAlgorithm(RenderAlgorithm alg)
     if (m_BypassGpu) {
         FractalSharkLog::LogLine(__FILE__, __LINE__)
             << "Bypassing GPU in effect: CPU-only render algorithms enforced.";
-        if (alg.Gpu == RequiresGpu::Yes) {
+        if (alg.Gpu == RequiresGpu::Yes && alg.Algorithm != RenderAlgorithmEnum::AUTO) {
             FractalSharkLog::LogLine(__FILE__, __LINE__)
                 << "Bypassing GPU: Forcing CPU64 render algorithm.";
             alg = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
@@ -1513,7 +1513,7 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
         return;
     }
 
-    // For direct CalcFractal(drawFractal=true) callers (CrummyTest):
+    // For direct CalcFractal(drawFractal=true) callers (headless render tests):
     // Sync GPU and copy iteration results back to CPU memory so that
     // SaveCurrentFractal / PngParallelSave can read the correct data.
     // The render pool path does this via ProduceFrame → RenderCurrent instead.
@@ -2984,7 +2984,7 @@ Fractal::SaveHiResFractal(std::wstring filename)
     // Drain any in-flight render pool work before rendering/saving directly.
     // SaveHiResFractal calls CalcFractal(true) and SaveCurrentFractal directly,
     // bypassing the pool, so we must ensure no workers are active to avoid
-    // data races on m_CurIters. Mirrors the pattern in CrummyTest::TestAll.
+    // data races on m_CurIters. Mirrors the pattern in the headless render tests.
     if (m_RenderPool) {
         m_RenderPool->Drain();
     }

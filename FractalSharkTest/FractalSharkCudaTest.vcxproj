@@ -55,6 +55,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="GpuTestRuntime.cpp" />
     <ClCompile Include="TestLACudaRender.cpp" />
     <CudaCompile Include="TestLAUpload.cu" />
   </ItemGroup>

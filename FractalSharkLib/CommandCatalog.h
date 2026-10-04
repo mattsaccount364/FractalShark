@@ -219,8 +219,6 @@ enum class FractalCommand : uint32_t {
     LoadRefOrbitImagMaxSaved = 40833,
 
     // ---- Tests ----
-    BasicTest = 40900,
-    Test27 = 40901,
 
     // ---- Algorithm Selection ----
     AlgAuto = 41000,

@@ -84,8 +84,6 @@ public:
     void ZoomTowardPoint(size_t scrnX, size_t scrnY, double factor);
     void PanByFraction(double fracX, double fracY);
 
-    void TestBasic();
-
     enum class AutoZoomHeuristic { Max, Feature, FeatureNoSave, FilamentTip };
 
     template <AutoZoomHeuristic h> void AutoZoom();

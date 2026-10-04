@@ -1,4 +1,5 @@
 #include "Environment.h"
+#include "GpuTestRuntime.h"
 #include "HighPrecision.h"
 #include "TestFramework.h"
 #include "heap_allocator/include/HeapCpp.h"
@@ -18,6 +19,15 @@ main(int argc, char **argv)
     }
     if (options.ListTests) {
         return TestFramework::RunTests(TestFramework::Registry(), options, std::cout, std::cerr);
+    }
+
+    if (options.UseGpu) {
+        std::string description;
+        if (!TestFramework::CheckGpuRuntime(description, error)) {
+            std::cerr << "error: --use-gpu requires working CUDA hardware: " << error << '\n';
+            return 1;
+        }
+        std::cout << "CUDA: " << description << '\n';
     }
 
     Environment::RegisterHeapCleanup();

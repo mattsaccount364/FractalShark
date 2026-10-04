@@ -5,12 +5,12 @@
 #include "PortableCommandHandlers.h"
 
 #include "AlgCmds.h"
-#include "CrummyTest.h"
 #include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "RefOrbitCalc.h"
 #include "RenderAlgorithm.h"
+#include "RenderBenchmark.h"
 #include "WaitCursor.h"
 
 #include "LAParameters.h"
@@ -420,12 +420,6 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
             return;
 
         // ---- Tests / Benchmarks ----
-        case FractalCommand::BasicTest:
-            OnBasicTest();
-            return;
-        case FractalCommand::Test27:
-            OnTest27();
-            return;
         case FractalCommand::BenchmarkFull:
             OnBenchmarkFull();
             return;
@@ -1240,35 +1234,17 @@ PortableCommandHandlers::OnPaletteRotate()
 
 // ---- Tests / Benchmarks ---------------------------------------------------
 void
-PortableCommandHandlers::OnBasicTest()
-{
-    Environment::WaitCursor waitCursor;
-    CrummyTest t{GetFractal()};
-    t.TestAll();
-}
-
-void
-PortableCommandHandlers::OnTest27()
-{
-    Environment::WaitCursor waitCursor;
-    CrummyTest t{GetFractal()};
-    t.TestReallyHardView27();
-}
-
-void
 PortableCommandHandlers::OnBenchmarkFull()
 {
     Environment::WaitCursor waitCursor;
-    CrummyTest t{GetFractal()};
-    t.Benchmark(RefOrbitCalc::PerturbationResultType::All);
+    FractalShark::BenchmarkFractal(GetFractal(), RefOrbitCalc::PerturbationResultType::All);
 }
 
 void
 PortableCommandHandlers::OnBenchmarkInt()
 {
     Environment::WaitCursor waitCursor;
-    CrummyTest t{GetFractal()};
-    t.Benchmark(RefOrbitCalc::PerturbationResultType::MediumRes);
+    FractalShark::BenchmarkFractal(GetFractal(), RefOrbitCalc::PerturbationResultType::MediumRes);
 }
 
 // ---- LA -------------------------------------------------------------------

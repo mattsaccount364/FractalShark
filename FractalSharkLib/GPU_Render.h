@@ -193,14 +193,14 @@ private:
 
     uint32_t m_Width;
     uint32_t m_Height;
-    uint32_t local_color_width;
-    uint32_t local_color_height;
+    uint32_t m_ColorWidth;
+    uint32_t m_ColorHeight;
     uint32_t m_Antialiasing;
     uint32_t m_IterTypeSize;
     uint32_t w_block;
     uint32_t h_block;
-    uint32_t w_color_block;
-    uint32_t h_color_block;
+    uint32_t m_ColorWidthBlocks;
+    uint32_t m_ColorHeightBlocks;
     size_t N_cu;
     size_t N_color_cu;
 

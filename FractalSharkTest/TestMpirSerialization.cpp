@@ -13,6 +13,32 @@
 // mpz round-trips
 // ---------------------------------------------------------------------------
 
+TEST(MpirSer_MpfWindowsWireFormat)
+{
+    // These records use the Windows/Imagina four-byte little-endian exponent.
+    const std::string serializedOne{"\x01\x00\x00\x00\x00\x00\x00\x01\x01", 9};
+    const std::string serializedTiny{"\xfd\xff\xff\xff\x00\x00\x00\x01\x01", 9};
+    std::istringstream input{serializedOne + serializedTiny, std::ios::binary};
+    mpf_t restored;
+    mpf_init2(restored, 512);
+    MpirSerialization::mpf_inp_raw_stream(input, restored);
+    ASSERT_TRUE(mpf_cmp_ui(restored, 1) == 0);
+    ASSERT_EQ(static_cast<size_t>(input.tellg()), serializedOne.size());
+    MpirSerialization::mpf_inp_raw_stream(input, restored);
+    mpf_t expected;
+    mpf_init2(expected, 512);
+    mpf_set_ui(expected, 1);
+    mpf_div_2exp(expected, expected, 4 * GMP_NUMB_BITS);
+    ASSERT_TRUE(mpf_cmp(restored, expected) == 0);
+    ASSERT_EQ(static_cast<size_t>(input.tellg()), serializedOne.size() + serializedTiny.size());
+    mpf_set_ui(expected, 1);
+    std::ostringstream output{std::ios::binary};
+    ASSERT_EQ(MpirSerialization::mpf_out_raw_stream(output, expected), serializedOne.size());
+    ASSERT_EQ(output.str(), serializedOne);
+    mpf_clear(expected);
+    mpf_clear(restored);
+}
+
 TEST(MpirSer_MpzRoundtrip_Simple)
 {
     mpz_t original, restored;

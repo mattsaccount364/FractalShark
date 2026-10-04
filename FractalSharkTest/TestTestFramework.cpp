@@ -91,3 +91,36 @@ TEST(TestFramework_FailFastAndExceptionBoundaries)
     ASSERT_TRUE(errors.str().find("expected exception") != std::string::npos);
     ASSERT_TRUE(errors.str().find("Unknown exception") != std::string::npos);
 }
+TEST(TestFramework_GpuAndDisabledCasesDoNotExecuteByDefault)
+{
+    int calls = 0;
+    const std::vector<TestFramework::TestCase> tests = {
+        {"Cpu", [&] { ++calls; }, false, "", false},
+        {"Gpu", [&] { ++calls; }, true, "", true},
+        {"Incomplete", [&] { ++calls; }, true, "INCOMPLETE", true}};
+    TestFramework::RunOptions options;
+    std::ostringstream output, errors;
+    ASSERT_EQ(TestFramework::RunTests(tests, options, output, errors), 0);
+    ASSERT_EQ(calls, 1);
+    ASSERT_TRUE(output.str().find("1 skipped, 1 disabled") != std::string::npos);
+    options.UseGpu = true;
+    options.GenerateGoldens = true;
+    output.str("");
+    ASSERT_EQ(TestFramework::RunTests(tests, options, output, errors), 0);
+    ASSERT_EQ(calls, 3);
+    ASSERT_TRUE(output.str().find("GENERATED: Gpu") != std::string::npos);
+    ASSERT_TRUE(output.str().find("GENERATION COMPLETED") != std::string::npos);
+}
+
+TEST(TestFramework_RenderOptionsParse)
+{
+    const char *arguments[] = {"tests", "--use-gpu", "--generate-goldens", "--output-dir", "images"};
+    TestFramework::RunOptions options;
+    std::string error;
+    ASSERT_TRUE(TestFramework::ParseArguments(5, arguments, options, error));
+    ASSERT_TRUE(options.UseGpu);
+    ASSERT_TRUE(options.GenerateGoldens);
+    ASSERT_EQ(options.OutputDirectory, std::string{"images"});
+    const char *invalid[] = {"tests", "--output-dir="};
+    ASSERT_FALSE(TestFramework::ParseArguments(2, invalid, options, error));
+}

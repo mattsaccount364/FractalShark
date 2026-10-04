@@ -9,7 +9,7 @@ target_sources(FractalSharkLib PRIVATE
     GuiFileOperations.cpp
     PortableCommandHandlers.cpp
     SavedLocation.cpp
-    CrummyTest.cpp
+    RenderBenchmark.cpp
     FeatureFinder.cpp
     FeatureFinderOrchestrator.cpp
     FeatureSummary.cpp

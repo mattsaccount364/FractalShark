@@ -137,8 +137,9 @@ CI.
 Allow at least 30 minutes before timing out a full `FractalSharkTest`, especially for Windows Debug or
 parallel host validation. If a test times out, terminate it explicitly before retrying.
 
-`CrummyTest` is a functional suite invoked from the GUI menu. It must call `Drain()` and use the direct
-rendering path: `CalcFractal(true)` followed by `SaveCurrentFractal`.
+`FractalSharkTest` owns render regression tests. GPU cases require `--use-gpu`. Render fixtures must
+call `Drain()` and use `CalcFractal(true)` followed by `SaveCurrentFractal`, waiting for PNG completion.
+View10, View27, billion-element stress, and documented incomplete modes remain disabled.
 
 NCU profile analysis scripts live under `tools/NcuAnalysis/`. Start from
 `tools/NcuAnalysis/README.md`, which lists the full script set (source-CSV
@@ -155,7 +156,7 @@ NCU or GPU/architecture change, confirm the metric families exist with
 - Normal UI rendering uses the render-pool path, which renders into `workerIters` and publishes a
   successful final frame into `m_CurIters` when dimensions match. Anything that needs a guaranteed
   current CPU iteration buffer must call `Drain()` first; direct `CalcFractal(true)` remains required
-  for workflows that bypass the pool, such as `CrummyTest` and high-resolution saves.
+  for workflows that bypass the pool, such as render regression tests and high-resolution saves.
 - `RenderThreadPool`/`Fractal` provide `EnqueueCommand` (mutate and render), `EnqueueMutation` (mutate
   without rendering), and `EnqueueRender` (render only). UI code must not mutate `Fractal` state
   directly. AutoZoomer work items must be non-supersedable.

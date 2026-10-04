@@ -165,8 +165,6 @@ private:
     void OnPalette20();
     void OnPaletteRotate();
 
-    void OnBasicTest();
-    void OnTest27();
     void OnBenchmarkFull();
     void OnBenchmarkInt();
 

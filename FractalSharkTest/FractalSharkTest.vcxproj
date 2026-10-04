@@ -49,6 +49,14 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="GpuTestRuntime.cpp" />
+    <ClCompile Include="RenderTestSupport.cpp" />
+    <ClCompile Include="RenderTestCatalog.cpp" />
+    <ClCompile Include="TestRenderCases.cpp" />
+    <ClCompile Include="TestRenderUtilities.cpp" />
+    <ClCompile Include="TestGpuRenderModes.cpp" />
+    <ClCompile Include="TestGpuReferenceBuckets.cpp" />
+
     <ClCompile Include="TestTestFramework.cpp" />
     <ClCompile Include="TestLAEvaluation.cpp" />
     <ClCompile Include="TestLAStorage.cpp" />
@@ -71,6 +79,10 @@
     <ClCompile Include="TestFractalSharkLib.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="GpuTestRuntime.h" />
+    <ClInclude Include="RenderTestSupport.h" />
+    <ClInclude Include="RenderTestCatalog.h" />
+    <ClInclude Include="GoldenChecksums.h" />
     <ClInclude Include="Crc64.h" />
     <ClInclude Include="TestFramework.h" />
   </ItemGroup>
@@ -93,6 +105,10 @@
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>true</LinkLibraryDependencies>
     </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="ImaginaFixtures.rc" />
+    <None Include="RenderAlgorithmCases.inc" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

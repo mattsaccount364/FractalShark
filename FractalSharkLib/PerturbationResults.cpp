@@ -1671,10 +1671,10 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
     constexpr bool trackCountsPerIndex = false;
 
     auto normZ = [](T x, T y) -> T {
-        // auto norm_z = x * x + y * y;
-        auto norm_z = HdrMaxReduced(HdrAbs(x), HdrAbs(y));
-        HdrReduce(norm_z);
-        return norm_z;
+        // auto normZValue = x * x + y * y;
+        auto normZValue = HdrMaxReduced(HdrAbs(x), HdrAbs(y));
+        HdrReduce(normZValue);
+        return normZValue;
     };
 
     assert(GetCompressedOrbitSize() > 0);
@@ -1692,12 +1692,15 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
     const auto targetUncompressedIters = GetCountOrbitEntries(); // decompressed->GetCountOrbitEntries();
     assert(decompressed->m_UncompressedItersInOrbit == 0);
 
-    // Round ViewSizeFromCountBytes to PAGE_SIZE:
-    static constexpr auto PAGE_SIZE = 0x1000;
-    size_t ViewSizeFromCountBytes = targetUncompressedIters * sizeof(GPUReferenceIter<T, PExtras>);
-    ViewSizeFromCountBytes = (ViewSizeFromCountBytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+    // Round the decompressed buffer size to a page boundary.
+    static constexpr auto pageSize = 0x1000;
+    size_t viewSizeFromCountBytes =
+        targetUncompressedIters * sizeof(GPUReferenceIter<T, PerturbExtras::Disable>);
+    viewSizeFromCountBytes = (viewSizeFromCountBytes + pageSize - 1) & ~(pageSize - 1);
 
-    decompressed->RecreateFullOrbitVector(ViewSizeFromCountBytes);
+    decompressed->RecreateFullOrbitVector(viewSizeFromCountBytes);
+    // The mapping is sized for this orbit; avoid the vector's initial 256 MiB growth request.
+    decompressed->m_FullOrbit.MutableResize(targetUncompressedIters, 0);
 
     std::vector<IterTypeFull> countsPerIndex;
     std::vector<IterTypeFull> indexTouched;
@@ -1732,11 +1735,11 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
             // dzdcY = dzdcX * Z[i].y * 2 + dzdcY * Z[i].x * 2
             //
             // TODO double check this:
-            const auto old_dzdcX = dzdcX;
+            const auto oldDzdcX = dzdcX;
             dzdcX =
                 dzdcX * decompressed->m_FullOrbit[i].x * 2 - dzdcY * decompressed->m_FullOrbit[i].y * 2;
             HdrReduce(dzdcX);
-            dzdcY = old_dzdcX * decompressed->m_FullOrbit[i].y * 2 +
+            dzdcY = oldDzdcX * decompressed->m_FullOrbit[i].y * 2 +
                     dzdcY * decompressed->m_FullOrbit[i].x * 2;
             HdrReduce(dzdcY);
 
@@ -1791,10 +1794,10 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
         }
 
         // z = z * z + c;
-        auto zx_old = zx;
+        auto zxOld = zx;
         zx = zx * zx - zy * zy + m_OrbitXLow;
         HdrReduce(zx);
-        zy = T{2.0f} * zx_old * zy + m_OrbitYLow;
+        zy = T{2.0f} * zxOld * zy + m_OrbitYLow;
         HdrReduce(zy);
     }
     const auto Two = T{2.0f};
@@ -1828,14 +1831,14 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
             j = 0;
         } else {
             // std::norm(z)
-            // auto norm_z = zx * zx + zy * zy;
-            auto norm_z = normZ(zx, zy);
+            // auto normZValue = zx * zx + zy * zy;
+            auto normZValue = normZ(zx, zy);
 
             // std::norm(dz)
-            // auto norm_dz = dzX * dzX + dzY * dzY;
-            auto norm_dz = normZ(dzX, dzY);
+            // auto normDz = dzX * dzX + dzY * dzY;
+            auto normDz = normZ(dzX, dzY);
 
-            if (HdrCompareToBothPositiveReducedLT(norm_z, norm_dz)) {
+            if (HdrCompareToBothPositiveReducedLT(normZValue, normDz)) {
                 // dz = z;
                 dzX = zx;
                 dzY = zy;
@@ -1859,12 +1862,12 @@ requires(PExtras == PerturbExtras::MaxCompression && !Introspection::IsTDblFlt<T
         // dzY = MinusTwo * decompressed->m_FullOrbit[j].y * dzY - dzY * dzY;
         // HdrReduce(dzY);
 
-        const auto dzX_old = dzX;
+        const auto dzXOld = dzX;
         dzX = Two * decompressed->m_FullOrbit[j].x * dzX - Two * decompressed->m_FullOrbit[j].y * dzY +
               dzX * dzX - dzY * dzY;
         HdrReduce(dzX);
         dzY = Two * decompressed->m_FullOrbit[j].x * dzY +
-              Two * decompressed->m_FullOrbit[j].y * dzX_old + Two * dzX_old * dzY;
+              Two * decompressed->m_FullOrbit[j].y * dzXOld + Two * dzXOld * dzY;
         HdrReduce(dzY);
     }
 

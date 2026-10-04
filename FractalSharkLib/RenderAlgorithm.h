@@ -19,65 +19,6 @@ enum class LAv2Mode {
     LAO,
 };
 
-enum class TestTypeEnum {
-    ViewInit,
-    View0 = ViewInit,
-    View5,
-    View10,
-    View11,
-    View27,
-    ViewMax,
-    ReferenceSave0,
-    ReferenceSave5,
-    ReferenceSave10,
-    ReferenceSave13,
-    ReferenceSave14,
-    PerturbedPerturb12,
-    End
-};
-
-enum class TestViewEnum {
-    Disabled = -1,
-    View0 = 0,
-    View5 = 5,
-    View10 = 10,
-    View11 = 11,
-    View12 = 12,
-    View13 = 13,
-    View14 = 14,
-    View27 = 27,
-};
-
-template <typename Key, typename Value, size_t Size, Value MissingVal> struct ConstexprMap {
-    std::array<std::pair<Key, Value>, static_cast<size_t>(Size)> data;
-
-    constexpr ConstexprMap() = default;
-    constexpr ConstexprMap(const ConstexprMap &) = default;
-    constexpr ConstexprMap(ConstexprMap &&) = default;
-    constexpr ConstexprMap &operator=(const ConstexprMap &other) = default;
-    constexpr ConstexprMap &operator=(ConstexprMap &&other) = default;
-
-    constexpr ConstexprMap(std::array<std::pair<Key, Value>, Size> &&data) : data(std::move(data)) {}
-    constexpr ConstexprMap(std::array<std::pair<Key, Value>, Size> &data) : data(data) {}
-
-    constexpr TestViewEnum
-    Lookup(const Key &key) const
-    {
-        for (const auto &[k, v] : data) {
-            if (k == key) {
-                return v;
-            }
-        }
-
-        return MissingVal;
-    }
-};
-
-using TestViewMap = ConstexprMap<TestTypeEnum,
-                                 TestViewEnum,
-                                 static_cast<size_t>(TestTypeEnum::End),
-                                 TestViewEnum::Disabled>;
-
 // These should match the UI menu for sanity's sake
 enum class RenderAlgorithmEnum : uint32_t {
     // CPU algorithms
@@ -168,9 +109,6 @@ public:
     static bool RequiresReferencePoints;
     static LAv2Mode LAv2;
     static RequiresGpu Gpu;
-
-    static bool TestIncludeInBasic;
-    static bool TestIncludeInView5;
 };
 
 template <> class RenderAlgorithmCompileTime<RenderAlgorithmEnum::CpuHigh> {
@@ -183,10 +121,6 @@ public:
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = HighPrecision;
     using OriginatingType = MainType;
@@ -204,10 +138,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
@@ -223,10 +153,6 @@ public:
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
@@ -244,10 +170,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
     using SubType = double;
@@ -263,10 +185,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = double;
     using OriginatingType = MainType;
@@ -284,10 +202,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
@@ -303,10 +217,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
@@ -324,10 +234,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
@@ -343,10 +249,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
@@ -364,10 +266,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
@@ -383,10 +281,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
@@ -404,11 +298,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-    }};
-
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
@@ -424,11 +313,6 @@ public:
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
@@ -446,10 +330,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = void;
     using OriginatingType = MainType;
     using SubType = void;
@@ -465,11 +345,6 @@ public:
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-    }};
 
     using MainType = double;
     using OriginatingType = MainType;
@@ -487,10 +362,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = void;
     using OriginatingType = MainType;
     using SubType = void;
@@ -506,10 +377,6 @@ public:
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = void;
     using OriginatingType = MainType;
@@ -527,11 +394,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-    }};
-
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
@@ -547,11 +409,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-    }};
 
     using MainType = float;
     using OriginatingType = MainType;
@@ -569,11 +426,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-    }};
-
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
@@ -589,12 +441,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
@@ -612,11 +458,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-    }};
-
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
@@ -632,12 +473,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
@@ -655,12 +490,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
-
     using MainType = HDRFloat<double>;
     using OriginatingType = MainType;
     using SubType = double;
@@ -676,10 +505,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = float;
     using OriginatingType = MainType;
@@ -697,10 +522,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
@@ -716,10 +537,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = float;
     using OriginatingType = MainType;
@@ -737,10 +554,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
@@ -756,10 +569,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = float;
     using OriginatingType = MainType;
@@ -777,10 +586,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = float;
     using OriginatingType = MainType;
     using SubType = float;
@@ -796,10 +601,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
@@ -817,10 +618,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
@@ -836,10 +633,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
@@ -857,10 +650,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
@@ -876,10 +665,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
@@ -897,10 +682,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = CudaDblflt<dblflt>;
     using OriginatingType = double;
     using SubType = CudaDblflt<dblflt>;
@@ -916,16 +697,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        // std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12}, // should not crash but
-        // does
-    }};
 
     using MainType = double;
     using OriginatingType = MainType;
@@ -943,11 +714,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-    }};
-
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
@@ -963,10 +729,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
 
     using MainType = double;
     using OriginatingType = MainType;
@@ -984,16 +746,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        // std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12}, // should not crash but
-        // does
-    }};
-
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
@@ -1009,11 +761,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-    }};
 
     using MainType = double;
     using OriginatingType = MainType;
@@ -1031,10 +778,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-    }};
-
     using MainType = double;
     using OriginatingType = MainType;
     using SubType = double;
@@ -1050,19 +793,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
@@ -1080,12 +810,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
-
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
@@ -1101,12 +825,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
@@ -1124,19 +842,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-    }};
-
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
@@ -1152,12 +857,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
@@ -1175,12 +874,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
-
     using MainType = HDRFloat<float>;
     using OriginatingType = MainType;
     using SubType = float;
@@ -1196,16 +889,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
@@ -1223,12 +906,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
-
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
@@ -1244,12 +921,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
@@ -1267,18 +938,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-        std::pair{TestTypeEnum::View27, TestViewEnum::View27},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-    }};
-
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
@@ -1294,12 +953,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
@@ -1317,12 +970,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
-
     using MainType = HDRFloat<CudaDblflt<dblflt>>;
     using OriginatingType = HDRFloat<double>;
     using SubType = CudaDblflt<dblflt>;
@@ -1338,19 +985,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
@@ -1368,12 +1002,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
-
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
@@ -1389,12 +1017,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
@@ -1412,19 +1034,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Full;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-        std::pair{TestTypeEnum::ReferenceSave0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::ReferenceSave5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::ReferenceSave10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::ReferenceSave13, TestViewEnum::View13},
-        std::pair{TestTypeEnum::ReferenceSave14, TestViewEnum::View14},
-        std::pair{TestTypeEnum::PerturbedPerturb12, TestViewEnum::View12},
-    }};
-
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
@@ -1440,12 +1049,6 @@ public:
     static constexpr bool RequiresReferencePoints = true;
     static constexpr LAv2Mode LAv2 = LAv2Mode::PO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
-
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
 
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
@@ -1463,12 +1066,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::LAO;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-        std::pair{TestTypeEnum::View11, TestViewEnum::View11},
-    }};
-
     using MainType = HDRFloat<double>;
     using OriginatingType = HDRFloat<double>;
     using SubType = double;
@@ -1485,12 +1082,6 @@ public:
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::Yes;
 
-    static constexpr TestViewMap TestInclude{{
-        std::pair{TestTypeEnum::View0, TestViewEnum::View0},
-        std::pair{TestTypeEnum::View5, TestViewEnum::View5},
-        std::pair{TestTypeEnum::View10, TestViewEnum::View10},
-    }};
-
     using MainType = void;
     using OriginatingType = MainType;
     using SubType = void;
@@ -1506,8 +1097,6 @@ public:
     static constexpr bool RequiresReferencePoints = false;
     static constexpr LAv2Mode LAv2 = LAv2Mode::Invalid;
     static constexpr RequiresGpu Gpu = RequiresGpu::No;
-
-    static constexpr TestViewMap TestInclude{{}};
 
     using MainType = void;
     using OriginatingType = MainType;
@@ -1534,8 +1123,7 @@ public:
               RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::RequiresCompression},
           RequiresReferencePoints{
               RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::RequiresReferencePoints},
-          Gpu{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::Gpu},
-          TestInclude{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::TestInclude}
+          Gpu{RenderAlgorithmCompileTime<RenderAlgorithmEnum::AUTO>::Gpu}
     {
     }
 
@@ -1546,8 +1134,7 @@ public:
                                RenderAlgCompileTime>
         : Algorithm{Alg.Algorithm}, AlgorithmStr{Alg.AlgorithmStr}, UseLocalColor{Alg.UseLocalColor},
           RequiresCompression{Alg.RequiresCompression},
-          RequiresReferencePoints{Alg.RequiresReferencePoints}, Gpu{Alg.Gpu},
-          TestInclude{Alg.TestInclude}
+          RequiresReferencePoints{Alg.RequiresReferencePoints}, Gpu{Alg.Gpu}
     {
     }
 
@@ -1575,8 +1162,6 @@ public:
     bool RequiresCompression;
     bool RequiresReferencePoints;
     RequiresGpu Gpu;
-
-    TestViewMap TestInclude;
 };
 
 static constexpr std::array<RenderAlgorithm, static_cast<size_t>(RenderAlgorithmEnum::MAX) + 1>

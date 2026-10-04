@@ -64,12 +64,16 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="GPU_Render.cu" />
+    <CudaCompile Include="PngEncoder.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="AntialiasingKernel.cuh" />
+    <ClInclude Include="PngEncoder.cuh" />
+    <ClInclude Include="PngCompressionKernels.cuh" />
+    <ClInclude Include="PngHuffman.cuh" />
     <ClInclude Include="BLA.cuh" />
     <ClInclude Include="BLAKernels.cuh" />
     <ClInclude Include="DisabledKernels.cuh" />

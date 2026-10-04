@@ -18,3 +18,258 @@ avoiding the tiling overhead entirely.
 Both paths flip the Y~axis during texture-coordinate generation to
 account for the mismatch between the top-left origin used by the
 frame buffer and the bottom-left origin expected by OpenGL.
+
+% -----------------------------------------------------------------
+\subsection{PNG Output and GPU Compression}
+\label{subsec:png-output}
+
+\FractalShark{} writes lossless 16-bit PNG images through the backend
+selected by the resolved render algorithm. CPU algorithms retain
+\code{WPngImage} encoding and the background save thread pool. GPU
+algorithms use the CUDA encoder and finish encoding and writing on the
+thread that initiated the save. AUTO follows the resolved algorithm's
+\code{UseLocalColor} setting. Both paths share filename resolution,
+extension handling, and the behavior of skipping an existing output file.
+
+\subsubsection{Save dispatch and snapshot ownership}
+
+\code{SaveCurrentFractal} captures the encoder backend, dimensions,
+antialiasing factor, iteration type and limit, palette, and iteration
+buffer in \code{PngParallelSave}. A copied snapshot owns an independent
+iteration buffer. A moved snapshot installs a replacement current buffer
+and returns its original storage to the spare-buffer pool after saving.
+Queued CPU saves consequently remain valid across later renders or
+resizes. Iteration-text saves also retain the background worker path.
+
+Callers drain the render pool before reading the authoritative
+\code{m\_CurIters} snapshot (\cref{subsec:two-render-paths}). The GPU save
+path initializes renderer~0 from that snapshot and uploads its logical
+iteration rows using the padded host row stride. The upload avoids any
+dependency on which renderer produced the published frame. Existing
+GPU coloring and antialiasing kernels then produce the final packed,
+row-major \code{Color16} image on the compute stream. The device image
+passes directly to a lazily allocated, reusable PNG encoder; no
+uncompressed color image is downloaded for encoding.
+
+GPU saves follow the existing GPU coloring semantics, including the
+palette-rotation distinction described in \cref{subsec:coloring}.
+Encoding is lossless with respect to those final colors. GPU encoding
+and file-write failures return directly to the caller, whereas CPU
+background failures use the existing worker diagnostics. The GPU bridge
+waits for pending stream work before releasing the save snapshot and
+does not retain its palette address as a host cache key.
+
+\code{PngCompletionMode::Background} permits background completion only
+for CPU saves. GPU saves are complete when the save call returns.
+The corresponding CLI response and timing behavior is documented in
+\cref{sec:fractalshark-cli}.
+
+\subsubsection{Encoder interface and lifetime}
+
+The CUDA-facing interface is declared in
+\code{FractalSharkGpuLib/PngEncoder.cuh}:
+
+\begin{lstlisting}
+FractalShark::Png::GpuPngEncoder encoder;
+std::vector<unsigned char> pngBytes;
+const cudaError_t error = encoder.Encode(
+    devicePixels, width, height, rowStrideBytes, stream, pngBytes);
+\end{lstlisting}
+
+The input is a caller-owned device allocation of native-endian 16-bit
+RGBA samples with an explicit byte stride. Row padding is ignored;
+the allocation must cover the requested image and remain valid until
+the call returns. Alpha is straight, matching \code{WPngImage}.
+Opaque images use RGB16, PNG color type~2; any non-opaque sample selects
+RGBA16, color type~6. Low channel bits and transparent pixels' RGB
+values are preserved. Output is non-interlaced and contains the PNG
+signature followed by IHDR, IDAT, and IEND chunks
+\cite{PNGThirdEdition2025}.
+
+\code{Encode} returns \code{cudaSuccess} with completed host bytes,
+or a CUDA error with an empty output vector. Host allocation exceptions
+propagate. Dimension, stride, alignment, and size-overflow checks precede
+kernel execution; accessible device storage remains a caller requirement.
+Each encoder context binds to the device used for its first valid call.
+Calls on one context must be serialized, while separate contexts and
+streams may execute concurrently.
+
+\code{GetWorkspaceBytes()} reports retained device allocation capacity,
+excluding the input buffer and host output. Workspace grows as needed
+and is reused for smaller images. Destruction releases the
+workspace on its owning device. Encoding waits for its supplied stream
+to obtain alpha information, compressed sizes, and completed bytes;
+it does not call \code{cudaDevice\allowbreak Synchronize}. Workspace allocation
+uses \code{cudaMalloc}/\code{cudaFree}, which can impose additional
+allocation synchronization.
+
+\subsubsection{Serialization and scanline filtering}
+
+\Cref{fig:png-encoder-pipeline} summarizes the GPU save path.
+\code{PngEncoder.cu} serializes samples in big-endian byte order.
+Each scanline evaluates the PNG None, Sub, Up, Average, and Paeth
+filters using six bytes per RGB16 pixel or eight per RGBA16 pixel
+\cite{PNGThirdEdition2025}. The minimum-sum scoring matches the bundled
+LodePNG heuristic, including its unsigned None score and
+\code{255 - value} convention for negative differences. Equal scores
+select the lowest filter number. Only the chosen filtered row is
+materialized in the compression input.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+  stage/.style={draw, rounded corners, align=center, font=\small,
+                text width=3.7cm, minimum height=1.1cm},
+  flow/.style={-{Latex[length=2mm]}, thick},
+  node distance=0.55cm and 0.6cm]
+  \node[stage] (color) {Upload snapshot\\GPU coloring and AA};
+  \node[stage, right=of color] (filter) {Serialize samples\\Select row filters};
+  \node[stage, right=of filter] (deflate) {Regional DEFLATE\\encoding};
+  \node[stage, below=of deflate] (frame) {GPU checksums\\and PNG assembly};
+  \node[stage, left=of frame] (transfer) {Transfer PNG bytes\\to host};
+  \node[stage, left=of transfer] (write) {Write output file\\Return save status};
+  \draw[flow] (color) -- (filter);
+  \draw[flow] (filter) -- (deflate);
+  \draw[flow] (deflate) -- (frame);
+  \draw[flow] (frame) -- (transfer);
+  \draw[flow] (transfer) -- (write);
+\end{tikzpicture}
+\caption[GPU PNG save pipeline]{GPU PNG save pipeline. Coloring,
+filtering, compression, checksums, and PNG assembly use device data.
+Only small result metadata and completed PNG bytes return to the host;
+the initiating thread waits for completion and writes the file.}
+\label{fig:png-encoder-pipeline}
+\end{figure}
+
+\subsubsection{Regional DEFLATE and dynamic Huffman coding}
+
+Filtered bytes are divided into independent regions of at most
+32~KiB. A warp processes each region with a 4,096-entry hash table,
+a greedy LZ77 parser, and warp-assisted match comparisons. Matches
+reference only earlier positions within their own region, may overlap,
+and have a maximum length of 258~bytes. Ordered position values and
+\code{atomicMax} make hash insertion deterministic when positions
+consumed by one match collide. Hash tables and intermediate buffers
+reside in allocated device workspace.
+
+Each region first emits a non-final fixed-Huffman block followed by an
+empty stored block that restores byte alignment. If that representation
+is at least as large as a stored block, a non-final stored block replaces
+it. A second kernel constructs dynamic Huffman tables and replaces the
+candidate only when the complete dynamic representation is strictly
+smaller. Equal sizes retain the existing candidate. Block syntax and
+length/distance coding follow DEFLATE \cite{RFC1951}.
+
+\code{PngHuffman.cuh} implements iterative boundary package merge for
+length-limited Huffman trees: 15~bits for literal/length and distance
+codes, and 7~bits for the header alphabet. Stable frequency/symbol
+ordering resolves ties deterministically. Empty and single-symbol
+alphabets use two one-bit codes for decoder compatibility; the
+end-of-block symbol always receives a frequency of one. Canonical
+codes are reversed for DEFLATE bit emission.
+
+The dynamic header trims trailing unused symbols and run-length encodes
+the combined code lengths with symbols~16, 17, and~18. Candidate size
+includes all header and payload bits, the end-of-block symbol, and the
+following empty stored block's alignment and length fields. A lower
+bound skips header construction when even a minimum header cannot
+improve the candidate. Only winning regions replay the deterministic
+parser; no per-byte token buffer is retained. Tree nodes, sorting
+buffers, traversal stacks, tables, and header runs occupy reusable
+device workspace.
+
+For \code{inputBytes} filtered bytes in \code{regionCount} regions,
+stored-block fallback bounds the complete zlib output by
+\code{inputBytes + 5 * regionCount + 11} bytes. A CUB device prefix
+scan computes output offsets, and a compaction kernel assembles the
+regions in their original order.
+
+\subsubsection{Checksums and PNG framing}
+
+The image uses one zlib header, one final empty stored block, and one
+Adler-32 trailer \cite{RFC1950}. IDAT boundaries do not start new
+compression streams. Each IDAT payload is at most 64~KiB. The GPU
+generates PNG chunk headers and CRCs, combining ordered warp segments
+through scalar arithmetic over the reflected CRC polynomial. The host
+receives small result metadata and the final PNG byte vector.
+
+Compression selection is automatic and requires no public mode
+argument. Stronger match searching and dictionaries spanning region
+boundaries remain possible future improvements. The current independent
+regions favor parallelism and bounded workspace at the cost of some
+compression ratio.
+
+\subsubsection{Measured encoding cost and output size}
+\label{subsec:png-benchmarks}
+
+\Cref{tab:png-current-benchmark,tab:png-compression-sizes} report
+3840~by~2160 opaque images measured on October~4, 2026 with an NVIDIA
+GeForce RTX~5090 (\code{sm\_120}), CUDA Toolkit/runtime~13.2, and
+Visual Studio~2026 in Windows Release. The measurements were collected
+after builds and correctness tests completed, with no concurrent build
+or test workload. The benchmark procedure is given in
+\cref{subsec:png-validation}.
+
+GPU timing includes serialization, filtering, compression, checksums,
+PNG assembly, stream waits, and transfer of completed bytes. Input
+upload and construction of the CPU \code{WPngImage} occur outside the
+measured interval. Warm GPU and CPU times are medians of three calls;
+first-call timing separately includes initial workspace allocation.
+Fractal rendering, palette conversion, iteration upload, and disk
+writing are excluded. The CPU baseline uses
+\code{PngEncodingOptions\{false, false, 32\}}. These measurements
+characterize the fixtures and hardware rather than end-to-end save
+latency or a timing guarantee.
+
+\begin{table}[!htbp]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption[4K PNG encoding measurements]{4K PNG encoding measurements
+after production save integration. Times are warm medians in
+milliseconds; workspace is retained encoder allocation capacity in MiB.}
+\label{tab:png-current-benchmark}
+\begin{tabularx}{\textwidth}{Xrrrrr}
+\hline
+Image & GPU ms & CPU ms & GPU bytes & CPU bytes & MiB \\
+\hline
+Uniform      & 2.42  & 502.36  & 76,027     & 51,113     & 264.3 \\
+Gradient     & 5.31  & 671.04  & 3,477,715  & 1,147,577  & 267.5 \\
+Seeded noise & 42.79 & 1883.63 & 49,785,331 & 49,794,895 & 311.7 \\
+Mandelbrot   & 13.12 & 598.19  & 857,686    & 692,127    & 265.0 \\
+\hline
+\end{tabularx}
+\end{table}
+
+The Mandelbrot fixture encodes in approximately 13.12~ms on the GPU
+versus 598.19~ms on the CPU, while its GPU file is approximately
+1.24~times the CPU size. The gradient fixture retains a larger size
+penalty because the greedy parser and independent dictionaries limit
+match discovery. Noise selects stored blocks and has nearly the same
+output size as the CPU encoder. Retained workspace excludes the
+63.3~MiB input image and all host allocations.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption[PNG compression size comparison]{PNG compression size comparison
+on identical filtered 4K inputs. Dynamic coding replaces the fixed/stored
+candidate only when smaller; equal sizes retain that candidate.}
+\label{tab:png-compression-sizes}
+\begin{tabularx}{\textwidth}{Xrrr}
+\hline
+Image & Fixed/stored bytes & Dynamic bytes & Reduction \\
+\hline
+Uniform      & 325,145    & 76,027     & 76.6\% \\
+Gradient     & 5,082,472  & 3,477,715  & 31.6\% \\
+Seeded noise & 49,785,331 & 49,785,331 & 0\% \\
+Mandelbrot   & 1,180,922  & 857,686    & 27.4\% \\
+\hline
+\end{tabularx}
+\end{table}
+
+Dynamic code construction and parser replay trade encoding work for
+smaller files and add approximately 45~MiB to retained 4K workspace
+relative to the initial fixed/stored implementation. Timing is
+diagnostic; exact decoded pixels and compression-size bounds are the
+benchmark's assertions.

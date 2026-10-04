@@ -5,6 +5,35 @@ This appendix records development notes that were posted over time.
 
 \subsection{Release Notes}
 
+\subsubsection{2026-10-4 Development --- CUDA PNG Output}
+\label{subsec:png-development-record}
+
+GPU render algorithms now save through the repository's CUDA PNG
+encoder, while CPU algorithms retain \code{WPngImage} and the save
+thread pool. GPU encoding and file writing finish on the initiating
+thread. The encoder preserves 16-bit pixels and automatically selects
+fixed, dynamic, or stored DEFLATE blocks by size
+(\cref{subsec:png-output}). Dynamic coding reduced the 4K Mandelbrot
+fixture from 1,180,922 to 857,686~bytes compared with the fixed/stored
+baseline; the complete comparison is in
+\cref{tab:png-compression-sizes}.
+
+Full Windows Debug and Release rebuilds and the repository formatter
+passed. Each configuration passed thirteen focused CUDA PNG/save cases,
+five CPU save-pool cases, two CPU PNG cases, and the two existing View0
+CPU64/GPU1x32 render goldens. CPU cases also passed without
+\code{-{}-use-gpu}. Compute Sanitizer memcheck completed all thirteen
+Debug CUDA cases with zero errors using named pipes. The quiet Release
+4K benchmark passed exact decoded-pixel comparisons and compression-size
+checks. No golden checksums were regenerated, the full render catalog
+was not run, and WSL validation was not performed.
+
+The recorded integration artifacts in \code{Debug/} and \code{Release/}
+use the \code{validation-png-\allowbreak save-} prefix for build, CUDA-test,
+CPU/golden-test, and CPU-only-test logs. Debug also contains memcheck
+and documentation-build logs; Release contains the benchmark log.
+\Cref{subsec:png-validation} provides reproducible focused commands.
+
 \subsubsection{2026-9 News --- Version 0.543 (Upcoming)}
 
 Version \code{0.543} improves repeated headless rendering and continues work on
@@ -17,11 +46,11 @@ the fused GPU reference-orbit implementation.
   requests in FIFO order. Local IPC uses named pipes on Windows and Unix-domain
   sockets on Linux.
 
-\item \textbf{Asynchronous PNG output and timing.} Server renders begin PNG
-  encoding in the background so encoding can overlap the next frame. Client
-  output reports per-frame request time, while orderly server shutdown drains
-  all outstanding encoders. A PowerShell example renders four deep-zoom scenes
-  and reports total end-to-end time.
+\item \textbf{PNG output and timing.} CPU server renders queue PNG encoding
+  in the background so it can overlap the next frame. GPU server renders finish
+  encoding and writing before responding. Client output reports per-frame request
+  time, including GPU saving; orderly server shutdown drains outstanding CPU
+  saves. A PowerShell example reports per-image and end-to-end batch timing.
 
 \item \textbf{GPU reference-orbit work.} The fused Ref2/v2 implementation
   receives further NTT, carry-propagation, memory-layout, and test-harness

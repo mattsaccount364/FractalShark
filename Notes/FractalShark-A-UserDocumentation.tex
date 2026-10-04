@@ -1150,6 +1150,10 @@ the view and algorithm, then uses the direct rendering path
 mode queues CPU PNG encoding in the background so it can overlap a later render.
 GPU PNG encoding and writing run synchronously on the calling thread in both modes.
 
+The encoder architecture, compression stages, and measured costs are
+described in \cref{subsec:png-output}. Focused CPU/GPU validation and
+benchmark commands appear in \cref{subsec:png-validation}.
+
 The same \code{RenderToPng} helper is used by
 \code{TestRenderGoldens} (\cref{subsec:crummy-test}) to produce
 golden-CRC regression images, ensuring that the headless path stays
@@ -1163,6 +1167,10 @@ against the shared Windows Release golden checksums. Every platform and build
 configuration validates against the same baselines. When an intentional image
 change affects only a few cases, those cases can be regenerated and verified
 without running the entire test suite.
+
+PNG checksums cover decoded RGBA16 pixels. Changing compression without
+changing pixels does not require new golden checksums. The focused PNG
+checks in \cref{subsec:png-validation} exercise both save backends.
 
 \paragraph{Updating selected goldens.}
 Run the updater from the repository root with Python~3 and a rebuilt Windows

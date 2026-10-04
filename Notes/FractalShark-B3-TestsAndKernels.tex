@@ -38,6 +38,108 @@ requiring hours of computation; the test serves as an overnight
 stress benchmark rather than a routine regression check.
 
 % -----------------------------------------------------------------
+\subsection{PNG Encoder and Save-Path Validation}
+\label{subsec:png-validation}
+
+The PNG encoder described in \cref{subsec:png-output} has a focused
+hardware suite in \code{FractalSharkCudaTest}. The \code{CudaPng\_*}
+cases encode identical input through the GPU encoder and the CPU's
+current PNG save settings. LodePNG decodes
+both outputs to RGBA16 for exact comparison with independently
+serialized expected pixels. Coverage includes low channel bits,
+transparency, padded strides, row and region boundaries, deterministic
+output, noisy input, multiple IDAT chunks, workspace reuse, concurrent
+streams, and invalid inputs.
+
+Internal filtering tests reconstruct scanlines independently. Raw zlib
+tests cover length/distance coding, overlapping copies, stored blocks,
+checksums, and final-block termination. Huffman tests compare code
+lengths and weighted cost with the bundled CPU implementation, including
+degenerate alphabets, stable ties, and skewed frequencies requiring
+length limiting. Header tests independently expand repetition codes.
+Corruption tests separate PNG CRC failures from Adler-32 failures by
+repairing the enclosing chunk CRC. Internal test interfaces in
+\code{PngCompressionKernels.cuh} use production device routines and
+also expose the fixed/stored baseline for size comparisons.
+
+The \code{CudaPngSave\_*} cases exercise the production dispatch path:
+both iteration widths, AA factors~1--4, odd dimensions, repeated saves
+and resizing, copied/moved snapshots, render-pool frame publication,
+synchronous Background completion, Unicode filenames, existing-file
+skips, write failures, and switching back to queued CPU saves.
+Comparisons with the CPU saver use settings where CPU and GPU coloring
+agree, including zero palette rotation. The existing CPU save-pool and
+PNG tests remain runnable without CUDA hardware.
+
+Run the following PowerShell commands from the repository root after
+building both Windows configurations:
+
+\begin{lstlisting}[language={},upquote=true]
+foreach ($configuration in 'Debug', 'Release') {
+    & ".\$configuration\FractalSharkCudaTest.exe" --use-gpu `
+        --filter=CudaPng_* --filter=CudaPngSave_*
+    & ".\$configuration\FractalSharkTest.exe" `
+        --filter=FractalSharkLib_SavePool* `
+        --filter=FractalSharkLib_PngEncoding*
+}
+\end{lstlisting}
+
+\paragraph{Existing render goldens.}
+Two existing View0 cases exercise CPU64 and GPU1x32 PNG saves through
+\code{SaveCurrentFractal}. Their fixtures drain the render pool, call
+\code{CalcFractal(true)}, save the current frame, and wait for completion.
+Only those cases are selected by the following commands:
+
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[language={},upquote=true]
+foreach ($configuration in 'Debug', 'Release') {
+    & ".\$configuration\FractalSharkTest.exe" --use-gpu `
+        --filter "RenderGolden_Basic_Cpu64_View0_Bits32_Store0_*" `
+        --filter "RenderGolden_Basic_Gpu1x32_View0_Bits32_Store0_*"
+}
+\end{lstlisting}
+\end{minipage}
+
+Render goldens compare decoded RGBA16 pixels, so different compression
+bytes alone require no golden update. Intentional pixel changes use the
+selected-case update procedure in \cref{subsec:render-regression-goldens};
+unaffected cases need not be regenerated or rerun.
+
+\paragraph{Benchmark procedure.}
+The standalone benchmark uses opaque uniform, gradient, seeded-noise,
+and GPU-rendered Mandelbrot images at 3840~by~2160 resolution:
+
+\begin{lstlisting}[language={},upquote=true]
+.\Release\FractalSharkCudaTest.exe --use-gpu --filter=CudaPngBenchmark_4K
+\end{lstlisting}
+
+Run it after other builds and tests complete. Every output is decoded
+and checked exactly. Compression size must not exceed the fixed/stored
+baseline, and uniform, gradient, and Mandelbrot fixtures must improve
+on that baseline. Timings are diagnostic rather than assertions;
+\cref{subsec:png-benchmarks} defines the measurement boundaries and
+reports the recorded results.
+
+\paragraph{Compute Sanitizer on Windows.}
+Select named-pipe transport before launching memcheck:
+
+\begin{lstlisting}[language={},upquote=true]
+$env:NV_COMPUTE_SANITIZER_LOCAL_CONNECTION_OVERRIDE = 'named-pipes'
+& "$env:CUDA_PATH/compute-sanitizer/compute-sanitizer.exe" `
+    --tool memcheck --error-exitcode 99 `
+    .\Debug\FractalSharkCudaTest.exe --use-gpu `
+    --filter=CudaPng_* --filter=CudaPngSave_*
+\end{lstlisting}
+
+The sanitizer communicates with its instrumented process. Named pipes
+keep that Windows communication local without a TCP listener; TCP
+transport can otherwise produce a firewall prompt attributed to the
+test executable. Ordinary encoder tests start no network service.
+The transport override is documented in NVIDIA's
+\href{https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html\#environment-variables}
+{Compute Sanitizer environment-variable reference}.
+
+% -----------------------------------------------------------------
 \subsection{Selected Kernel Entry Points}
 \label{sec:kernel-list}
 
@@ -77,6 +179,13 @@ specializations, and internal kernels change more frequently than this appendix.
     \item \code{antialiasing\_kernel}
     \item \code{max\_reduce}
     \item \code{max\_kernel}
+  \end{itemize}
+
+\item \textbf{PNG encoding kernels} (\cref{subsec:png-output})
+  \begin{itemize}
+    \item Serialization and scanline filter selection
+    \item Regional LZ77 encoding and dynamic Huffman construction
+    \item Compaction, Adler-32, and PNG chunk assembly/CRC
   \end{itemize}
 
 \item \textbf{Reference NTT primitives} (\cref{sec:ntt-multiply})

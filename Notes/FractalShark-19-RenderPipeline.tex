@@ -38,13 +38,12 @@ by $k^2$ to produce an averaged \code{Color16} (16-bit per channel
 RGBA) output.
 
 \paragraph{Stream separation.}
-The antialiasing kernel is launched on a dedicated CUDA stream
-(\code{m\_Stream1}), distinct from the compute stream used by the
-iteration kernels.  This separation allows the display thread to run
-antialiasing and read back the color buffer while the compute thread
-continues issuing iteration work on its own default stream
-(see also the \code{--default-stream per-thread}
-compilation flag in \code{CudaDefaults.props}).
+Progressive frame extraction launches antialiasing and color readback
+on \code{m\_DisplayStream}, separate from the iteration kernels'
+\code{m\_ComputeStream}. Final frame extraction uses the compute stream.
+GPU PNG saves also run coloring and antialiasing on the compute stream,
+followed by encoding on that same stream (\cref{subsec:png-output}).
+The save caller waits for completion before releasing its snapshot.
 
 \paragraph{Kernel template.}
 \begin{lstlisting}
@@ -118,9 +117,11 @@ The modulo wrapping causes the palette to cycle when the iteration
 count exceeds the palette length.
 
 \paragraph{Palette rotation.}
-A rotation offset \code{m\_PaletteRotate} is added to the iteration
-count before palette lookup, allowing the user to phase-shift the
-color mapping for visual exploration without re-rendering.
+CPU palette coloring and CPU PNG saving add \code{m\_PaletteRotate} to the
+iteration count before palette lookup, allowing a phase shift without
+recomputing the iterations. The current GPU antialiasing/coloring kernel
+uses unrotated iteration counts. GPU PNG saves reuse that kernel and
+therefore retain the same GPU coloring behavior.
 
 \paragraph{Alternative coloring approaches.}
 The palette-indexed scheme above is simple and fast but has known

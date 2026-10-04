@@ -1,4 +1,5 @@
 #include "ATInfo.h"
+#include "LAReference.h"
 #include "LAstep.h"
 #include "TestFramework.h"
 
@@ -35,7 +36,7 @@ CheckInitialization()
 {
     auto info = MakeInitialization<IterType, Float, SubType>(1, IterType{5});
     auto delta = info.RefC;
-    const auto fallbackDelta = decltype(delta){SubType{0}, SubType{0}};
+    const auto fallbackDelta = decltype(delta){};
     IterType iterations = 99;
     info.InitializePixel(true, IterType{100}, {}, fallbackDelta, iterations, delta);
     ASSERT_EQ(iterations, IterType{20});
@@ -77,21 +78,22 @@ CheckInitialization()
     ASSERT_EQ(iterations, IterType{0});
     ASSERT_EQ(static_cast<SubType>(delta.getRe()), 0.0);
     if constexpr (std::is_same_v<Float, HDRFloat<SubType>>) {
-        ASSERT_EQ(delta.getRe().exp, 0);
-        ASSERT_EQ(delta.getIm().exp, 0);
-        // A sentinel-exponent zero would retain this tiny value instead.
+        ASSERT_EQ(delta.getRe().exp, HDRFloat<SubType>::MIN_BIG_EXPONENT());
+        ASSERT_EQ(delta.getIm().exp, HDRFloat<SubType>::MIN_BIG_EXPONENT());
         const Float tiny{-1000, SubType{1}};
         const auto sum = delta + decltype(delta){tiny, tiny};
-        ASSERT_EQ(sum.getRe().mantissa, SubType{0});
-        ASSERT_EQ(sum.getIm().mantissa, SubType{0});
+        ASSERT_EQ(sum.getRe().exp, -1000);
+        ASSERT_EQ(sum.getIm().exp, -1000);
+        ASSERT_EQ(sum.getRe().mantissa, SubType{1});
+        ASSERT_EQ(sum.getIm().mantissa, SubType{1});
     }
     info.StepLength = 0;
     info.InitializePixel(true, IterType{10}, {}, fallbackDelta, iterations, delta);
     ASSERT_EQ(iterations, IterType{0});
     ASSERT_EQ(static_cast<SubType>(delta.getIm()), 0.0);
     if constexpr (std::is_same_v<Float, HDRFloat<SubType>>) {
-        ASSERT_EQ(delta.getRe().exp, 0);
-        ASSERT_EQ(delta.getIm().exp, 0);
+        ASSERT_EQ(delta.getRe().exp, HDRFloat<SubType>::MIN_BIG_EXPONENT());
+        ASSERT_EQ(delta.getIm().exp, HDRFloat<SubType>::MIN_BIG_EXPONENT());
     }
 
     if constexpr (sizeof(IterType) == 8) {
@@ -229,22 +231,36 @@ EvaluateReference(EvaluationReference &reference,
     return result;
 }
 
-template <class SubType>
+template <typename IterType, class SubType>
 void
 CheckBackendFallbackZeros()
 {
-    ATInfo<uint32_t, HDRFloat<SubType>, SubType> info;
+    LAReference<IterType, HDRFloat<SubType>, SubType, PerturbExtras::Disable> reference{
+        LAParameters{}, AddPointOptions::DontSave, L"", L""};
+    ATInfo<IterType, HDRFloat<SubType>, SubType> info;
     HDRFloatComplex<SubType> delta;
-    uint32_t iterations = 99;
-    const HDRFloatComplex<SubType> cpuZero{SubType{0}, SubType{0}};
+    IterType iterations = 99;
     const HDRFloatComplex<SubType> gpuZero{HDRFloat<SubType>{0}, HDRFloat<SubType>{0}};
-    const HDRFloatComplex<SubType> tiny{HDRFloat<SubType>{-1000, SubType{1}}, HDRFloat<SubType>{}};
-    info.InitializePixel(false, 10, {}, cpuZero, iterations, delta);
-    ASSERT_EQ(iterations, uint32_t{0});
-    ASSERT_EQ(delta.getRe().exp, 0);
-    ASSERT_EQ((delta + tiny).getRe().mantissa, SubType{0});
-    info.InitializePixel(false, 10, {}, gpuZero, iterations, delta);
-    ASSERT_EQ(iterations, uint32_t{0});
+    const HDRFloatComplex<SubType> tiny{HDRFloat<SubType>{-1000, SubType{1}},
+                                        HDRFloat<SubType>{-1000, SubType{-0.5}}};
+    for (const IterType budget : {IterType{0}, IterType{10}}) {
+        reference.InitializePixel(budget, tiny, iterations, delta);
+        ASSERT_EQ(iterations, IterType{0});
+        ASSERT_EQ(delta.getRe().exp, HDRFloat<SubType>::MIN_BIG_EXPONENT());
+        ASSERT_TRUE(delta + tiny == tiny);
+
+        const HDRFloatComplex<SubType> orbit{SubType{-0.55}, SubType{-0.58}};
+        auto nextDelta = delta * (orbit * HDRFloat<SubType>{2} + delta) + tiny;
+        HdrReduce(nextDelta);
+        ASSERT_TRUE(nextDelta == tiny);
+        auto norm = (orbit + nextDelta).norm_squared();
+        auto deltaNorm = nextDelta.norm_squared();
+        HdrReduce(norm);
+        HdrReduce(deltaNorm);
+        ASSERT_FALSE(HdrCompareToBothPositiveReducedLT(norm, deltaNorm));
+    }
+    info.InitializePixel(false, IterType{10}, {}, gpuZero, iterations, delta);
+    ASSERT_EQ(iterations, IterType{0});
     ASSERT_EQ(delta.getRe().exp, HDRFloat<SubType>::MIN_BIG_EXPONENT());
     ASSERT_EQ((delta + tiny).getRe().exp, -1000);
     ASSERT_EQ((delta + tiny).getRe().mantissa, SubType{1});
@@ -428,8 +444,10 @@ TEST(LAEvaluation_ZeroBudgetDoesNotReadSteps)
     ASSERT_EQ(result.m_Z.getIm(), -0.5);
 }
 
-TEST(LAInitialization_PreservesCpuAndCudaFallbackZeroForms)
+TEST(LAInitialization_FallbackPreservesTinyOffsets)
 {
-    CheckBackendFallbackZeros<float>();
-    CheckBackendFallbackZeros<double>();
+    CheckBackendFallbackZeros<uint32_t, float>();
+    CheckBackendFallbackZeros<uint64_t, float>();
+    CheckBackendFallbackZeros<uint32_t, double>();
+    CheckBackendFallbackZeros<uint64_t, double>();
 }

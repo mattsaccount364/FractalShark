@@ -1148,3 +1148,72 @@ The same \code{RenderToPng} helper is used by
 \code{TestRenderGoldens} (\cref{subsec:crummy-test}) to produce
 golden-CRC regression images, ensuring that the headless path stays
 exercised automatically.
+
+\subsection{Render Regression Tests and Golden Updates}
+\label{subsec:render-regression-goldens}
+
+\code{FractalSharkTest} compares rendered images and reference artifacts
+against the shared Windows Release golden checksums. Every platform and build
+configuration validates against the same baselines. When an intentional image
+change affects only a few cases, those cases can be regenerated and verified
+without running the entire test suite.
+
+\paragraph{Updating selected goldens.}
+Run the updater from the repository root with Python~3 and a rebuilt Windows
+Release test executable. The \code{-{}-render} option requires explicit
+\code{-{}-filter} arguments. Filters accept exact test names or case-sensitive
+\code{*}/\code{?} wildcards; repeated filters include multiple groups.
+For example, the following PowerShell command updates the non-periodic
+reference-backend renders: \code{Ref0} uses the single-threaded backend and
+\code{Ref1} uses the multithreaded backend.
+
+\begin{lstlisting}[language={},upquote=true]
+python tools/update_render_goldens.py --render `
+    --filter "RenderGolden_*_Ref0_*" `
+    --filter "RenderGolden_*_Ref1_*"
+\end{lstlisting}
+
+The updater lists the selected tests, runs only those tests, and merges their
+changed checksums into \code{FractalSharkTest/GoldenChecksums.h}. Unselected
+goldens, incomplete placeholders, and existing entry formatting are preserved.
+Failed, skipped, disabled, incomplete, or non-Windows-Release generation runs
+are rejected before the header is changed. Multi-image tests are selected by
+their registered parent name and regenerate that parent's artifacts together.
+The updater does not build the executable or run unrelated tests.
+
+Add \code{-{}-use-gpu} for selected GPU cases, \code{-{}-exclude PATTERN} to
+omit matching cases, \code{-{}-test-exe PATH} to choose another Windows Release
+binary, or \code{-{}-output-dir PATH} to choose the artifact root. Each
+invocation retains a fresh run directory, a generation log, images, and the
+\code{checksums.tsv} and \code{provenance.txt} manifests. The default artifact
+root is \code{validation-render-goldens/}.
+
+Inspect the retained images and checksum diff before accepting the revised
+baselines. Rebuild after changing the header, then verify with the same filters
+without \code{-{}-generate-goldens}. The updater prints the matching
+verification command. For the example above, the PowerShell commands are:
+
+\begin{lstlisting}[language={},upquote=true]
+pwsh -NoProfile -ExecutionPolicy Bypass `
+    -File .\tools\build_windows.ps1 `
+    -Configuration Release -FullRebuild
+.\Release\FractalSharkTest.exe `
+    --filter "RenderGolden_*_Ref0_*" `
+    --filter "RenderGolden_*_Ref1_*"
+\end{lstlisting}
+
+\paragraph{Reviewing candidates before promotion.}
+The separate generation and promotion steps remain available when images
+should be reviewed before the checksum table is changed:
+
+\begin{lstlisting}[language={},upquote=true]
+.\Release\FractalSharkTest.exe --generate-goldens `
+    --filter "<exact test name>"
+python tools/update_render_goldens.py <run-directory>/checksums.tsv
+\end{lstlisting}
+
+Replace the placeholders with the selected test name and the retained run
+directory reported by the test runner. Generation reports \code{GENERATED}
+and retains candidate results; it does not modify the source table or validate
+the new checksums. Review the images before importing the manifest, then
+rebuild and verify only the selected cases as described above.

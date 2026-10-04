@@ -254,12 +254,8 @@ public:
                     IterType &iterations,
                     FloatComplexT &deltaZ) const
     {
-        m_AT.InitializePixel(m_IsValid && m_UseAT,
-                             maxIterations,
-                             deltaC,
-                             FloatComplexT{SubType{0}, SubType{0}},
-                             iterations,
-                             deltaZ);
+        m_AT.InitializePixel(
+            m_IsValid && m_UseAT, maxIterations, deltaC, FloatComplexT{}, iterations, deltaZ);
     }
 
     IterType

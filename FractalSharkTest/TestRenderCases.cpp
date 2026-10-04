@@ -47,18 +47,27 @@ Configure(Fractal &fractal, const RenderCase &test, size_t view)
 }
 
 bool
-Render(Fractal &fractal, std::string_view id)
+Render(Fractal &fractal, const RenderCase &test, std::string_view id)
 {
     fractal.GetRenderPool()->Drain();
     fractal.CalcFractal(true);
     ASSERT_FALSE(fractal.GetStopCalculating());
+    if (test.Kind == Scenario::ReferenceBackend && test.View == 5 &&
+        test.Algorithm.Algorithm == RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR &&
+        (test.Reference == RefOrbitCalc::PerturbationAlg::ST ||
+         test.Reference == RefOrbitCalc::PerturbationAlg::MT)) {
+        const auto &iters = fractal.GetCurIters();
+        ASSERT_EQ(iters.GetItersArrayValSlow(0, 0), uint64_t{77'496});
+        ASSERT_NE(iters.GetItersArrayValSlow(0, 0),
+                  iters.GetItersArrayValSlow(MatrixDimension() / 2, MatrixDimension() / 2));
+    }
     return SaveAndCheck(fractal, id);
 }
 
 void
 ReferenceRoundtrip(Fractal &fractal, const RenderCase &test)
 {
-    Render(fractal, test.Name + "_Original");
+    Render(fractal, test, test.Name + "_Original");
     const auto expectedIterations = fractal.GetNumIterations<uint64_t>();
     const auto save = [&](CompressToDisk compression, std::string_view suffix) {
         const auto path = std::filesystem::current_path() / ("orbit-" + std::string{suffix});
@@ -78,7 +87,7 @@ ReferenceRoundtrip(Fractal &fractal, const RenderCase &test)
 
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     Configure(fractal, test, 0);
-    Render(fractal, test.Name + "_Reset");
+    Render(fractal, test, test.Name + "_Reset");
     if (test.LoadSettings == ImaginaSettings::UseSaved) {
         ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO)));
     }
@@ -91,7 +100,7 @@ ReferenceRoundtrip(Fractal &fractal, const RenderCase &test)
     fractal.SetIterType(test.Bits);
     fractal.ResetDimensions(MatrixDimension(), MatrixDimension(), test.Antialiasing);
     fractal.ForceRecalc();
-    Render(fractal, test.Name + "_Decompressed");
+    Render(fractal, test, test.Name + "_Decompressed");
 }
 
 void
@@ -112,7 +121,7 @@ Imagina(Fractal &fractal, const RenderCase &test)
         }
     }
     if (hasPreset) {
-        Render(fractal, test.Name + "_Original");
+        Render(fractal, test, test.Name + "_Original");
     }
     fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
     ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO)));
@@ -123,7 +132,7 @@ Imagina(Fractal &fractal, const RenderCase &test)
     fractal.SetIterType(test.Bits);
     fractal.ResetDimensions(MatrixDimension(), MatrixDimension(), test.Antialiasing);
     fractal.ForceRecalc();
-    Render(fractal, test.Name + "_Imagina");
+    Render(fractal, test, test.Name + "_Imagina");
 }
 } // namespace
 
@@ -166,17 +175,17 @@ Execute(const RenderCase &test)
                     test.Algorithm.RequiresCompression ? RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2
                                                        : RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2);
                 Configure(fractal, hdrTest, test.View);
-                Render(fractal, test.Name + "_HdrOriginal");
+                Render(fractal, hdrTest, test.Name + "_HdrOriginal");
                 Configure(fractal, hdrTest, 12);
-                Render(fractal, test.Name + "_HdrPerturbed");
+                Render(fractal, hdrTest, test.Name + "_HdrPerturbed");
                 break;
             }
-            Render(fractal, test.Name + "_Original");
+            Render(fractal, test, test.Name + "_Original");
             Configure(fractal, test, 12);
-            Render(fractal, test.Name + "_Perturbed");
+            Render(fractal, test, test.Name + "_Perturbed");
             break;
         default:
-            Render(fractal, test.Name);
+            Render(fractal, test, test.Name);
             if (test.Kind == Scenario::ReferenceBackend &&
                 test.Reference >= RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed &&
                 test.Reference <= RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3) {
@@ -191,7 +200,7 @@ Execute(const RenderCase &test)
                 // Bound this additional reuse probe; the original preset is rendered above in full.
                 fractal.SetNumIterations<uint64_t>(500'000);
                 fractal.ForceRecalc();
-                ASSERT_TRUE(Render(fractal, test.Name + "_ReusedAfterZoom"));
+                ASSERT_TRUE(Render(fractal, test, test.Name + "_ReusedAfterZoom"));
                 RefOrbitDetails reusedDetails;
                 fractal.GetSomeDetails(reusedDetails);
                 ASSERT_TRUE(reusedDetails.ExtraIntermediatePrecision > 0);

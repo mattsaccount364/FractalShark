@@ -251,19 +251,7 @@ Every platform and configuration checks the same Windows Release goldens. Missin
 checksum mismatches fail ordinary runs, including differences caused by toolchain or CUDA math settings.
 Platform/configuration names in output paths and manifests identify the producing build only.
 
-Use Windows Release to intentionally regenerate and promote baselines, then validate them:
-
-```powershell
-.\Release\FractalSharkTest.exe --use-gpu --generate-goldens --filter "RenderGolden_*"
-python tools/update_render_goldens.py <run-directory>/checksums.tsv
-# Rebuild after changing GoldenChecksums.h, then run without --generate-goldens.
-.\Release\FractalSharkTest.exe --use-gpu --filter "RenderGolden_*"
-```
-
-Generation retains candidate results and reports `GENERATED`; it does not silently accept missing
-checksums or modify the source table. Review retained imagery before intentionally changing future
-baselines. The separate
-`FractalSharkCudaTest` executable uses the same options and exercises LA uploads, device lookups,
+The separate `FractalSharkCudaTest` executable uses the same options and exercises LA uploads, device lookups,
 and raw iteration regression renders in full, LA-only, and compressed modes;
 running it requires CUDA hardware. It is not part of the portable CPU test run.
 

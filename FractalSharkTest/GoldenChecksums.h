@@ -41,13 +41,13 @@ inline constexpr std::array<GoldenChecksum, 2485> GoldenChecksums{{
      "ad1e24a1ba6ae5e8"},
     {"RenderGolden_AutoSelection_AutoSelect_View1_Bits32_Store0_Ref2_AA1_Step1_Comp20_LA0_Threads1_"
      "Load0",
-     "bc298e694ca16200"},
+     "046ccafe17946e84"},
     {"RenderGolden_AutoSelection_AutoSelect_View1_Bits32_Store0_Ref2_AA1_Step1_Comp20_LA0_Threads1_"
      "Load0_AutoGpu",
      "bd4a1dbf5054bcff"},
     {"RenderGolden_AutoSelection_AutoSelect_View1_Bits64_Store0_Ref2_AA1_Step1_Comp20_LA0_Threads1_"
      "Load0",
-     "bc298e694ca16200"},
+     "046ccafe17946e84"},
     {"RenderGolden_AutoSelection_AutoSelect_View1_Bits64_Store0_Ref2_AA1_Step1_Comp20_LA0_Threads1_"
      "Load0_AutoGpu",
      "bd4a1dbf5054bcff"},
@@ -3469,7 +3469,7 @@ inline constexpr std::array<GoldenChecksum, 2485> GoldenChecksums{{
      "7ff6acbff23743bd"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits32_Store0_Ref0_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
-     "3c54ebf790796181"},
+     "331fb878ae2fc4ce"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits32_Store0_Ref10_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
      "f54bf88bfb103b50"},
@@ -3478,7 +3478,7 @@ inline constexpr std::array<GoldenChecksum, 2485> GoldenChecksums{{
      "88184a0787aa341c"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits32_Store0_Ref1_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
-     "3c54ebf790796181"},
+     "331fb878ae2fc4ce"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits32_Store0_Ref2_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
      "88184a0787aa341c"},
@@ -3517,7 +3517,7 @@ inline constexpr std::array<GoldenChecksum, 2485> GoldenChecksums{{
      "88184a0787aa341c"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits64_Store0_Ref0_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
-     "3c54ebf790796181"},
+     "331fb878ae2fc4ce"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits64_Store0_Ref10_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
      "f54bf88bfb103b50"},
@@ -3526,7 +3526,7 @@ inline constexpr std::array<GoldenChecksum, 2485> GoldenChecksums{{
      "88184a0787aa341c"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits64_Store0_Ref1_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
-     "3c54ebf790796181"},
+     "331fb878ae2fc4ce"},
     {"RenderGolden_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits64_Store0_Ref2_AA1_Step1_Comp20_"
      "LA0_Threads1_Load0",
      "88184a0787aa341c"},

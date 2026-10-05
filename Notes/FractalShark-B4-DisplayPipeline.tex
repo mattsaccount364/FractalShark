@@ -51,8 +51,9 @@ row-major \code{Color16} image on the compute stream. The device image
 passes directly to a lazily allocated, reusable PNG encoder; no
 uncompressed color image is downloaded for encoding.
 
-GPU saves follow the existing GPU coloring semantics, including the
-palette-rotation distinction described in \cref{subsec:coloring}.
+GPU saves apply the same palette rotation, saturation, auxiliary-depth shift,
+and palette lookup as CPU saves, using the snapshot's captured settings
+(\cref{subsec:coloring}).
 Encoding is lossless with respect to those final colors. GPU encoding
 and file-write failures return directly to the caller, whereas CPU
 background failures use the existing worker diagnostics. The GPU bridge

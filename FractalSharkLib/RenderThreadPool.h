@@ -391,7 +391,7 @@ private:
     };
 
     void ExecuteMutationOnly(const RenderWorkItem &item);
-    bool ExecuteRecolorCurrentFrame(RenderWorkItem &item);
+    bool ExecuteRecolorCurrentFrame(RenderWorkItem &item, RendererIndex rendererIdx);
     bool ShouldSkipRender(const RenderWorkItem &item) const;
     WorkerRenderResult RenderWorkerItem(RenderWorkItem &item,
                                         RendererIndex rendererIdx,

@@ -115,6 +115,8 @@ PngParallelSave::EncodeGpuPng(std::vector<unsigned char> &pngBytes)
                                                       m_PaletteColors.data(),
                                                       m_NumPaletteColors,
                                                       m_PaletteAuxDepth,
+                                                      m_PaletteRotate,
+                                                      m_MaxPossibleIters,
                                                       m_PaletteGeneration,
                                                       true);
     if (result == 0) {

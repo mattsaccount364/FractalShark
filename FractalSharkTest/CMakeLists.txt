@@ -8,6 +8,7 @@ target_sources(FractalSharkTest PRIVATE
     TestRenderCases.cpp
     TestRenderUtilities.cpp
     TestGpuRenderModes.cpp
+    TestGpuRecolor.cpp
     TestGpuReferenceBuckets.cpp
     TestTestFramework.cpp
     TestLAEvaluation.cpp
@@ -68,7 +69,7 @@ endif()
 target_link_libraries(FractalSharkTest PRIVATE CUDA::cudart_static FractalSharkLib FractalSharkGpuLib FractalSharkPlatform)
 
 # Separate hardware suite; the portable CPU suite remains runnable without CUDA hardware.
-add_executable(FractalSharkCudaTest main.cpp GpuTestRuntime.cpp TestLAUpload.cu TestLACudaRender.cpp TestPngCudaEncoder.cu TestPngSave.cpp)
+add_executable(FractalSharkCudaTest main.cpp GpuTestRuntime.cpp TestLAUpload.cu TestLACudaRender.cpp TestPngCudaEncoder.cu TestPngSave.cpp TestGpuRecolor.cpp)
 target_include_directories(FractalSharkCudaTest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}

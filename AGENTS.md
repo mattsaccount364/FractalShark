@@ -97,6 +97,11 @@ Prefer typed C++ functions, templates, and explicit callsite arguments over prep
 add function-like logging macros or wrappers for `__FILE__`/`__LINE__` when a non-inline function can be
 called directly; retain macros only when required by compiler, platform, or third-party contracts.
 
+Agent-generated and substantially modified code must be well commented. Explain non-obvious
+algorithms, data layouts, units, ownership, synchronization, and performance constraints. Replace
+unexplained magic numbers with typed named constants and explain derived bounds. Comments must
+describe intent and invariants, remain accurate, and avoid merely restating the code.
+
 When modifying a function, rename legacy `snake_case` identifiers within that function, but do not run
 whole-file naming sweeps. Use forward slashes in include paths. Use `std::unique_ptr` for ownership and
 raw pointers for non-owning references; do not introduce `std::shared_ptr`. Define `NOMINMAX` and

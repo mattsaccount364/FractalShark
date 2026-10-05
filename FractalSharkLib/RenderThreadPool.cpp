@@ -1547,7 +1547,7 @@ RenderThreadPool::ExecuteMutationOnly(const RenderWorkItem &item)
 }
 
 bool
-RenderThreadPool::ExecuteRecolorCurrentFrame(RenderWorkItem &item)
+RenderThreadPool::ExecuteRecolorCurrentFrame(RenderWorkItem &item, RendererIndex rendererIdx)
 {
     Fractal *fractal = item.FractalPtr;
 
@@ -1599,11 +1599,47 @@ RenderThreadPool::ExecuteRecolorCurrentFrame(RenderWorkItem &item)
                 return false;
             }
 
-            ColorizeCpuIterations(curIters,
-                                  fractal->GetPalette(),
-                                  item.NumIterations,
-                                  item.IterType,
-                                  item.GpuAntialiasing);
+            if (!item.Algorithm.UseLocalColor && !fractal->GpuBypassed()) {
+                auto result = fractal->InitializeGPUMemory(rendererIdx, true, curIters);
+                auto &renderer = fractal->GetRenderer(rendererIdx);
+                const auto coloringMode =
+                    fractal->GetPalette().GetPaletteType() == FractalPaletteType::Basic
+                        ? FractalShark::ColoringMode::BasicGrayscale
+                        : FractalShark::ColoringMode::PaletteLookup;
+                if (result == 0) {
+                    if (item.IterType == IterTypeEnum::Bits32) {
+                        result =
+                            renderer.RecolorFromHostIterations(curIters.GetIters<uint32_t>(),
+                                                               curIters.m_RoundedWidth,
+                                                               static_cast<uint32_t>(item.NumIterations),
+                                                               coloringMode,
+                                                               curIters.m_RoundedOutputColorMemory.get(),
+                                                               roundedColorTotal);
+                    } else {
+                        result =
+                            renderer.RecolorFromHostIterations(curIters.GetIters<uint64_t>(),
+                                                               curIters.m_RoundedWidth,
+                                                               static_cast<uint64_t>(item.NumIterations),
+                                                               coloringMode,
+                                                               curIters.m_RoundedOutputColorMemory.get(),
+                                                               roundedColorTotal);
+                    }
+                }
+                if (result != 0) {
+                    fractal->MessageBoxCudaError(result, __FILE__, __LINE__);
+                    return false;
+                }
+            } else {
+                ColorizeCpuIterations(curIters,
+                                      fractal->GetPalette(),
+                                      item.NumIterations,
+                                      item.IterType,
+                                      item.GpuAntialiasing);
+            }
+
+            if (ShouldSkipRender(item) || m_ShutdownFlag.load()) {
+                return false;
+            }
 
             colorData = AcquireFrameBuffer(roundedColorTotal);
             memcpy(colorData.get(),
@@ -1826,8 +1862,10 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                 continue;
             }
 
+            RendererIndex rendererIdx = m_RendererPool.Acquire();
+            jobScope.SetRenderer(rendererIdx);
             if (item.WorkMode == RenderWorkMode::RecolorCurrentFrame) {
-                const bool framePushed = ExecuteRecolorCurrentFrame(item);
+                const bool framePushed = ExecuteRecolorCurrentFrame(item, rendererIdx);
                 if (framePushed) {
                     jobScope.MarkFinalFramePushed();
                 }
@@ -1840,8 +1878,6 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                 continue;
             }
 
-            RendererIndex rendererIdx = m_RendererPool.Acquire();
-            jobScope.SetRenderer(rendererIdx);
             Fractal *fractal = item.FractalPtr;
             auto &renderer = fractal->GetRenderer(rendererIdx);
             renderer.SetComputeDoneNotification(&workerMutex, &workerCV);

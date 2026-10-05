@@ -5,6 +5,40 @@ This appendix records development notes that were posted over time.
 
 \subsection{Release Notes}
 
+\subsubsection{2026-10-4 Development --- GPU Palette Rotation and Recoloring}
+
+The shared GPU coloring kernel now applies palette rotation before the
+auxiliary-depth shift and palette lookup, matching CPU coloring and PNG
+saving. Escape classification precedes rotation, and saturated addition
+avoids overflow. Reused renderer allocations refresh their scalar coloring
+settings; PNG saves use the settings captured by their snapshot.
+
+Palette-only recoloring for GPU algorithms uploads the authoritative host
+iteration buffer to a leased renderer, runs the shared coloring and
+antialiasing kernel, and synchronously downloads logical color pixels.
+The existing presentation queue retains cancellation, superseding, paced
+animation, and disabled-repaint behavior. Basic recoloring preserves the
+CPU grayscale formula. CPU algorithms and instances that bypass CUDA retain
+the CPU recolorer (\cref{subsec:coloring}). PNG compression, workspace
+management, and the CPU save thread pool remain unchanged.
+
+Full Windows Debug and Release rebuilds and the repository formatter passed.
+Both configurations passed twenty-three focused CUDA PNG/save/recolor cases
+and eight CPU save/PNG/recolor cases. All ten selected Release render goldens
+passed. Debug passed eight; the two AA3 GPU color cases produced
+\code{61fdd74faa376fef} instead of the stored \code{6410c065e1ed8d70}.
+An isolated, unchanged Windows Debug build of commit \code{dc435cb}
+reproduced both discrepancies exactly. No golden checksums were regenerated,
+and neither the full render catalog nor WSL validation was run.
+Compute Sanitizer memcheck completed all twenty-three Debug CUDA cases with
+zero errors using named-pipe transport.
+
+Validation logs in \code{Debug/} and \code{Release/} use the
+\code{validation-gpu-recolor-} prefix. The isolated comparison resides in
+\code{Debug/validation-gpu-recolor-baseline/}.
+\Cref{subsec:png-validation} provides the focused commands and links the
+procedure for updating only selected goldens when pixels intentionally change.
+
 \subsubsection{2026-10-4 Development --- CUDA PNG Output}
 \label{subsec:png-development-record}
 

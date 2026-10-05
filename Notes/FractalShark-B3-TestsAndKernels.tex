@@ -66,36 +66,54 @@ The \code{CudaPngSave\_*} cases exercise the production dispatch path:
 both iteration widths, AA factors~1--4, odd dimensions, repeated saves
 and resizing, copied/moved snapshots, render-pool frame publication,
 synchronous Background completion, Unicode filenames, existing-file
-skips, write failures, and switching back to queued CPU saves.
-Comparisons with the CPU saver use settings where CPU and GPU coloring
-agree, including zero palette rotation. The existing CPU save-pool and
-PNG tests remain runnable without CUDA hardware.
+skips, write failures, and switching back to queued CPU saves. Rotated
+Default and custom palettes are compared exactly with the CPU saver for
+both iteration widths and AA factors~1--4. Save snapshots are constructed
+before subsequent rotation and auxiliary-depth mutations to verify that
+captured settings survive renderer reuse.
+
+The \code{CudaRecolor\_*} cases compare host-buffer GPU recoloring and
+normal GPU frame extraction against independent expected colors. Coverage
+includes padded input rows, odd dimensions, both iteration widths, AA
+factors~1--4, interior samples, rotation saturation and overflow boundaries,
+Default and custom palette tables, Basic grayscale, scalar-setting reuse,
+output-capacity checks, and recovery after invalid requests. Queued tests
+exercise repeated rotation, reset, resizing, paced cancellation, disabled
+repainting, later rendering, and unchanged iteration counts.
+\code{FractalSharkLib\_RecolorCpuWithoutCuda} exercises the same queued
+lifecycle with CUDA disabled. The existing CPU save-pool and PNG tests
+also remain runnable without CUDA hardware.
 
 Run the following PowerShell commands from the repository root after
 building both Windows configurations:
 
+\noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language={},upquote=true]
 foreach ($configuration in 'Debug', 'Release') {
     & ".\$configuration\FractalSharkCudaTest.exe" --use-gpu `
-        --filter=CudaPng_* --filter=CudaPngSave_*
+        --filter=CudaPng_* --filter=CudaPngSave_* --filter=CudaRecolor_*
     & ".\$configuration\FractalSharkTest.exe" `
         --filter=FractalSharkLib_SavePool* `
-        --filter=FractalSharkLib_PngEncoding*
+        --filter=FractalSharkLib_PngEncoding* `
+        --filter=FractalSharkLib_RecolorCpuWithoutCuda
 }
 \end{lstlisting}
+\end{minipage}
 
 \paragraph{Existing render goldens.}
 Two existing View0 cases exercise CPU64 and GPU1x32 PNG saves through
 \code{SaveCurrentFractal}. Their fixtures drain the render pool, call
 \code{CalcFractal(true)}, save the current frame, and wait for completion.
-Only those cases are selected by the following commands:
+The eight existing GPU color goldens additionally cover both iteration widths
+and AA factors~1--4. Only these ten cases are selected by the following commands:
 
 \noindent\begin{minipage}{\linewidth}
 \begin{lstlisting}[language={},upquote=true]
 foreach ($configuration in 'Debug', 'Release') {
     & ".\$configuration\FractalSharkTest.exe" --use-gpu `
         --filter "RenderGolden_Basic_Cpu64_View0_Bits32_Store0_*" `
-        --filter "RenderGolden_Basic_Gpu1x32_View0_Bits32_Store0_*"
+        --filter "RenderGolden_Basic_Gpu1x32_View0_Bits32_Store0_*" `
+        --filter "RenderGolden_GpuColors_*"
 }
 \end{lstlisting}
 \end{minipage}
@@ -128,7 +146,7 @@ $env:NV_COMPUTE_SANITIZER_LOCAL_CONNECTION_OVERRIDE = 'named-pipes'
 & "$env:CUDA_PATH/compute-sanitizer/compute-sanitizer.exe" `
     --tool memcheck --error-exitcode 99 `
     .\Debug\FractalSharkCudaTest.exe --use-gpu `
-    --filter=CudaPng_* --filter=CudaPngSave_*
+    --filter=CudaPng_* --filter=CudaPngSave_* --filter=CudaRecolor_*
 \end{lstlisting}
 
 The sanitizer communicates with its instrumented process. Named pipes

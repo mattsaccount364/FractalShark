@@ -92,6 +92,8 @@ public:
                               const Color16 *palInterleaved,
                               uint32_t palIters,
                               uint32_t paletteAuxDepth,
+                              uint64_t paletteRotation,
+                              uint64_t maxPossibleIterations,
                               uint64_t paletteGeneration,
                               bool expectedReuse);
 
@@ -115,11 +117,20 @@ public:
 
 public:
     template <typename IterType>
-    uint32_t RenderCurrent(IterType n_iterations,
-                           IterType *iter_buffer,
-                           Color16 *color_buffer,
-                           ReductionResults *reduction_results,
-                           bool progressive = false);
+    uint32_t RenderCurrent(IterType numIterations,
+                           IterType *iterBuffer,
+                           Color16 *colorBuffer,
+                           ReductionResults *reductionResults,
+                           bool progressive);
+
+    // Synchronous recoloring of the authoritative host iteration buffer; counts remain unchanged.
+    template <typename IterType>
+    uint32_t RecolorFromHostIterations(const IterType *hostIters,
+                                       size_t rowStrideElements,
+                                       IterType numIterations,
+                                       FractalShark::ColoringMode coloringMode,
+                                       Color16 *hostColors,
+                                       size_t hostColorCapacity);
 
     uint32_t SyncComputeStream();
 
@@ -190,7 +201,13 @@ private:
                      ResetStreams streams);
     void ClearLocals();
 
-    template <typename IterType> uint32_t RunAntialiasing(IterType n_iterations, cudaStream_t stream);
+    template <typename IterType>
+    uint32_t RunAntialiasing(IterType numIterations,
+                             cudaStream_t stream,
+                             FractalShark::ColoringMode coloringMode);
+
+    template <typename IterType>
+    uint32_t UploadHostIterations(const IterType *hostIters, size_t rowStrideElements);
 
     template <typename IterType>
     uint32_t ExtractItersAndColors(IterType *iter_buffer,

@@ -2,66 +2,56 @@
 
 template <typename IterType, uint32_t Antialiasing, bool ScaledColor>
 __global__ void
-antialiasing_kernel(const IterType *__restrict__ OutputIterMatrix,
-                    uint32_t Width,
-                    uint32_t Height,
-                    AntialiasedColors OutputColorMatrix,
-                    Palette Pals,
-                    int local_color_width,
-                    int local_color_height,
-                    IterType n_iterations)
+antialiasing_kernel(const IterType *__restrict__ outputIterMatrix,
+                    uint32_t width,
+                    uint32_t height,
+                    AntialiasedColors outputColorMatrix,
+                    Palette pals,
+                    int colorWidth,
+                    int colorHeight,
+                    IterType numIterations,
+                    FractalShark::ColoringMode coloringMode)
 {
-    const int output_x = blockIdx.x * blockDim.x + threadIdx.x;
-    const int output_y = blockIdx.y * blockDim.y + threadIdx.y;
-
-    if (output_x >= local_color_width || output_y >= local_color_height)
+    const int outputX = blockIdx.x * blockDim.x + threadIdx.x;
+    const int outputY = blockIdx.y * blockDim.y + threadIdx.y;
+    if (outputX >= colorWidth || outputY >= colorHeight) {
         return;
+    }
 
-    const uint64_t color_idx = local_color_width * output_y + output_x; // do not use ConvertLocToIndex
+    const size_t colorIndex = static_cast<size_t>(colorWidth) * outputY + outputX;
     constexpr auto totalAA = Antialiasing * Antialiasing;
+    const uint64_t maximum = pals.m_MaxPossibleIterations - 1;
+    const uint64_t basicFactor = numIterations > 65536 ? 1 : 65536 / numIterations;
+    size_t accR = 0;
+    size_t accG = 0;
+    size_t accB = 0;
 
-    // TODO reduction
-    // if constexpr (ScaledColor) {
-    //    IterType maxIters = 0, minIters;
-    //    for (size_t input_x = output_x * Antialiasing;
-    //        input_x < (output_x + 1) * Antialiasing;
-    //        input_x++) {
-    //        for (size_t input_y = output_y * Antialiasing;
-    //            input_y < (output_y + 1) * Antialiasing;
-    //            input_y++) {
-    //            size_t idx = ConvertLocToIndex(input_x, input_y, Width);
-    //            IterType numIters = OutputIterMatrix[idx];
-    //        }
-    //    }
-    //}
-
-    size_t acc_r = 0;
-    size_t acc_g = 0;
-    size_t acc_b = 0;
-
-    for (size_t input_x = output_x * Antialiasing; input_x < (output_x + 1) * Antialiasing; input_x++) {
-        for (size_t input_y = output_y * Antialiasing; input_y < (output_y + 1) * Antialiasing;
-             input_y++) {
-
-            // size_t idx = input_y * Width + input_x;
-            size_t idx = ConvertLocToIndex(input_x, input_y, Width);
-            IterType numIters = OutputIterMatrix[idx];
-
-            if (numIters < n_iterations) {
-                const auto palIndex = (numIters >> Pals.palette_aux_depth) % Pals.local_palIters;
-                acc_r += Pals.local_pal[palIndex].r;
-                acc_g += Pals.local_pal[palIndex].g;
-                acc_b += Pals.local_pal[palIndex].b;
+    for (size_t inputX = outputX * Antialiasing; inputX < (outputX + 1) * Antialiasing; ++inputX) {
+        for (size_t inputY = outputY * Antialiasing; inputY < (outputY + 1) * Antialiasing; ++inputY) {
+            const uint64_t count = outputIterMatrix[ConvertLocToIndex(inputX, inputY, width)];
+            // Escape status depends on the original count, before rotation and saturation.
+            if (count < numIterations) {
+                const uint64_t rotated = count >= maximum || pals.m_PaletteRotation >= maximum - count
+                                             ? maximum
+                                             : count + pals.m_PaletteRotation;
+                const uint64_t shifted = rotated >> pals.palette_aux_depth;
+                if (coloringMode == FractalShark::ColoringMode::BasicGrayscale) {
+                    const auto gray = (shifted * basicFactor) & 65535;
+                    accR += gray;
+                    accG += gray;
+                    accB += gray;
+                } else {
+                    const auto palIndex = shifted % pals.local_palIters;
+                    accR += pals.local_pal[palIndex].r;
+                    accG += pals.local_pal[palIndex].g;
+                    accB += pals.local_pal[palIndex].b;
+                }
             }
         }
     }
 
-    acc_r /= totalAA;
-    acc_g /= totalAA;
-    acc_b /= totalAA;
-
-    OutputColorMatrix.aa_colors[color_idx].r = acc_r;
-    OutputColorMatrix.aa_colors[color_idx].g = acc_g;
-    OutputColorMatrix.aa_colors[color_idx].b = acc_b;
-    OutputColorMatrix.aa_colors[color_idx].a = 65535;
+    outputColorMatrix.aa_colors[colorIndex].r = accR / totalAA;
+    outputColorMatrix.aa_colors[colorIndex].g = accG / totalAA;
+    outputColorMatrix.aa_colors[colorIndex].b = accB / totalAA;
+    outputColorMatrix.aa_colors[colorIndex].a = 65535;
 }

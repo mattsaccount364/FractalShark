@@ -15,11 +15,31 @@
 namespace FractalShark::Png {
 namespace {
 
+// Pipeline: detect alpha -> serialize 16-bit samples -> choose/apply row filters ->
+// compress independent regions -> scan/compact -> zlib metadata -> PNG chunks/CRCs.
+// Kernels share one stream. The host reads only alpha/size metadata and final PNG bytes.
 constexpr unsigned WarpSize = 32;
-constexpr unsigned HashEntries = 4096;
+constexpr unsigned FullWarpMask = 0xffffffffu;
+// Launch policy, independent of the wire format: four warp jobs per block, wider
+// blocks for per-byte work, and smaller blocks for compaction and chunk headers.
 constexpr unsigned WarpsPerBlock = 4;
-constexpr size_t RegionSlotBytes = (Detail::DeflateRegionBytes * 9 + 20) / 8 + 4;
-constexpr uint64_t AdlerModulus = 65521;
+constexpr unsigned LinearThreadsPerBlock = 256;
+constexpr unsigned CopyThreadsPerBlock = 128;
+constexpr unsigned HashBits = 12;
+constexpr unsigned HashEntries = 1u << HashBits;
+constexpr unsigned HashShift = Detail::Format::WordBits - HashBits;
+constexpr unsigned HashMultiplier = 2654435761u;
+constexpr unsigned HashKeyBytes = Detail::Format::MinimumMatchBytes;
+constexpr unsigned InvalidRunCount = std::numeric_limits<unsigned>::max();
+// Fixed literals require at most nine bits per byte; even a shortest match costs no
+// more than its literals. Add the fixed header, end-of-block code, and alignment block.
+// Stored fallback and dynamic replacements never exceed this initial fixed candidate.
+constexpr size_t RegionSlotBytes = Detail::Format::CompressedRegionBytes(
+    Detail::DeflateRegionBytes * Detail::Format::FixedHighLiteralBits + Detail::Format::BlockHeaderBits +
+    Detail::Format::FixedShortLengthBits);
+
+static_assert(Detail::DeflateRegionBytes <= Detail::Format::StoredLengthMaximum);
+static_assert(Detail::IdatPayloadBytes <= Detail::Format::MaximumDimension);
 
 class PendingStreamWork {
 public:
@@ -51,6 +71,8 @@ struct CudaAllocationDeleter {
     }
 };
 
+// Grow-only allocation: a failed reserve retains the old buffer, and smaller images
+// reuse its capacity. Callers fence the stream before storage can be released.
 class DeviceBuffer {
 public:
     ~DeviceBuffer() = default;
@@ -122,20 +144,23 @@ AddSize(size_t first, size_t second, size_t &result)
 __device__ uint64_t
 WarpSum(uint64_t value)
 {
+    // All lanes must participate; warp kernels only return on a whole-row/region condition.
+    // Only lane zero receives the complete sum.
     for (unsigned offset = WarpSize / 2; offset != 0; offset /= 2) {
-        value += __shfl_down_sync(0xffffffffu, value, offset);
+        value += __shfl_down_sync(FullWarpMask, value, offset);
     }
     return value;
 }
 
 __global__ void
-DetectAlpha(const Color16 *pixels, size_t width, size_t height, size_t stride, unsigned *hasAlpha)
+DetectAlpha(
+    const Color16 *pixels, size_t width, size_t height, size_t rowStrideBytes, unsigned *hasAlpha)
 {
     const size_t index = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (index < width * height) {
         const auto *row = reinterpret_cast<const Color16 *>(
-            reinterpret_cast<const unsigned char *>(pixels) + (index / width) * stride);
-        if (row[index % width].a != 65535) {
+            reinterpret_cast<const unsigned char *>(pixels) + (index / width) * rowStrideBytes);
+        if (row[index % width].a != Detail::Format::MaximumSample) {
             atomicExch(hasAlpha, 1u);
         }
     }
@@ -145,23 +170,24 @@ __global__ void
 SerializePixels(const Color16 *pixels,
                 size_t width,
                 size_t height,
-                size_t stride,
+                size_t rowStrideBytes,
                 unsigned channels,
                 unsigned char *raw)
 {
     const size_t index = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (index < width * height) {
         const auto *row = reinterpret_cast<const Color16 *>(
-            reinterpret_cast<const unsigned char *>(pixels) + (index / width) * stride);
+            reinterpret_cast<const unsigned char *>(pixels) + (index / width) * rowStrideBytes);
         const Color16 pixel = row[index % width];
-        const size_t offset = index * channels * 2;
+        // PNG samples are big-endian, independent of native Color16 layout and row padding.
+        const size_t offset = index * channels * Detail::Format::SampleBytes;
         raw[offset] = static_cast<unsigned char>(pixel.r >> 8);
         raw[offset + 1] = static_cast<unsigned char>(pixel.r);
         raw[offset + 2] = static_cast<unsigned char>(pixel.g >> 8);
         raw[offset + 3] = static_cast<unsigned char>(pixel.g);
         raw[offset + 4] = static_cast<unsigned char>(pixel.b >> 8);
         raw[offset + 5] = static_cast<unsigned char>(pixel.b);
-        if (channels == 4) {
+        if (channels == Detail::Format::RgbaChannels) {
             raw[offset + 6] = static_cast<unsigned char>(pixel.a >> 8);
             raw[offset + 7] = static_cast<unsigned char>(pixel.a);
         }
@@ -171,6 +197,7 @@ SerializePixels(const Color16 *pixels,
 __device__ unsigned
 Paeth(unsigned left, unsigned above, unsigned upperLeft)
 {
+    // PNG mandates ties prefer left, then above, then upper-left.
     const int prediction = static_cast<int>(left + above) - static_cast<int>(upperLeft);
     const int leftDistance = abs(prediction - static_cast<int>(left));
     const int aboveDistance = abs(prediction - static_cast<int>(above));
@@ -182,26 +209,29 @@ Paeth(unsigned left, unsigned above, unsigned upperLeft)
 }
 
 __device__ unsigned char
-FilterByte(unsigned value, unsigned left, unsigned above, unsigned upperLeft, unsigned filter)
+FilterByte(
+    unsigned value, unsigned left, unsigned above, unsigned upperLeft, Detail::Format::Filter filter)
 {
     unsigned predictor = 0;
-    if (filter == 1) {
+    if (filter == Detail::Format::Filter::Sub) {
         predictor = left;
-    } else if (filter == 2) {
+    } else if (filter == Detail::Format::Filter::Up) {
         predictor = above;
-    } else if (filter == 3) {
+    } else if (filter == Detail::Format::Filter::Average) {
         predictor = (left + above) / 2;
-    } else if (filter == 4) {
+    } else if (filter == Detail::Format::Filter::Paeth) {
         predictor = Paeth(left, above, upperLeft);
     }
-    return static_cast<unsigned char>(value - predictor);
+    return static_cast<unsigned char>(value - predictor); // PNG differences wrap modulo 256.
 }
 
 __device__ unsigned
 DifferenceScore(unsigned char value)
 {
     // Match the bundled LodePNG LFS_MINSUM heuristic, including its 255 - value convention.
-    return value < 128 ? value : 255u - value;
+    constexpr unsigned signedByteBoundary = 1u << (Detail::Format::ByteBits - 1);
+    constexpr unsigned maximumByte = (1u << Detail::Format::ByteBits) - 1;
+    return value < signedByteBoundary ? value : maximumByte - value;
 }
 
 __global__ void
@@ -211,6 +241,7 @@ SelectFilters(const unsigned char *raw,
               unsigned pixelBytes,
               unsigned char *filters)
 {
+    // One warp scores a row. Keep five scalar accumulators rather than a CUDA local array.
     const size_t row = static_cast<size_t>(blockIdx.x) * WarpsPerBlock + threadIdx.x / WarpSize;
     const unsigned lane = threadIdx.x % WarpSize;
     if (row >= height) {
@@ -227,11 +258,13 @@ SelectFilters(const unsigned char *raw,
         const unsigned left = byte >= pixelBytes ? raw[index - pixelBytes] : 0;
         const unsigned above = row != 0 ? raw[index - rowBytes] : 0;
         const unsigned corner = row != 0 && byte >= pixelBytes ? raw[index - rowBytes - pixelBytes] : 0;
-        noneScore += value;
-        subScore += DifferenceScore(FilterByte(value, left, above, corner, 1));
-        upScore += DifferenceScore(FilterByte(value, left, above, corner, 2));
-        averageScore += DifferenceScore(FilterByte(value, left, above, corner, 3));
-        paethScore += DifferenceScore(FilterByte(value, left, above, corner, 4));
+        noneScore += value; // None uses unsigned samples; differences use signed-magnitude scoring.
+        subScore += DifferenceScore(FilterByte(value, left, above, corner, Detail::Format::Filter::Sub));
+        upScore += DifferenceScore(FilterByte(value, left, above, corner, Detail::Format::Filter::Up));
+        averageScore +=
+            DifferenceScore(FilterByte(value, left, above, corner, Detail::Format::Filter::Average));
+        paethScore +=
+            DifferenceScore(FilterByte(value, left, above, corner, Detail::Format::Filter::Paeth));
     }
     noneScore = WarpSum(noneScore);
     subScore = WarpSum(subScore);
@@ -239,22 +272,23 @@ SelectFilters(const unsigned char *raw,
     averageScore = WarpSum(averageScore);
     paethScore = WarpSum(paethScore);
     if (lane == 0) {
-        unsigned best = 0;
+        // Strict comparisons preserve the first filter on ties, matching the CPU heuristic.
+        Detail::Format::Filter best = Detail::Format::Filter::None;
         uint64_t score = noneScore;
         if (subScore < score) {
-            best = 1;
+            best = Detail::Format::Filter::Sub;
             score = subScore;
         }
         if (upScore < score) {
-            best = 2;
+            best = Detail::Format::Filter::Up;
             score = upScore;
         }
         if (averageScore < score) {
-            best = 3;
+            best = Detail::Format::Filter::Average;
             score = averageScore;
         }
         if (paethScore < score) {
-            best = 4;
+            best = Detail::Format::Filter::Paeth;
         }
         filters[row] = static_cast<unsigned char>(best);
     }
@@ -269,18 +303,18 @@ FilterScanlines(const unsigned char *raw,
                 unsigned char *filtered)
 {
     const size_t index = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
-    const size_t filteredRowBytes = rowBytes + 1;
+    const size_t filteredRowBytes = rowBytes + Detail::Format::FilterPrefixBytes;
     if (index >= filteredRowBytes * height) {
         return;
     }
     const size_t row = index / filteredRowBytes;
     const size_t column = index % filteredRowBytes;
-    const unsigned filter = filters[row];
+    const auto filter = static_cast<Detail::Format::Filter>(filters[row]);
     if (column == 0) {
         filtered[index] = static_cast<unsigned char>(filter);
         return;
     }
-    const size_t byte = column - 1;
+    const size_t byte = column - Detail::Format::FilterPrefixBytes;
     const size_t source = row * rowBytes + byte;
     const unsigned value = raw[source];
     const unsigned left = byte >= pixelBytes ? raw[source - pixelBytes] : 0;
@@ -289,28 +323,47 @@ FilterScanlines(const unsigned char *raw,
     filtered[index] = FilterByte(value, left, above, corner, filter);
 }
 
+// DEFLATE fields enter least-significant bit first. Canonical Huffman codes are
+// reversed before Write; only lane zero owns and advances a region's writer.
 class BitWriter {
 public:
     __device__ explicit BitWriter(unsigned char *output) : m_Output{output} {}
 
     __device__ void
-    Write(unsigned value, unsigned count)
+    Write(unsigned value, unsigned bitCount)
     {
-        m_Bits |= static_cast<uint64_t>(value) << m_Count;
-        m_Count += count;
-        while (m_Count >= 8) {
+        m_Bits |= static_cast<uint64_t>(value) << m_BitCount;
+        m_BitCount += bitCount;
+        while (m_BitCount >= Detail::Format::ByteBits) {
             m_Output[m_Bytes++] = static_cast<unsigned char>(m_Bits);
-            m_Bits >>= 8;
-            m_Count -= 8;
+            m_Bits >>= Detail::Format::ByteBits;
+            m_BitCount -= Detail::Format::ByteBits;
         }
     }
 
     __device__ void
     Align()
     {
-        if (m_Count != 0) {
-            Write(0, 8 - m_Count);
+        if (m_BitCount != 0) {
+            Write(0, Detail::Format::ByteBits - m_BitCount);
         }
+    }
+
+    __device__ void
+    BlockHeader(Detail::Format::BlockType type, bool final)
+    {
+        Write((static_cast<unsigned>(type) << Detail::Format::FinalFlagBits) |
+                  static_cast<unsigned>(final),
+              Detail::Format::BlockHeaderBits);
+    }
+
+    __device__ void
+    EmptyStoredBlock(bool final)
+    {
+        BlockHeader(Detail::Format::BlockType::Stored, final);
+        Align();
+        Write(0, Detail::Format::StoredLengthBits);
+        Write(Detail::Format::StoredLengthMaximum, Detail::Format::StoredLengthBits);
     }
 
     __device__ void
@@ -322,20 +375,20 @@ public:
         }
         unsigned code = 0;
         unsigned count = 0;
-        if (symbol <= 143) {
-            code = 0x30 + symbol;
-            count = 8;
-        } else if (symbol <= 255) {
-            code = 0x190 + symbol - 144;
-            count = 9;
-        } else if (symbol <= 279) {
-            code = symbol - 256;
-            count = 7;
+        if (symbol <= Detail::Format::FixedLowLiteralEnd) {
+            code = Detail::Format::FixedLowLiteralCode + symbol;
+            count = Detail::Format::FixedLowLiteralBits;
+        } else if (symbol <= Detail::Format::FixedHighLiteralEnd) {
+            code = Detail::Format::FixedHighLiteralCode + symbol - Detail::Format::FixedHighLiteralBegin;
+            count = Detail::Format::FixedHighLiteralBits;
+        } else if (symbol <= Detail::Format::FixedShortLengthEnd) {
+            code = symbol - Detail::Format::EndOfBlockSymbol;
+            count = Detail::Format::FixedShortLengthBits;
         } else {
-            code = 0xc0 + symbol - 280;
-            count = 8;
+            code = Detail::Format::FixedLongLengthCode + symbol - Detail::Format::FixedLongLengthBegin;
+            count = Detail::Format::FixedLongLengthBits;
         }
-        Write(__brev(code) >> (32 - count), count);
+        Write(__brev(code) >> (Detail::Format::WordBits - count), count);
     }
 
     __device__ void
@@ -344,15 +397,22 @@ public:
           const Detail::Huffman::Region *table,
           Detail::Huffman::Region *histogram)
     {
-        unsigned lengthSymbol = 285;
+        unsigned lengthSymbol = Detail::Format::MaximumLengthSymbol;
         unsigned lengthValue = 0;
         unsigned lengthBits = 0;
-        if (length == 258) {
-            lengthSymbol = 285;
+        // The maximum match has a dedicated code; other lengths advance through the
+        // RFC's ranges arithmetically, without a device-local length/distance table.
+        if (length == Detail::Format::MaximumMatchBytes) {
+            lengthSymbol = Detail::Format::MaximumLengthSymbol;
         } else {
-            unsigned base = 3;
-            for (unsigned symbol = 257; symbol <= 284; ++symbol) {
-                const unsigned extra = symbol <= 264 ? 0 : (symbol - 261) / 4;
+            unsigned base = Detail::Format::MinimumMatchBytes;
+            for (unsigned symbol = Detail::Format::FirstLengthSymbol;
+                 symbol < Detail::Format::MaximumLengthSymbol;
+                 ++symbol) {
+                const unsigned lengthIndex = symbol - Detail::Format::FirstLengthSymbol;
+                const unsigned extra = lengthIndex < Detail::Format::LengthCodesWithoutExtraBits
+                                           ? 0
+                                           : lengthIndex / Detail::Format::LengthCodesPerExtraBit - 1;
                 if (length < base + (1u << extra)) {
                     lengthSymbol = symbol;
                     lengthValue = length - base;
@@ -369,11 +429,14 @@ public:
             histogram->m_ExtraBits += lengthBits;
         }
         unsigned base = 1;
-        for (unsigned code = 0; code < 30; ++code) {
-            const unsigned extra = code < 4 ? 0 : code / 2 - 1;
+        for (unsigned code = 0; code < Detail::Format::DistanceSymbols; ++code) {
+            const unsigned extra = code < Detail::Format::DistanceCodesWithoutExtraBits
+                                       ? 0
+                                       : code / Detail::Format::DistanceCodesPerExtraBit - 1;
             if (distance < base + (1u << extra)) {
                 if (table == nullptr) {
-                    Write(__brev(code) >> 27, 5);
+                    Write(__brev(code) >> (Detail::Format::WordBits - Detail::Format::FixedDistanceBits),
+                          Detail::Format::FixedDistanceBits);
                 } else {
                     Write(table->m_Codes[Detail::Huffman::LiteralSymbols + code],
                           table->m_Lengths[Detail::Huffman::LiteralSymbols + code]);
@@ -398,27 +461,31 @@ public:
 private:
     unsigned char *m_Output;
     uint64_t m_Bits{};
-    unsigned m_Count{};
+    unsigned m_BitCount{};
     size_t m_Bytes{};
 };
 
 __device__ unsigned
 HashAt(const unsigned char *input, unsigned position)
 {
+    // Multiplicative hashing mixes each three-byte key; the high HashBits select one
+    // bucket. Preserve the multiplier and wraparound arithmetic for identical parsing.
     const unsigned key = (static_cast<unsigned>(input[position]) << 16) |
                          (static_cast<unsigned>(input[position + 1]) << 8) | input[position + 2];
-    return (key * 2654435761u) >> 20;
+    return (key * HashMultiplier) >> HashShift;
 }
 
 __device__ unsigned
 CompareMatch(
     const unsigned char *input, unsigned position, unsigned previous, unsigned maximum, unsigned lane)
 {
+    // Compare 32 bytes at a time. The first ballot bit identifies the earliest
+    // differing byte; even lanes beyond maximum must participate in the ballot.
     unsigned matched = 0;
     while (matched < maximum) {
         const unsigned offset = matched + lane;
         const bool different = offset < maximum && input[position + offset] != input[previous + offset];
-        const unsigned mismatches = __ballot_sync(0xffffffffu, different);
+        const unsigned mismatches = __ballot_sync(FullWarpMask, different);
         if (mismatches != 0) {
             return matched + static_cast<unsigned>(__ffs(static_cast<int>(mismatches)) - 1);
         }
@@ -436,21 +503,26 @@ ParseRegion(const unsigned char *source,
             const Detail::Huffman::Region *table,
             Detail::Huffman::Region *histogram)
 {
+    // Greedy parsing is warp-uniform. Heads store position+1 so zero denotes no match.
+    // Each region owns its dictionary; matches may overlap but never reference another region.
+    // Replay uses the same insert order, reproducing the baseline token stream and histogram.
     unsigned position = 0;
     while (position < bytes) {
         unsigned previous = 0;
-        if (lane == 0 && position + 2 < bytes) {
+        if (lane == 0 && position + HashKeyBytes <= bytes) {
             previous = heads[HashAt(source, position)];
         }
-        previous = __shfl_sync(0xffffffffu, previous, 0);
+        previous = __shfl_sync(FullWarpMask, previous, 0);
         unsigned length = 0;
         if (previous != 0) {
-            const unsigned maximum = bytes - position < 258 ? bytes - position : 258;
+            const unsigned maximum = bytes - position < Detail::Format::MaximumMatchBytes
+                                         ? bytes - position
+                                         : Detail::Format::MaximumMatchBytes;
             length = CompareMatch(source, position, previous - 1, maximum, lane);
         }
-        const unsigned consumed = length >= 3 ? length : 1;
+        const unsigned consumed = length >= Detail::Format::MinimumMatchBytes ? length : 1;
         if (lane == 0) {
-            if (length >= 3) {
+            if (length >= Detail::Format::MinimumMatchBytes) {
                 writer.Match(length, position - (previous - 1), table, histogram);
             } else {
                 writer.Symbol(source[position], table);
@@ -463,7 +535,7 @@ ParseRegion(const unsigned char *source,
         // when the warp inserts several skipped positions into the same bucket.
         for (unsigned offset = lane; offset < consumed; offset += WarpSize) {
             const unsigned inserted = position + offset;
-            if (inserted + 2 < bytes) {
+            if (inserted + HashKeyBytes <= bytes) {
                 atomicMax(heads + HashAt(source, inserted), inserted + 1);
             }
         }
@@ -475,11 +547,30 @@ ParseRegion(const unsigned char *source,
 __device__ void
 FinishRegion(BitWriter &writer, const Detail::Huffman::Region *table)
 {
-    writer.Symbol(256, table);
-    writer.Write(0, 3); // Empty stored block restores byte alignment.
-    writer.Align();
-    writer.Write(0, 16);
-    writer.Write(65535, 16);
+    // Align each independent region so a prefix scan can concatenate byte-sized slots.
+    // Regions remain non-final; WriteZlibMetadata supplies the stream's only final block.
+    writer.Symbol(Detail::Format::EndOfBlockSymbol, table);
+    writer.EmptyStoredBlock(false);
+}
+
+__device__ unsigned
+RegionByteCount(size_t inputBytes, size_t regionStart)
+{
+    const size_t remaining = inputBytes - regionStart;
+    return static_cast<unsigned>(remaining < Detail::DeflateRegionBytes ? remaining
+                                                                        : Detail::DeflateRegionBytes);
+}
+
+// A byte-aligned stored block uses a padded header byte and little-endian LEN/NLEN.
+// This layout serves both region fallback and the final empty block in the zlib stream.
+__device__ void
+WriteStoredBlockHeader(unsigned char *output, unsigned payloadBytes, bool final)
+{
+    output[0] = static_cast<unsigned char>(final);
+    output[1] = static_cast<unsigned char>(payloadBytes);
+    output[2] = static_cast<unsigned char>(payloadBytes >> 8);
+    output[3] = static_cast<unsigned char>(~payloadBytes);
+    output[4] = static_cast<unsigned char>((~payloadBytes) >> 8);
 }
 
 __global__ void
@@ -499,9 +590,7 @@ CompressRegions(const unsigned char *input,
         return;
     }
     const size_t start = region * Detail::DeflateRegionBytes;
-    const unsigned bytes = static_cast<unsigned>(inputBytes - start < Detail::DeflateRegionBytes
-                                                     ? inputBytes - start
-                                                     : Detail::DeflateRegionBytes);
+    const unsigned bytes = RegionByteCount(inputBytes, start);
     const unsigned char *source = input + start;
     unsigned *heads = hashHeads + region * HashEntries;
     unsigned char *slot = slots + region * RegionSlotBytes;
@@ -515,10 +604,12 @@ CompressRegions(const unsigned char *input,
         }
         __syncwarp();
         if (lane == 0) {
-            histogram->m_Frequencies[256] = 1;
+            histogram->m_Frequencies[Detail::Format::EndOfBlockSymbol] = 1;
             histogram->m_ExtraBits = 0;
         }
     }
+    // Regional Adler components omit the initial one. Metadata later adds the global
+    // initial state and shifts each regional weighted sum by the bytes following it.
     uint64_t sum = 0;
     uint64_t weighted = 0;
     for (unsigned byte = lane; byte < bytes; byte += WarpSize) {
@@ -534,7 +625,7 @@ CompressRegions(const unsigned char *input,
     __syncwarp();
     BitWriter writer{slot};
     if (lane == 0) {
-        writer.Write(2, 3); // BFINAL=0, fixed Huffman codes.
+        writer.BlockHeader(Detail::Format::BlockType::Fixed, false);
     }
     ParseRegion(source, bytes, heads, lane, writer, nullptr, histogram);
     if (lane == 0) {
@@ -542,17 +633,14 @@ CompressRegions(const unsigned char *input,
         sizes[region] = writer.Bytes();
     }
     __syncwarp();
-    if (sizes[region] >= bytes + 5u) {
+    // Stored wins ties. The fixed pass still records frequencies for possible dynamic coding.
+    if (sizes[region] >= bytes + Detail::Format::StoredBlockHeaderBytes) {
         if (lane == 0) {
-            slot[0] = 0;
-            slot[1] = static_cast<unsigned char>(bytes);
-            slot[2] = static_cast<unsigned char>(bytes >> 8);
-            slot[3] = static_cast<unsigned char>(~bytes);
-            slot[4] = static_cast<unsigned char>((~bytes) >> 8);
-            sizes[region] = bytes + 5u;
+            WriteStoredBlockHeader(slot, bytes, false);
+            sizes[region] = bytes + Detail::Format::StoredBlockHeaderBytes;
         }
         for (unsigned byte = lane; byte < bytes; byte += WarpSize) {
-            slot[byte + 5] = source[byte];
+            slot[byte + Detail::Format::StoredBlockHeaderBytes] = source[byte];
         }
     }
 }
@@ -572,6 +660,8 @@ OptimizeRegions(const unsigned char *input,
         return;
     }
     Detail::Huffman::Region *table = huffman + region;
+    // Table construction is serial in lane zero. Publish its decision to the whole
+    // warp before skipping or replaying, so every collective has all lanes present.
     if (lane == 0) {
         Detail::Huffman::BuildRegion(table, sizes[region]);
     }
@@ -585,9 +675,7 @@ OptimizeRegions(const unsigned char *input,
     }
     __syncwarp();
     const size_t start = region * Detail::DeflateRegionBytes;
-    const unsigned bytes = static_cast<unsigned>(inputBytes - start < Detail::DeflateRegionBytes
-                                                     ? inputBytes - start
-                                                     : Detail::DeflateRegionBytes);
+    const unsigned bytes = RegionByteCount(inputBytes, start);
     BitWriter writer{slots + region * RegionSlotBytes};
     if (lane == 0) {
         Detail::Huffman::WriteHeader(writer, table);
@@ -616,8 +704,8 @@ EncodeRunsFixture(const unsigned *lengths,
                   unsigned *runCount)
 {
     for (unsigned index = 0; index < count; ++index) {
-        if (lengths[index] > 15) {
-            *runCount = 0xffffffffu;
+        if (lengths[index] > Detail::Format::MaximumCodeBits) {
+            *runCount = InvalidRunCount;
             return;
         }
     }
@@ -643,33 +731,34 @@ WriteZlibMetadata(size_t inputBytes,
                   unsigned char *zlib,
                   uint64_t *resultBytes)
 {
+    // s2 weights each byte by its remaining distance to the end of the entire input.
+    // Shift the regional weighted sum by the suffix length, then add the initial s1=1.
     uint64_t sum = 0;
     uint64_t weighted = 0;
     for (size_t region = threadIdx.x; region < regions; region += WarpSize) {
         const size_t end = (region + 1) * Detail::DeflateRegionBytes < inputBytes
                                ? (region + 1) * Detail::DeflateRegionBytes
                                : inputBytes;
-        sum = (sum + adlerSums[region]) % AdlerModulus;
-        weighted = (weighted + ((inputBytes - end) % AdlerModulus) * (adlerSums[region] % AdlerModulus) +
+        sum = (sum + adlerSums[region]) % Detail::Format::AdlerModulus;
+        weighted = (weighted +
+                    ((inputBytes - end) % Detail::Format::AdlerModulus) *
+                        (adlerSums[region] % Detail::Format::AdlerModulus) +
                     adlerWeighted[region]) %
-                   AdlerModulus;
+                   Detail::Format::AdlerModulus;
     }
     sum = WarpSum(sum);
     weighted = WarpSum(weighted);
     if (threadIdx.x == 0) {
-        const size_t end = 2 + offsets[regions - 1] + sizes[regions - 1];
-        zlib[0] = 0x78;
-        zlib[1] = 0x01;
-        zlib[end] = 1; // The only final block in the stream.
-        zlib[end + 1] = 0;
-        zlib[end + 2] = 0;
-        zlib[end + 3] = 255;
-        zlib[end + 4] = 255;
-        const uint32_t adler =
-            static_cast<uint32_t>((((inputBytes % AdlerModulus + weighted) % AdlerModulus) << 16) |
-                                  ((1 + sum) % AdlerModulus));
-        WriteBigEndian(zlib + end + 5, adler);
-        *resultBytes = end + 9;
+        const size_t end = Detail::Format::ZlibHeaderBytes + offsets[regions - 1] + sizes[regions - 1];
+        zlib[0] = Detail::Format::ZlibCmf;
+        zlib[1] = Detail::Format::ZlibFlags;
+        WriteStoredBlockHeader(zlib + end, 0, true); // The only final block in the stream.
+        const uint32_t adler = static_cast<uint32_t>(
+            (((inputBytes % Detail::Format::AdlerModulus + weighted) % Detail::Format::AdlerModulus)
+             << (Detail::Format::WordBits / 2)) |
+            ((1 + sum) % Detail::Format::AdlerModulus));
+        WriteBigEndian(zlib + end + Detail::Format::StoredBlockHeaderBytes, adler);
+        *resultBytes = end + Detail::Format::StoredBlockHeaderBytes + Detail::Format::AdlerBytes;
     }
 }
 
@@ -683,7 +772,8 @@ CompactRegions(const unsigned char *slots,
     const size_t region = blockIdx.x;
     if (region < regions) {
         for (size_t byte = threadIdx.x; byte < sizes[region]; byte += blockDim.x) {
-            zlib[2 + offsets[region] + byte] = slots[region * RegionSlotBytes + byte];
+            zlib[Detail::Format::ZlibHeaderBytes + offsets[region] + byte] =
+                slots[region * RegionSlotBytes + byte];
         }
     }
 }
@@ -691,14 +781,14 @@ CompactRegions(const unsigned char *slots,
 __device__ uint32_t
 CrcBytes(const unsigned char *input, size_t bytes)
 {
-    uint32_t crc = 0xffffffffu;
+    uint32_t crc = Detail::Format::CrcInitial;
     for (size_t byte = 0; byte < bytes; ++byte) {
         crc ^= input[byte];
-        for (unsigned bit = 0; bit < 8; ++bit) {
-            crc = (crc >> 1) ^ (0xedb88320u & (0u - (crc & 1u)));
+        for (unsigned bit = 0; bit < Detail::Format::ByteBits; ++bit) {
+            crc = (crc >> 1) ^ (Detail::Format::CrcPolynomial & (0u - (crc & 1u)));
         }
     }
-    return crc ^ 0xffffffffu;
+    return crc ^ Detail::Format::CrcInitial;
 }
 
 // Reflected CRC polynomial multiplication, with bit 31 representing the identity.
@@ -707,11 +797,11 @@ __device__ uint32_t
 CrcMultiply(uint32_t first, uint32_t second)
 {
     uint32_t product = 0;
-    for (uint32_t mask = 0x80000000u; mask != 0; mask >>= 1) {
+    for (uint32_t mask = Detail::Format::CrcIdentity; mask != 0; mask >>= 1) {
         if ((first & mask) != 0) {
             product ^= second;
         }
-        second = (second >> 1) ^ (0xedb88320u & (0u - (second & 1u)));
+        second = (second >> 1) ^ (Detail::Format::CrcPolynomial & (0u - (second & 1u)));
     }
     return product;
 }
@@ -719,8 +809,10 @@ CrcMultiply(uint32_t first, uint32_t second)
 __device__ uint32_t
 CrcCombine(uint32_t first, uint32_t second, size_t secondBytes)
 {
-    uint32_t factor = 0x80000000u;
-    uint32_t power = 0x00800000u; // x^8.
+    // Advance the prefix by secondBytes using exponentiation by squaring, then XOR
+    // the suffix CRC. The byte count is essential: CRC concatenation is order-sensitive.
+    uint32_t factor = Detail::Format::CrcIdentity;
+    uint32_t power = Detail::Format::CrcBytePower;
     while (secondBytes != 0) {
         if ((secondBytes & 1) != 0) {
             factor = CrcMultiply(power, factor);
@@ -729,6 +821,25 @@ CrcCombine(uint32_t first, uint32_t second, size_t secondBytes)
         power = CrcMultiply(power, power);
     }
     return CrcMultiply(factor, first) ^ second;
+}
+
+__device__ void
+WriteChunkType(unsigned char *header, char first, char second, char third, char fourth)
+{
+    unsigned char *type = header + Detail::Format::ChunkLengthBytes;
+    type[0] = first;
+    type[1] = second;
+    type[2] = third;
+    type[3] = fourth;
+}
+
+__device__ void
+WriteChunkCrc(unsigned char *header, size_t payloadBytes)
+{
+    // PNG CRC covers the chunk type followed by its payload, excluding length and CRC.
+    WriteBigEndian(header + Detail::Format::ChunkHeaderBytes + payloadBytes,
+                   CrcBytes(header + Detail::Format::ChunkLengthBytes,
+                            Detail::Format::ChunkTypeBytes + payloadBytes));
 }
 
 __global__ void
@@ -742,34 +853,50 @@ WritePngHeaders(uint32_t width,
     if (threadIdx.x != 0) {
         return;
     }
-    png[0] = 137;
-    png[1] = 80;
-    png[2] = 78;
-    png[3] = 71;
-    png[4] = 13;
-    png[5] = 10;
-    png[6] = 26;
-    png[7] = 10;
-    WriteBigEndian(png + 8, 13);
-    png[12] = 'I';
-    png[13] = 'H';
-    png[14] = 'D';
-    png[15] = 'R';
-    WriteBigEndian(png + 16, width);
-    WriteBigEndian(png + 20, height);
-    png[24] = 16;
-    png[25] = channels == 3 ? 2 : 6;
-    png[26] = 0;
-    png[27] = 0;
-    png[28] = 0;
-    WriteBigEndian(png + 29, CrcBytes(png + 12, 17));
-    const size_t end = 33 + zlibBytes + chunks * 12;
-    WriteBigEndian(png + end, 0);
-    png[end + 4] = 'I';
-    png[end + 5] = 'E';
-    png[end + 6] = 'N';
-    png[end + 7] = 'D';
-    WriteBigEndian(png + end + 8, CrcBytes(png + end + 4, 4));
+    // Mandated eight-byte signature: high-bit marker, "PNG", CR/LF, DOS EOF, LF.
+    // Scalar writes avoid introducing a local array into the CUDA kernel.
+    png[0] = 0x89;
+    png[1] = 'P';
+    png[2] = 'N';
+    png[3] = 'G';
+    png[4] = '\r';
+    png[5] = '\n';
+    png[6] = 0x1a;
+    png[7] = '\n';
+    unsigned char *ihdr = png + Detail::Format::SignatureBytes;
+    WriteBigEndian(ihdr, Detail::Format::IhdrPayloadBytes);
+    WriteChunkType(ihdr, 'I', 'H', 'D', 'R');
+    unsigned char *data = ihdr + Detail::Format::ChunkHeaderBytes;
+    WriteBigEndian(data, width);
+    WriteBigEndian(data + Detail::Format::IhdrHeightOffset, height);
+    data[Detail::Format::IhdrBitDepthOffset] = Detail::Format::SampleBits;
+    data[Detail::Format::IhdrColorTypeOffset] = channels == Detail::Format::RgbChannels
+                                                    ? Detail::Format::RgbColorType
+                                                    : Detail::Format::RgbaColorType;
+    data[Detail::Format::IhdrCompressionOffset] = 0; // DEFLATE.
+    data[Detail::Format::IhdrFilterOffset] = 0;      // Standard adaptive filters.
+    data[Detail::Format::IhdrInterlaceOffset] = 0;   // Non-interlaced rows.
+    WriteChunkCrc(ihdr, Detail::Format::IhdrPayloadBytes);
+    const size_t end =
+        Detail::Format::FirstIdatOffset + zlibBytes + chunks * Detail::Format::ChunkOverheadBytes;
+    unsigned char *iend = png + end;
+    WriteBigEndian(iend, 0);
+    WriteChunkType(iend, 'I', 'E', 'N', 'D');
+    WriteChunkCrc(iend, 0);
+}
+
+__device__ size_t
+IdatChunkOffset(size_t chunk)
+{
+    return Detail::Format::FirstIdatOffset +
+           chunk * (Detail::IdatPayloadBytes + Detail::Format::ChunkOverheadBytes);
+}
+
+__device__ size_t
+IdatPayloadByteCount(size_t zlibBytes, size_t chunk)
+{
+    const size_t remaining = zlibBytes - chunk * Detail::IdatPayloadBytes;
+    return remaining < Detail::IdatPayloadBytes ? remaining : Detail::IdatPayloadBytes;
 }
 
 __global__ void
@@ -778,8 +905,8 @@ CopyIdat(const unsigned char *zlib, size_t bytes, unsigned char *png)
     const size_t byte = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (byte < bytes) {
         const size_t chunk = byte / Detail::IdatPayloadBytes;
-        png[33 + chunk * (Detail::IdatPayloadBytes + 12) + 8 + byte % Detail::IdatPayloadBytes] =
-            zlib[byte];
+        png[IdatChunkOffset(chunk) + Detail::Format::ChunkHeaderBytes +
+            byte % Detail::IdatPayloadBytes] = zlib[byte];
     }
 }
 
@@ -788,15 +915,10 @@ WriteIdatHeaders(size_t bytes, size_t chunks, unsigned char *png)
 {
     const size_t chunk = static_cast<size_t>(blockIdx.x) * blockDim.x + threadIdx.x;
     if (chunk < chunks) {
-        const size_t remaining = bytes - chunk * Detail::IdatPayloadBytes;
-        const size_t payload =
-            remaining < Detail::IdatPayloadBytes ? remaining : Detail::IdatPayloadBytes;
-        unsigned char *header = png + 33 + chunk * (Detail::IdatPayloadBytes + 12);
+        const size_t payload = IdatPayloadByteCount(bytes, chunk);
+        unsigned char *header = png + IdatChunkOffset(chunk);
         WriteBigEndian(header, static_cast<uint32_t>(payload));
-        header[4] = 'I';
-        header[5] = 'D';
-        header[6] = 'A';
-        header[7] = 'T';
+        WriteChunkType(header, 'I', 'D', 'A', 'T');
     }
 }
 
@@ -808,24 +930,26 @@ WriteIdatCrcs(size_t bytes, size_t chunks, unsigned char *png)
     if (chunk >= chunks) {
         return;
     }
-    const size_t remaining = bytes - chunk * Detail::IdatPayloadBytes;
-    const size_t payload = remaining < Detail::IdatPayloadBytes ? remaining : Detail::IdatPayloadBytes;
-    unsigned char *header = png + 33 + chunk * (Detail::IdatPayloadBytes + 12);
-    const size_t partBytes = (payload + 4 + WarpSize - 1) / WarpSize;
+    const size_t payload = IdatPayloadByteCount(bytes, chunk);
+    unsigned char *header = png + IdatChunkOffset(chunk);
+    const size_t crcInputBytes = payload + Detail::Format::ChunkTypeBytes;
+    // Each lane checks a contiguous segment of type+payload. Combine adjacent segments
+    // in wire order, propagating their lengths; empty segments have CRC zero.
+    const size_t partBytes = (crcInputBytes + WarpSize - 1) / WarpSize;
     const size_t begin = lane * partBytes;
-    size_t length = begin < payload + 4 ? payload + 4 - begin : 0;
+    size_t length = begin < crcInputBytes ? crcInputBytes - begin : 0;
     length = length < partBytes ? length : partBytes;
-    uint32_t crc = length != 0 ? CrcBytes(header + 4 + begin, length) : 0;
+    uint32_t crc = length != 0 ? CrcBytes(header + Detail::Format::ChunkLengthBytes + begin, length) : 0;
     for (unsigned stride = 1; stride < WarpSize; stride *= 2) {
-        const uint32_t next = __shfl_down_sync(0xffffffffu, crc, stride);
-        const size_t nextLength = __shfl_down_sync(0xffffffffu, length, stride);
+        const uint32_t next = __shfl_down_sync(FullWarpMask, crc, stride);
+        const size_t nextLength = __shfl_down_sync(FullWarpMask, length, stride);
         if (lane % (2 * stride) == 0) {
             crc = CrcCombine(crc, next, nextLength);
             length += nextLength;
         }
     }
     if (lane == 0) {
-        WriteBigEndian(header + 8 + payload, crc);
+        WriteBigEndian(header + Detail::Format::ChunkHeaderBytes + payload, crc);
     }
 }
 
@@ -895,11 +1019,15 @@ Compress(CompressionStorage &storage,
     size_t countsBytes = 0;
     size_t zlibBound = 0;
     size_t huffmanBytes = 0;
+    // Stored fallback caps every final slot at its raw bytes plus a stored header.
+    // Add one stream header, one final empty stored block, and the Adler-32 trailer.
     if (regions > static_cast<size_t>(std::numeric_limits<int>::max()) ||
         !MultiplySize(regions, HashEntries * sizeof(unsigned), headsBytes) ||
         !MultiplySize(regions, RegionSlotBytes, slotsBytes) ||
-        !MultiplySize(regions, sizeof(uint64_t), countsBytes) || !MultiplySize(regions, 5, zlibBound) ||
-        !AddSize(zlibBound, bytes, zlibBound) || !AddSize(zlibBound, 11, zlibBound) ||
+        !MultiplySize(regions, sizeof(uint64_t), countsBytes) ||
+        !MultiplySize(regions, Detail::Format::StoredBlockHeaderBytes, zlibBound) ||
+        !AddSize(zlibBound, bytes, zlibBound) ||
+        !AddSize(zlibBound, Detail::Format::ZlibOverheadBytes, zlibBound) ||
         !MultiplySize(regions, allowDynamic ? sizeof(Detail::Huffman::Region) : 0, huffmanBytes)) {
         return cudaErrorInvalidValue;
     }
@@ -940,6 +1068,8 @@ Compress(CompressionStorage &storage,
         return error;
     }
     size_t scanBytes = 0;
+    // CUB's query reports scratch capacity without launching work. Once candidate sizes
+    // are final, the exclusive scan maps independently compressed slots to wire offsets.
     error = cub::DeviceScan::ExclusiveSum(nullptr,
                                           scanBytes,
                                           storage.m_Sizes.Data<uint64_t>(),
@@ -990,7 +1120,7 @@ Compress(CompressionStorage &storage,
     if (error != cudaSuccess) {
         return error;
     }
-    CompactRegions<<<static_cast<unsigned>(regions), 128, 0, stream>>>(
+    CompactRegions<<<static_cast<unsigned>(regions), CopyThreadsPerBlock, 0, stream>>>(
         storage.m_Slots.Data<unsigned char>(),
         regions,
         storage.m_Sizes.Data<uint64_t>(),
@@ -1012,6 +1142,8 @@ Compress(CompressionStorage &storage,
     if (error != cudaSuccess) {
         return error;
     }
+    // Read only the compacted byte count here; the complete stream remains on the device
+    // for PNG framing. The wait also makes this stack-owned metadata safe on return.
     uint64_t actualBytes = 0;
     error = cudaMemcpyAsync(&actualBytes,
                             storage.m_ResultBytes.Data<uint64_t>(),
@@ -1082,8 +1214,10 @@ GpuPngEncoder::Encode(const Color16 *devicePixels,
     size_t minimumStride = 0;
     size_t inputSpan = 0;
     size_t inputEnd = 0;
-    if (devicePixels == nullptr || width == 0 || height == 0 || width > 0x7fffffffu ||
-        height > 0x7fffffffu || !MultiplySize(width, height, pixelCount) || !GridFits(pixelCount, 256) ||
+    // Validate byte-span arithmetic as well as dimensions before dereferencing pitched input.
+    if (devicePixels == nullptr || width == 0 || height == 0 ||
+        width > Detail::Format::MaximumDimension || height > Detail::Format::MaximumDimension ||
+        !MultiplySize(width, height, pixelCount) || !GridFits(pixelCount, LinearThreadsPerBlock) ||
         !MultiplySize(width, sizeof(Color16), minimumStride) || rowStrideBytes < minimumStride ||
         rowStrideBytes % alignof(Color16) != 0 ||
         reinterpret_cast<uintptr_t>(devicePixels) % alignof(Color16) != 0 ||
@@ -1110,7 +1244,7 @@ GpuPngEncoder::Encode(const Color16 *devicePixels,
     if (error != cudaSuccess) {
         return error;
     }
-    DetectAlpha<<<GridSize(pixelCount, 256), 256, 0, stream>>>(
+    DetectAlpha<<<GridSize(pixelCount, LinearThreadsPerBlock), LinearThreadsPerBlock, 0, stream>>>(
         devicePixels, width, height, rowStrideBytes, m_Storage->m_Alpha.Data<unsigned>());
     error = cudaGetLastError();
     if (error != cudaSuccess) {
@@ -1129,13 +1263,16 @@ GpuPngEncoder::Encode(const Color16 *devicePixels,
     if (error != cudaSuccess) {
         return error;
     }
-    const unsigned channels = hasAlpha != 0 ? 4 : 3;
+    // This small metadata wait chooses the packed format before reserving row buffers.
+    const unsigned channels = hasAlpha != 0 ? Detail::Format::RgbaChannels : Detail::Format::RgbChannels;
     size_t rowBytes = 0;
     size_t rawBytes = 0;
     size_t filteredBytes = 0;
-    if (!MultiplySize(width, channels * 2, rowBytes) || !MultiplySize(rowBytes, height, rawBytes) ||
-        !AddSize(rowBytes, 1, filteredBytes) || !MultiplySize(filteredBytes, height, filteredBytes) ||
-        !GridFits(filteredBytes, 256)) {
+    if (!MultiplySize(width, channels * Detail::Format::SampleBytes, rowBytes) ||
+        !MultiplySize(rowBytes, height, rawBytes) ||
+        !AddSize(rowBytes, Detail::Format::FilterPrefixBytes, filteredBytes) ||
+        !MultiplySize(filteredBytes, height, filteredBytes) ||
+        !GridFits(filteredBytes, LinearThreadsPerBlock)) {
         return cudaErrorInvalidValue;
     }
     error = m_Storage->m_Raw.Reserve(rawBytes);
@@ -1150,7 +1287,7 @@ GpuPngEncoder::Encode(const Color16 *devicePixels,
     if (error != cudaSuccess) {
         return error;
     }
-    SerializePixels<<<GridSize(pixelCount, 256), 256, 0, stream>>>(
+    SerializePixels<<<GridSize(pixelCount, LinearThreadsPerBlock), LinearThreadsPerBlock, 0, stream>>>(
         devicePixels, width, height, rowStrideBytes, channels, m_Storage->m_Raw.Data<unsigned char>());
     error = cudaGetLastError();
     if (error != cudaSuccess) {
@@ -1160,7 +1297,7 @@ GpuPngEncoder::Encode(const Color16 *devicePixels,
         m_Storage->m_Raw.Data<unsigned char>(),
         rowBytes,
         height,
-        channels * 2,
+        channels * Detail::Format::SampleBytes,
         m_Storage->m_Filters.Data<unsigned char>());
     error = cudaGetLastError();
     if (error != cudaSuccess) {
@@ -1188,8 +1325,11 @@ GpuPngEncoder::Encode(const Color16 *devicePixels,
     }
     const size_t chunks = (zlibBytes - 1) / Detail::IdatPayloadBytes + 1;
     size_t pngSize = 0;
-    if (!GridFits(zlibBytes, 256) || !MultiplySize(chunks, 12, pngSize) ||
-        !AddSize(pngSize, zlibBytes, pngSize) || !AddSize(pngSize, 45, pngSize)) {
+    // Fixed framing is signature+IHDR+IEND; every IDAT adds its own header and CRC.
+    if (!GridFits(zlibBytes, LinearThreadsPerBlock) ||
+        !MultiplySize(chunks, Detail::Format::ChunkOverheadBytes, pngSize) ||
+        !AddSize(pngSize, zlibBytes, pngSize) ||
+        !AddSize(pngSize, Detail::Format::PngFixedBytes, pngSize)) {
         return cudaErrorInvalidValue;
     }
     error = m_Storage->m_Png.Reserve(pngSize);
@@ -1202,13 +1342,14 @@ GpuPngEncoder::Encode(const Color16 *devicePixels,
     if (error != cudaSuccess) {
         return error;
     }
-    CopyIdat<<<GridSize(zlibBytes, 256), 256, 0, stream>>>(
+    CopyIdat<<<GridSize(zlibBytes, LinearThreadsPerBlock), LinearThreadsPerBlock, 0, stream>>>(
         m_Storage->m_Compression.m_Zlib.Data<unsigned char>(), zlibBytes, png);
     error = cudaGetLastError();
     if (error != cudaSuccess) {
         return error;
     }
-    WriteIdatHeaders<<<GridSize(chunks, 128), 128, 0, stream>>>(zlibBytes, chunks, png);
+    WriteIdatHeaders<<<GridSize(chunks, CopyThreadsPerBlock), CopyThreadsPerBlock, 0, stream>>>(
+        zlibBytes, chunks, png);
     error = cudaGetLastError();
     if (error != cudaSuccess) {
         return error;
@@ -1246,13 +1387,14 @@ LaunchFilterScanlines(const unsigned char *deviceRaw,
     size_t rowBytes = 0;
     size_t bytes = 0;
     if (deviceRaw == nullptr || deviceFilters == nullptr || deviceFiltered == nullptr || width == 0 ||
-        height == 0 || (channels != 3 && channels != 4) ||
-        !MultiplySize(width, channels * 2, rowBytes) || !AddSize(rowBytes, 1, bytes) ||
-        !MultiplySize(bytes, height, bytes) || !GridFits(bytes, 256)) {
+        height == 0 || (channels != Format::RgbChannels && channels != Format::RgbaChannels) ||
+        !MultiplySize(width, channels * Format::SampleBytes, rowBytes) ||
+        !AddSize(rowBytes, Format::FilterPrefixBytes, bytes) || !MultiplySize(bytes, height, bytes) ||
+        !GridFits(bytes, LinearThreadsPerBlock)) {
         return cudaErrorInvalidValue;
     }
-    FilterScanlines<<<GridSize(bytes, 256), 256, 0, stream>>>(
-        deviceRaw, rowBytes, height, channels * 2, deviceFilters, deviceFiltered);
+    FilterScanlines<<<GridSize(bytes, LinearThreadsPerBlock), LinearThreadsPerBlock, 0, stream>>>(
+        deviceRaw, rowBytes, height, channels * Format::SampleBytes, deviceFilters, deviceFiltered);
     return cudaGetLastError();
 }
 
@@ -1390,7 +1532,7 @@ EncodeCodeLengthRuns(const unsigned *deviceLengths,
     if (error != cudaSuccess) {
         return error;
     }
-    if (actual == 0xffffffffu) {
+    if (actual == InvalidRunCount) {
         return cudaErrorInvalidValue;
     }
     runs.resize(actual);

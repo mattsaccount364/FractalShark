@@ -29,6 +29,31 @@
 #include <limits>
 #include <stdint.h>
 #include <type_traits>
+
+namespace {
+// Fence queued uploads and kernels before host buffers or a renderer lease can be released.
+class PendingRendererWork {
+public:
+    explicit PendingRendererWork(cudaStream_t stream) : m_Stream(stream) {}
+    ~PendingRendererWork()
+    {
+        if (m_Stream != nullptr) {
+            cudaStreamSynchronize(m_Stream);
+        }
+    }
+
+    uint32_t
+    Finish(uint32_t result)
+    {
+        const auto syncResult = m_Stream != nullptr ? cudaStreamSynchronize(m_Stream) : cudaSuccess;
+        m_Stream = nullptr;
+        return result == cudaSuccess ? syncResult : result;
+    }
+
+private:
+    cudaStream_t m_Stream;
+};
+} // namespace
 // #include <cuda/pipeline>
 // #include <cuda_pipeline.h>
 
@@ -238,17 +263,19 @@ template void GPURenderer::ClearMemory<uint64_t>();
 
 template <typename IterType>
 uint32_t
-GPURenderer::InitializeMemory(uint32_t antialias_width,  // screen width
-                              uint32_t antialias_height, // screen height
+GPURenderer::InitializeMemory(uint32_t antialiasWidth,  // screen width
+                              uint32_t antialiasHeight, // screen height
                               uint32_t antialiasing,
                               const Color16 *palInterleaved,
                               uint32_t palIters,
                               uint32_t paletteAuxDepth,
+                              uint64_t paletteRotation,
+                              uint64_t maxPossibleIterations,
                               uint64_t paletteGeneration,
                               bool expectedReuse)
 {
-    if (Pals.palette_aux_depth != paletteAuxDepth) {
-        Pals.palette_aux_depth = paletteAuxDepth;
+    if (maxPossibleIterations < 2 || paletteAuxDepth >= 64) {
+        return cudaErrorInvalidValue;
     }
 
     // Ensure compute stream exists before any cudaMallocAsync/cudaFreeAsync calls
@@ -304,7 +331,12 @@ GPURenderer::InitializeMemory(uint32_t antialias_width,  // screen width
         Pals.cached_paletteGeneration = paletteGeneration;
     }
 
-    if ((m_Width == antialias_width) && (m_Height == antialias_height) &&
+    // Refresh scalar coloring settings even when the palette and allocation are reused.
+    Pals.palette_aux_depth = paletteAuxDepth;
+    Pals.m_PaletteRotation = paletteRotation;
+    Pals.m_MaxPossibleIterations = maxPossibleIterations;
+
+    if ((m_Width == antialiasWidth) && (m_Height == antialiasHeight) &&
         (m_Antialiasing == antialiasing) && (m_IterTypeSize == sizeof(IterType)) && expectedReuse) {
         return 0;
     }
@@ -321,32 +353,32 @@ GPURenderer::InitializeMemory(uint32_t antialias_width,  // screen width
         return FractalSharkError::Error3;
     }
 
-    if (antialias_width % antialiasing != 0) {
+    if (antialiasWidth % antialiasing != 0) {
         return FractalSharkError::Error4;
     }
 
-    if (antialias_height % antialiasing != 0) {
+    if (antialiasHeight % antialiasing != 0) {
         return FractalSharkError::Error5;
     }
 
     w_block =
-        antialias_width / GPURenderer::NB_THREADS_W + (antialias_width % GPURenderer::NB_THREADS_W != 0);
-    h_block = antialias_height / GPURenderer::NB_THREADS_H +
-              (antialias_height % GPURenderer::NB_THREADS_H != 0);
-    m_Width = antialias_width;
-    m_Height = antialias_height;
+        antialiasWidth / GPURenderer::NB_THREADS_W + (antialiasWidth % GPURenderer::NB_THREADS_W != 0);
+    h_block =
+        antialiasHeight / GPURenderer::NB_THREADS_H + (antialiasHeight % GPURenderer::NB_THREADS_H != 0);
+    m_Width = antialiasWidth;
+    m_Height = antialiasHeight;
     m_Antialiasing = antialiasing;
     m_IterTypeSize = sizeof(IterType);
     N_cu = static_cast<decltype(N_cu)>(w_block) * NB_THREADS_W * h_block * NB_THREADS_H;
 
-    const auto no_antialias_width = antialias_width / antialiasing;
-    const auto no_antialias_height = antialias_height / antialiasing;
-    m_ColorWidthBlocks = no_antialias_width / GPURenderer::NB_THREADS_W_AA +
-                         (no_antialias_width % GPURenderer::NB_THREADS_W_AA != 0);
-    m_ColorHeightBlocks = no_antialias_height / GPURenderer::NB_THREADS_H_AA +
-                          (no_antialias_height % GPURenderer::NB_THREADS_H_AA != 0);
-    m_ColorWidth = no_antialias_width;
-    m_ColorHeight = no_antialias_height;
+    const auto colorWidth = antialiasWidth / antialiasing;
+    const auto colorHeight = antialiasHeight / antialiasing;
+    m_ColorWidthBlocks =
+        colorWidth / GPURenderer::NB_THREADS_W_AA + (colorWidth % GPURenderer::NB_THREADS_W_AA != 0);
+    m_ColorHeightBlocks =
+        colorHeight / GPURenderer::NB_THREADS_H_AA + (colorHeight % GPURenderer::NB_THREADS_H_AA != 0);
+    m_ColorWidth = colorWidth;
+    m_ColorHeight = colorHeight;
     N_color_cu = static_cast<decltype(N_color_cu)>(m_ColorWidthBlocks) * NB_THREADS_W_AA *
                  m_ColorHeightBlocks * NB_THREADS_H_AA;
 
@@ -392,21 +424,25 @@ GPURenderer::InitializeMemory(uint32_t antialias_width,  // screen width
     return 0;
 }
 
-template uint32_t GPURenderer::InitializeMemory<uint32_t>(uint32_t antialias_width,  // screen width
-                                                          uint32_t antialias_height, // screen height
+template uint32_t GPURenderer::InitializeMemory<uint32_t>(uint32_t antialiasWidth,
+                                                          uint32_t antialiasHeight,
                                                           uint32_t antialiasing,
                                                           const Color16 *palInterleaved,
                                                           uint32_t palIters,
                                                           uint32_t paletteAuxDepth,
+                                                          uint64_t paletteRotation,
+                                                          uint64_t maxPossibleIterations,
                                                           uint64_t paletteGeneration,
                                                           bool expectedReuse);
 
-template uint32_t GPURenderer::InitializeMemory<uint64_t>(uint32_t antialias_width,  // screen width
-                                                          uint32_t antialias_height, // screen height
+template uint32_t GPURenderer::InitializeMemory<uint64_t>(uint32_t antialiasWidth,
+                                                          uint32_t antialiasHeight,
                                                           uint32_t antialiasing,
                                                           const Color16 *palInterleaved,
                                                           uint32_t palIters,
                                                           uint32_t paletteAuxDepth,
+                                                          uint64_t paletteRotation,
+                                                          uint64_t maxPossibleIterations,
                                                           uint64_t paletteGeneration,
                                                           bool expectedReuse);
 
@@ -576,10 +612,10 @@ GPURenderer::MemoryInitialized() const
 
 template <typename IterType>
 uint32_t
-GPURenderer::RenderCurrent(IterType n_iterations,
-                           IterType *iter_buffer,
-                           Color16 *color_buffer,
-                           ReductionResults *reduction_results,
+GPURenderer::RenderCurrent(IterType numIterations,
+                           IterType *iterBuffer,
+                           Color16 *colorBuffer,
+                           ReductionResults *reductionResults,
                            bool progressive)
 {
 
@@ -589,10 +625,10 @@ GPURenderer::RenderCurrent(IterType n_iterations,
 
     cudaStream_t stream = progressive ? m_DisplayStream : m_ComputeStream;
 
-    uint32_t result = RunAntialiasing(n_iterations, stream);
+    uint32_t result = RunAntialiasing(numIterations, stream, FractalShark::ColoringMode::PaletteLookup);
 
     if (!result) {
-        result = ExtractItersAndColors<IterType>(iter_buffer, color_buffer, reduction_results, stream);
+        result = ExtractItersAndColors<IterType>(iterBuffer, colorBuffer, reductionResults, stream);
     }
 
     return result;
@@ -611,36 +647,80 @@ template uint32_t GPURenderer::RenderCurrent(uint64_t n_iterations,
 
 template <typename IterType>
 uint32_t
+GPURenderer::UploadHostIterations(const IterType *hostIters, size_t rowStrideElements)
+{
+    if (!MemoryInitialized() || hostIters == nullptr || m_Width == 0 || m_Height == 0 ||
+        m_IterTypeSize != sizeof(IterType) || rowStrideElements < m_Width ||
+        rowStrideElements > std::numeric_limits<size_t>::max() / sizeof(IterType) / m_Height) {
+        return cudaErrorInvalidValue;
+    }
+    return cudaMemcpy2DAsync(OutputIterMatrix,
+                             static_cast<size_t>(w_block) * NB_THREADS_W * sizeof(IterType),
+                             hostIters,
+                             rowStrideElements * sizeof(IterType),
+                             static_cast<size_t>(m_Width) * sizeof(IterType),
+                             m_Height,
+                             cudaMemcpyHostToDevice,
+                             m_ComputeStream);
+}
+
+template <typename IterType>
+uint32_t
+GPURenderer::RecolorFromHostIterations(const IterType *hostIters,
+                                       size_t rowStrideElements,
+                                       IterType numIterations,
+                                       FractalShark::ColoringMode coloringMode,
+                                       Color16 *hostColors,
+                                       size_t hostColorCapacity)
+{
+    PendingRendererWork pendingWork(m_ComputeStream);
+    const size_t colorCount = static_cast<size_t>(m_ColorWidth) * m_ColorHeight;
+    if (hostColors == nullptr || hostColorCapacity < colorCount ||
+        colorCount > std::numeric_limits<size_t>::max() / sizeof(Color16) || numIterations == 0 ||
+        (coloringMode != FractalShark::ColoringMode::PaletteLookup &&
+         coloringMode != FractalShark::ColoringMode::BasicGrayscale)) {
+        return pendingWork.Finish(cudaErrorInvalidValue);
+    }
+    uint32_t result = UploadHostIterations(hostIters, rowStrideElements);
+    if (result == cudaSuccess) {
+        result = RunAntialiasing(numIterations, m_ComputeStream, coloringMode);
+    }
+    if (result == cudaSuccess) {
+        result = cudaMemcpyAsync(hostColors,
+                                 OutputColorMatrix.aa_colors,
+                                 colorCount * sizeof(Color16),
+                                 cudaMemcpyDeviceToHost,
+                                 m_ComputeStream);
+    }
+    return pendingWork.Finish(result);
+}
+
+template uint32_t GPURenderer::RecolorFromHostIterations<uint32_t>(
+    const uint32_t *, size_t, uint32_t, FractalShark::ColoringMode, Color16 *, size_t);
+template uint32_t GPURenderer::RecolorFromHostIterations<uint64_t>(
+    const uint64_t *, size_t, uint64_t, FractalShark::ColoringMode, Color16 *, size_t);
+
+template <typename IterType>
+uint32_t
 GPURenderer::EncodePng(const IterType *hostIters,
                        size_t rowStrideElements,
                        IterType numIterations,
                        std::vector<unsigned char> &pngBytes)
 {
+    PendingRendererWork pendingWork(m_ComputeStream);
     pngBytes.clear();
     // Save palettes are snapshot-owned; their host address must not outlive the snapshot as a cache key.
     Pals.cached_hostPalInterleaved = nullptr;
-    if (!MemoryInitialized() || hostIters == nullptr || m_Width == 0 || m_Height == 0 ||
-        m_IterTypeSize != sizeof(IterType) || rowStrideElements < m_Width ||
-        rowStrideElements > std::numeric_limits<size_t>::max() / sizeof(IterType)) {
-        return cudaErrorInvalidValue;
-    }
-
-    if (!m_PngEncoder) {
-        m_PngEncoder = std::make_unique<FractalShark::Png::GpuPngEncoder>();
-    }
-    uint32_t result = cudaMemcpy2DAsync(OutputIterMatrix,
-                                        static_cast<size_t>(w_block) * NB_THREADS_W * sizeof(IterType),
-                                        hostIters,
-                                        rowStrideElements * sizeof(IterType),
-                                        static_cast<size_t>(m_Width) * sizeof(IterType),
-                                        m_Height,
-                                        cudaMemcpyHostToDevice,
-                                        m_ComputeStream);
+    uint32_t result =
+        numIterations == 0 ? cudaErrorInvalidValue : UploadHostIterations(hostIters, rowStrideElements);
     if (result == cudaSuccess) {
-        result = RunAntialiasing(numIterations, m_ComputeStream);
+        result =
+            RunAntialiasing(numIterations, m_ComputeStream, FractalShark::ColoringMode::PaletteLookup);
     }
     if (result == cudaSuccess) {
-        result = cudaGetLastError();
+        if (!m_PngEncoder) {
+            m_PngEncoder = std::make_unique<FractalShark::Png::GpuPngEncoder>();
+        }
     }
     if (result == cudaSuccess) {
         result = m_PngEncoder->Encode(OutputColorMatrix.aa_colors,
@@ -651,8 +731,7 @@ GPURenderer::EncodePng(const IterType *hostIters,
                                       pngBytes);
     }
     // The snapshot and palette may be released as soon as this method returns, even on failure.
-    const auto syncResult = cudaStreamSynchronize(m_ComputeStream);
-    return result == cudaSuccess ? syncResult : result;
+    return pendingWork.Finish(result);
 }
 
 template uint32_t GPURenderer::EncodePng<uint32_t>(const uint32_t *hostIters,
@@ -1985,8 +2064,13 @@ template uint32_t GPURenderer::RenderPerturbBLA(
 
 template <typename IterType>
 __host__ uint32_t
-GPURenderer::RunAntialiasing(IterType iterations, cudaStream_t stream)
+GPURenderer::RunAntialiasing(IterType numIterations,
+                             cudaStream_t stream,
+                             FractalShark::ColoringMode coloringMode)
 {
+    if (numIterations == 0) {
+        return cudaErrorInvalidValue;
+    }
     dim3 aaBlocks(m_ColorWidthBlocks, m_ColorHeightBlocks, 1);
     dim3 aaThreadsPerBlock(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
 
@@ -2000,7 +2084,8 @@ GPURenderer::RunAntialiasing(IterType iterations, cudaStream_t stream)
                                                              Pals,
                                                              m_ColorWidth,
                                                              m_ColorHeight,
-                                                             iterations);
+                                                             numIterations,
+                                                             coloringMode);
             break;
         case 2:
             antialiasing_kernel<IterType, 2, true>
@@ -2011,7 +2096,8 @@ GPURenderer::RunAntialiasing(IterType iterations, cudaStream_t stream)
                                                              Pals,
                                                              m_ColorWidth,
                                                              m_ColorHeight,
-                                                             iterations);
+                                                             numIterations,
+                                                             coloringMode);
             break;
         case 3:
             antialiasing_kernel<IterType, 3, true>
@@ -2022,7 +2108,8 @@ GPURenderer::RunAntialiasing(IterType iterations, cudaStream_t stream)
                                                              Pals,
                                                              m_ColorWidth,
                                                              m_ColorHeight,
-                                                             iterations);
+                                                             numIterations,
+                                                             coloringMode);
             break;
         case 4:
         default:
@@ -2034,10 +2121,15 @@ GPURenderer::RunAntialiasing(IterType iterations, cudaStream_t stream)
                                                              Pals,
                                                              m_ColorWidth,
                                                              m_ColorHeight,
-                                                             iterations);
+                                                             numIterations,
+                                                             coloringMode);
             break;
     }
 
+    const auto launchResult = cudaGetLastError();
+    if (launchResult != cudaSuccess) {
+        return launchResult;
+    }
     // Reset before launching any reduction block; block-local barriers cannot order this globally.
     auto resetResult = cudaMemsetAsync(OutputReductionResults, 0, sizeof(ReductionResults), stream);
     if (resetResult != cudaSuccess) {
@@ -2050,7 +2142,7 @@ GPURenderer::RunAntialiasing(IterType iterations, cudaStream_t stream)
     dim3 maxBlocks(16, 16, 1);
     max_kernel<IterType><<<maxBlocks, aaThreadsPerBlock, 0, stream>>>(
         static_cast<IterType *>(OutputIterMatrix), m_Width, m_Height, OutputReductionResults);
-    return cudaSuccess;
+    return cudaGetLastError();
 }
 
 template <typename IterType>

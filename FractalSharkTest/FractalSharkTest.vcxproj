@@ -55,6 +55,7 @@
     <ClCompile Include="TestRenderCases.cpp" />
     <ClCompile Include="TestRenderUtilities.cpp" />
     <ClCompile Include="TestGpuRenderModes.cpp" />
+    <ClCompile Include="TestGpuRecolor.cpp" />
     <ClCompile Include="TestGpuReferenceBuckets.cpp" />
 
     <ClCompile Include="TestTestFramework.cpp" />

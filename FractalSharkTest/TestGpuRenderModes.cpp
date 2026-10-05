@@ -1,3 +1,4 @@
+#include "Fractal.h"
 #include "FractalPalette.h"
 #include "GPU_Render.h"
 #include "RenderTestSupport.h"
@@ -29,6 +30,8 @@ CheckGpuColors(uint32_t antialiasing, const std::string &caseId)
                                                   palette.GetCurrentPalInterleaved(),
                                                   palette.GetCurrentNumColors(),
                                                   palette.GetAuxDepth(),
+                                                  palette.GetPaletteRotation(),
+                                                  Fractal::GetMaxIterations<IterType>(),
                                                   palette.GetPaletteGeneration(),
                                                   false),
               0u);

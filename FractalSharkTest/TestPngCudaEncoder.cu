@@ -996,6 +996,8 @@ RenderBenchmarkFractal(uint32_t width, uint32_t height)
                                                   palette.GetCurrentPalInterleaved(),
                                                   palette.GetCurrentNumColors(),
                                                   palette.GetAuxDepth(),
+                                                  palette.GetPaletteRotation(),
+                                                  static_cast<uint64_t>(INT32_MAX - 1),
                                                   palette.GetPaletteGeneration(),
                                                   false),
               0u);

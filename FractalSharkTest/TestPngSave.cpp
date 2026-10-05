@@ -130,6 +130,60 @@ CheckRenderPoolSnapshot()
 }
 
 void
+CheckRotatedSnapshots()
+{
+    PngSaveDirectory directory;
+    const auto customPath = directory.File(L"palette.map");
+    {
+        std::ofstream output(customPath);
+        output << "12 231 44\n255 7 193\n0 41 255\n";
+        ASSERT_TRUE(static_cast<bool>(output));
+    }
+    Fractal fractal{23, 15, nullptr, false, UINT64_MAX, true, GpuMode::Auto};
+    fractal.GetRenderPool()->Drain();
+    fractal.View(0, false);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32)));
+    fractal.LoadCustomPalette(customPath);
+    for (const auto bits : {IterTypeEnum::Bits32, IterTypeEnum::Bits64}) {
+        for (uint32_t aa = 1; aa <= 4; ++aa) {
+            fractal.GetRenderPool()->Drain();
+            fractal.SetIterType(bits);
+            fractal.ResetDimensions(23, 15, aa);
+            fractal.SetNumIterations<uint64_t>(97);
+            fractal.CalcFractal(true);
+            for (const auto type : {FractalPaletteType::Default, FractalPaletteType::Custom}) {
+                fractal.UsePaletteType(type);
+                fractal.ResetFractalPalette();
+                fractal.SetPaletteAuxDepth(0);
+                const auto unrotated = SaveCpuOracle(fractal, directory.File(L"unrotated.png"));
+                fractal.RotateFractalPalette(37);
+                fractal.SetPaletteAuxDepth(2);
+                const auto cpuPath = directory.File(L"rotated-cpu.png");
+                const auto gpuPath = directory.File(L"rotated-gpu.png");
+                PngParallelSave cpu(PngParallelSave::Type::PngImg,
+                                    PngParallelSave::EncoderBackend::Cpu,
+                                    cpuPath.wstring(),
+                                    true,
+                                    fractal);
+                PngParallelSave gpu(PngParallelSave::Type::PngImg,
+                                    PngParallelSave::EncoderBackend::Gpu,
+                                    gpuPath.wstring(),
+                                    true,
+                                    fractal);
+                // Both saves must use captured settings even if the renderer currently has newer ones.
+                fractal.RotateFractalPalette(11);
+                fractal.SetPaletteAuxDepth(1);
+                ASSERT_EQ(cpu.Run(), 0);
+                ASSERT_EQ(gpu.Run(), 0);
+                const auto expected = DecodeSavedPng(cpuPath, 23, 15);
+                ASSERT_TRUE(expected != unrotated);
+                ASSERT_TRUE(DecodeSavedPng(gpuPath, 23, 15) == expected);
+            }
+        }
+    }
+}
+
+void
 CheckBackgroundAndWriteErrors()
 {
     PngSaveDirectory directory;
@@ -173,6 +227,7 @@ const bool registered = [] {
         "CudaPngSave_RenderPoolSnapshot", CheckRenderPoolSnapshot, true, "", false);
     TestFramework::RegisterCase(
         "CudaPngSave_BackgroundAndWriteErrors", CheckBackgroundAndWriteErrors, true, "", false);
+    TestFramework::RegisterCase("CudaPngSave_RotatedSnapshots", CheckRotatedSnapshots, true, "", false);
     return true;
 }();
 

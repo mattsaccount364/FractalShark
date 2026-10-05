@@ -41,8 +41,9 @@ RGBA) output.
 Progressive frame extraction launches antialiasing and color readback
 on \code{m\_DisplayStream}, separate from the iteration kernels'
 \code{m\_ComputeStream}. Final frame extraction uses the compute stream.
-GPU PNG saves also run coloring and antialiasing on the compute stream,
-followed by encoding on that same stream (\cref{subsec:png-output}).
+GPU palette recoloring also uses the compute stream. GPU PNG saves run
+coloring and antialiasing followed by encoding on that same stream
+(\cref{subsec:png-output}).
 The save caller waits for completion before releasing its snapshot.
 
 \paragraph{Kernel template.}
@@ -51,17 +52,18 @@ template<typename IterType,
          uint32_t Antialiasing,
          bool ScaledColor>
 __global__ void antialiasing_kernel(
-    const IterType *OutputIterMatrix,
-    uint32_t Width, uint32_t Height,
-    AntialiasedColors OutputColorMatrix,
-    Palette Pals,
-    int local_color_width,
-    int local_color_height,
-    IterType n_iterations);
+    const IterType *outputIterMatrix,
+    uint32_t width, uint32_t height,
+    AntialiasedColors outputColorMatrix,
+    Palette pals,
+    int colorWidth, int colorHeight,
+    IterType numIterations,
+    FractalShark::ColoringMode coloringMode);
 \end{lstlisting}
-The \code{ScaledColor} flag selects between raw and scaled palette
-indexing.  Pixels whose iteration count equals \code{n\_iterations}
-(the Mandelbrot-set interior) are left black.
+The explicit coloring mode selects palette lookup or Basic grayscale
+recoloring. The legacy \code{ScaledColor} template parameter is retained
+but does not alter the current calculation. Samples whose original
+iteration count reaches \code{numIterations} are left black.
 
 \paragraph{Limitations.}
 Brute-force SSAA supersamples every pixel uniformly, which is
@@ -110,18 +112,40 @@ as
   \bigl(\mathtt{numIters} \gg \mathtt{palette\_aux\_depth}\bigr)
     \bmod \mathtt{local\_palIters},
 \]
-where \code{palette\_aux\_depth} (range 0--16) controls the iteration
+Here, \code{numIters} denotes an escaped count after palette rotation and
+saturation. The \code{palette\_aux\_depth} (range 0--16) controls the iteration
 compression---higher values produce wider color bands---and
 \code{local\_palIters} is the palette size at the active bit depth.
 The modulo wrapping causes the palette to cycle when the iteration
 count exceeds the palette length.
 
 \paragraph{Palette rotation.}
-CPU palette coloring and CPU PNG saving add \code{m\_PaletteRotate} to the
-iteration count before palette lookup, allowing a phase shift without
-recomputing the iterations. The current GPU antialiasing/coloring kernel
-uses unrotated iteration counts. GPU PNG saves reuse that kernel and
-therefore retain the same GPU coloring behavior.
+CPU and GPU coloring add the palette rotation before the auxiliary-depth
+shift and palette lookup, allowing a phase shift without recomputing the
+iterations. Escape status is determined from the original count. Escaped
+counts saturate at one less than the maximum permitted iteration count;
+the GPU addition checks the available range before adding to avoid overflow.
+Renderer initialization refreshes rotation, auxiliary depth, and the maximum
+count even when the palette allocation is reused. GPU PNG saves supply the
+settings captured by their save snapshot (\cref{subsec:png-output}).
+
+\paragraph{Recoloring an existing frame.}
+\code{EnqueuePaletteRecolor} applies a palette mutation and rebuilds colors
+from the authoritative host iteration buffer without recalculating geometry.
+For a GPU algorithm with CUDA enabled, the worker leases a renderer before
+taking the calculation mutex, uploads logical rows with the padded host
+stride, and calls the shared coloring and antialiasing kernel. A synchronous
+readback updates the current host color buffer before the worker publishes
+the frame through the existing presentation queue. Iteration counts remain
+unchanged. Stream work is fenced on success, CUDA failure, and exception exits
+before host storage or the renderer lease can be released. CPU algorithms and
+instances that bypass the GPU retain the CPU recolorer.
+
+Basic recoloring retains the CPU recolorer's grayscale formula, including
+its iteration-dependent factor and 16-bit wrapping. The explicit mode leaves
+normal GPU display and PNG palette lookup unchanged. Cancellation, superseding,
+paced animation, and disabled-repaint placeholders retain the existing queue
+behavior. Focused validation is described in \cref{subsec:png-validation}.
 
 \paragraph{Alternative coloring approaches.}
 The palette-indexed scheme above is simple and fast but has known

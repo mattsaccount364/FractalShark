@@ -14,6 +14,10 @@ struct Color16 {
     uint16_t r, g, b, a;
 };
 
+namespace FractalShark {
+enum class ColoringMode { PaletteLookup, BasicGrayscale };
+}
+
 struct AntialiasedColors {
 #ifdef __CUDACC__
     Color16 *__restrict__ aa_colors;
@@ -45,12 +49,12 @@ struct Palette {
     {
     }
 
-    Palette(Color16 *local_pal,
-            uint32_t local_palIters,
-            uint32_t palette_aux_depth,
-            const Color16 *cached_hostPalInterleaved)
-        : local_pal(local_pal), local_palIters(local_palIters), palette_aux_depth(palette_aux_depth),
-          cached_hostPalInterleaved(cached_hostPalInterleaved), cached_paletteGeneration(0)
+    Palette(Color16 *localPal,
+            uint32_t localPalIters,
+            uint32_t paletteAuxDepth,
+            const Color16 *cachedHostPalInterleaved)
+        : local_pal(localPal), local_palIters(localPalIters), palette_aux_depth(paletteAuxDepth),
+          cached_hostPalInterleaved(cachedHostPalInterleaved), cached_paletteGeneration(0)
     {
     }
 
@@ -60,6 +64,8 @@ struct Palette {
 
     const Color16 *cached_hostPalInterleaved;
     uint64_t cached_paletteGeneration;
+    uint64_t m_PaletteRotation{};
+    uint64_t m_MaxPossibleIterations{};
 };
 
 #include "GPU_ReferenceIter.h"

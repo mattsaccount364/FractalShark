@@ -207,6 +207,8 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryC
                                                   m_Palette.GetCurrentPalInterleaved(),
                                                   m_Palette.GetCurrentNumColors(),
                                                   m_Palette.GetAuxDepth(),
+                                                  m_Palette.GetPaletteRotation(),
+                                                  GetMaxIterationsRT(),
                                                   m_Palette.GetPaletteGeneration(),
                                                   expectedReuse);
     } else {
@@ -216,6 +218,8 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryC
                                                   m_Palette.GetCurrentPalInterleaved(),
                                                   m_Palette.GetCurrentNumColors(),
                                                   m_Palette.GetAuxDepth(),
+                                                  m_Palette.GetPaletteRotation(),
+                                                  GetMaxIterationsRT(),
                                                   m_Palette.GetPaletteGeneration(),
                                                   expectedReuse);
     }
@@ -1525,12 +1529,14 @@ Fractal::CalcFractalTypedIter(RendererIndex idx, bool drawFractal, CalcContext &
             renderer.RenderCurrent<uint32_t>(GetNumIterations<uint32_t>(),
                                              ctx.ItersMemory.GetIters<uint32_t>(),
                                              nullptr,
-                                             &gpuReductionResults);
+                                             &gpuReductionResults,
+                                             false);
         } else {
             renderer.RenderCurrent<uint64_t>(GetNumIterations<uint64_t>(),
                                              ctx.ItersMemory.GetIters<uint64_t>(),
                                              nullptr,
-                                             &gpuReductionResults);
+                                             &gpuReductionResults,
+                                             false);
         }
         renderer.SyncComputeStream();
     }

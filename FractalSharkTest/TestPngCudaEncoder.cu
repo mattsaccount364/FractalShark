@@ -172,7 +172,7 @@ CheckStructure(const std::vector<unsigned char> &png, unsigned colorType)
             ASSERT_EQ(length, 13u);
         } else if (lodepng_chunk_type_equals(png.data() + offset, "IDAT")) {
             ASSERT_FALSE(ended);
-            ASSERT_TRUE(length > 0 && length <= FractalShark::Png::Detail::IdatPayloadBytes);
+            ASSERT_TRUE(length > 0 && length <= Png::IdatPayloadBytes);
             idats.push_back(offset);
         } else {
             ASSERT_TRUE(lodepng_chunk_type_equals(png.data() + offset, "IEND"));
@@ -226,11 +226,7 @@ FilteredImageData(const std::vector<unsigned char> &png)
 }
 
 std::vector<unsigned char>
-CheckImage(FractalShark::Png::GpuPngEncoder &encoder,
-           uint32_t width,
-           uint32_t height,
-           size_t padding,
-           Pattern pattern)
+CheckImage(Png::GpuPngEncoder &encoder, uint32_t width, uint32_t height, size_t padding, Pattern pattern)
 {
     const size_t pitch = static_cast<size_t>(width) + padding;
     const auto pixels = MakePixels(width, height, pitch, pattern);
@@ -263,11 +259,9 @@ CheckImage(FractalShark::Png::GpuPngEncoder &encoder,
               cudaSuccess);
     std::vector<unsigned char> baseline;
     std::vector<unsigned char> improved;
-    ASSERT_EQ(FractalShark::Png::Detail::EncodeZlibFixed(
-                  compressionInput.Get(), filtered.size(), stream.Get(), baseline),
+    ASSERT_EQ(Png::EncodeZlibFixed(compressionInput.Get(), filtered.size(), stream.Get(), baseline),
               cudaSuccess);
-    ASSERT_EQ(FractalShark::Png::Detail::EncodeZlib(
-                  compressionInput.Get(), filtered.size(), stream.Get(), improved),
+    ASSERT_EQ(Png::EncodeZlib(compressionInput.Get(), filtered.size(), stream.Get(), improved),
               cudaSuccess);
     ASSERT_TRUE(improved.size() <= baseline.size());
     std::vector<unsigned char> repeated;
@@ -477,9 +471,8 @@ InspectDeflate(const std::vector<unsigned char> &bytes, size_t expectedBytes)
                 const unsigned distance =
                     base + reader.Read(distanceCode < 4 ? 0 : distanceCode / 2 - 1);
                 ASSERT_TRUE(distance > 0 && distance <= 32768 && distance <= decoded);
-                ASSERT_TRUE(distance <= decoded % FractalShark::Png::Detail::DeflateRegionBytes);
-                ASSERT_TRUE(length <= FractalShark::Png::Detail::DeflateRegionBytes -
-                                          decoded % FractalShark::Png::Detail::DeflateRegionBytes);
+                ASSERT_TRUE(distance <= decoded % Png::DeflateRegionBytes);
+                ASSERT_TRUE(length <= Png::DeflateRegionBytes - decoded % Png::DeflateRegionBytes);
                 info.m_Lengths.push_back(length);
                 info.m_Distances.push_back(distance);
                 decoded += length;
@@ -502,12 +495,9 @@ CheckZlib(const std::vector<unsigned char> &input)
         cudaMemcpyAsync(device.Get(), input.data(), input.size(), cudaMemcpyHostToDevice, stream.Get()),
         cudaSuccess);
     std::vector<unsigned char> bytes;
-    ASSERT_EQ(FractalShark::Png::Detail::EncodeZlib(device.Get(), input.size(), stream.Get(), bytes),
-              cudaSuccess);
+    ASSERT_EQ(Png::EncodeZlib(device.Get(), input.size(), stream.Get(), bytes), cudaSuccess);
     std::vector<unsigned char> baseline;
-    ASSERT_EQ(
-        FractalShark::Png::Detail::EncodeZlibFixed(device.Get(), input.size(), stream.Get(), baseline),
-        cudaSuccess);
+    ASSERT_EQ(Png::EncodeZlibFixed(device.Get(), input.size(), stream.Get(), baseline), cudaSuccess);
     ASSERT_TRUE(bytes.size() <= baseline.size());
     unsigned error = 0;
     ASSERT_TRUE(DecodeZlib(baseline, error) == input);
@@ -522,7 +512,7 @@ CheckZlib(const std::vector<unsigned char> &input)
         weighted = (weighted + sum) % 65521;
     }
     ASSERT_EQ(ReadBigEndian(bytes.data() + bytes.size() - 4), (weighted << 16) | sum);
-    const size_t regions = (input.size() - 1) / FractalShark::Png::Detail::DeflateRegionBytes + 1;
+    const size_t regions = (input.size() - 1) / Png::DeflateRegionBytes + 1;
     ASSERT_TRUE(bytes.size() <= input.size() + 5 * regions + 11);
     InspectDeflate(bytes, input.size());
     return bytes;
@@ -531,7 +521,7 @@ CheckZlib(const std::vector<unsigned char> &input)
 void
 CheckShapes()
 {
-    FractalShark::Png::GpuPngEncoder encoder;
+    Png::GpuPngEncoder encoder;
     CheckImage(encoder, 1, 1, 0, Pattern::Gradient);
     CheckImage(encoder, 1, 37, 3, Pattern::Transparent);
     CheckImage(encoder, 37, 1, 2, Pattern::Gradient);
@@ -545,7 +535,7 @@ CheckShapes()
 void
 CheckNoiseAndChunks()
 {
-    FractalShark::Png::GpuPngEncoder encoder;
+    Png::GpuPngEncoder encoder;
     const auto noise = CheckImage(encoder, 257, 129, 7, Pattern::Noise);
     const auto chunks = CheckStructure(noise, 2);
     ASSERT_TRUE(chunks.size() > 1);
@@ -590,7 +580,7 @@ CheckFilters()
                                       stream.Get()),
                       cudaSuccess);
             ASSERT_EQ(
-                FractalShark::Png::Detail::LaunchFilterScanlines(
+                Png::LaunchFilterScanlines(
                     source.Get(), width, height, channels, selected.Get(), output.Get(), stream.Get()),
                 cudaSuccess);
             std::vector<unsigned char> filtered(raw.size() + height);
@@ -703,7 +693,7 @@ CheckDeflateBoundaries()
     }
     const auto bytes = CheckZlib(noise);
     ASSERT_TRUE(InspectDeflate(bytes, noise.size()).m_StoredBlocks > 1);
-    std::vector<unsigned char> mixed(FractalShark::Png::Detail::DeflateRegionBytes, 0);
+    std::vector<unsigned char> mixed(Png::DeflateRegionBytes, 0);
     mixed.insert(mixed.end(), noise.begin(), noise.end());
     const auto mixedBytes = CheckZlib(mixed);
     const auto mixedInfo = InspectDeflate(mixedBytes, mixed.size());
@@ -725,7 +715,7 @@ CheckDeflateBoundaries()
 void
 CheckCorruption()
 {
-    FractalShark::Png::GpuPngEncoder encoder;
+    Png::GpuPngEncoder encoder;
     const auto png = CheckImage(encoder, 257, 129, 0, Pattern::Noise);
     const auto idats = CheckStructure(png, 2);
     std::vector<unsigned char> decoded;
@@ -790,8 +780,7 @@ CheckHuffmanLengths()
                                       stream.Get()),
                       cudaSuccess);
             std::vector<unsigned> gpu;
-            ASSERT_EQ(FractalShark::Png::Detail::BuildHuffmanCodeLengths(
-                          input.Get(), count, maximum, stream.Get(), gpu),
+            ASSERT_EQ(Png::BuildHuffmanCodeLengths(input.Get(), count, maximum, stream.Get(), gpu),
                       cudaSuccess);
             std::vector<unsigned> cpu(count);
             ASSERT_EQ(lodepng_huffman_code_lengths(cpu.data(), frequencies.data(), count, maximum), 0u);
@@ -816,7 +805,7 @@ CheckHuffmanLengths()
         }
     }
     std::vector<unsigned> output{1};
-    ASSERT_EQ(FractalShark::Png::Detail::BuildHuffmanCodeLengths(nullptr, 286, 15, stream.Get(), output),
+    ASSERT_EQ(Png::BuildHuffmanCodeLengths(nullptr, 286, 15, stream.Get(), output),
               cudaErrorInvalidValue);
     ASSERT_TRUE(output.empty());
 }
@@ -840,8 +829,8 @@ CheckHeaderRuns()
                                       cudaMemcpyHostToDevice,
                                       stream.Get()),
                       cudaSuccess);
-            std::vector<FractalShark::Png::Detail::CodeLengthRun> runs;
-            ASSERT_EQ(FractalShark::Png::Detail::EncodeCodeLengthRuns(
+            std::vector<Png::CodeLengthRun> runs;
+            ASSERT_EQ(Png::EncodeCodeLengthRuns(
                           input.Get(), static_cast<unsigned>(lengths.size()), stream.Get(), runs),
                       cudaSuccess);
             std::vector<unsigned> restored;
@@ -875,16 +864,15 @@ CheckHeaderRuns()
         cudaMemcpyAsync(
             invalid.Get(), &invalidLength, sizeof(invalidLength), cudaMemcpyHostToDevice, stream.Get()),
         cudaSuccess);
-    std::vector<FractalShark::Png::Detail::CodeLengthRun> runs;
-    ASSERT_EQ(FractalShark::Png::Detail::EncodeCodeLengthRuns(invalid.Get(), 1, stream.Get(), runs),
-              cudaErrorInvalidValue);
+    std::vector<Png::CodeLengthRun> runs;
+    ASSERT_EQ(Png::EncodeCodeLengthRuns(invalid.Get(), 1, stream.Get(), runs), cudaErrorInvalidValue);
     ASSERT_TRUE(runs.empty());
 }
 
 void
 CheckBlockSelection()
 {
-    constexpr size_t regionBytes = FractalShark::Png::Detail::DeflateRegionBytes;
+    constexpr size_t regionBytes = Png::DeflateRegionBytes;
     std::mt19937 random{32195};
     std::vector<unsigned char> mixed(regionBytes * 2 + 20, 0);
     for (size_t index = regionBytes; index < regionBytes * 2; ++index) {
@@ -927,7 +915,7 @@ CheckBlockSelection()
 void
 CheckReuseAndConcurrency()
 {
-    FractalShark::Png::GpuPngEncoder encoder;
+    Png::GpuPngEncoder encoder;
     CheckImage(encoder, 257, 129, 0, Pattern::Noise);
     const size_t capacity = encoder.GetWorkspaceBytes();
     CheckImage(encoder, 1, 1, 7, Pattern::Transparent);
@@ -938,12 +926,12 @@ CheckReuseAndConcurrency()
     ASSERT_EQ(cudaGetDevice(&device), cudaSuccess);
     auto first = std::async(std::launch::async, [device] {
         ASSERT_EQ(cudaSetDevice(device), cudaSuccess);
-        FractalShark::Png::GpuPngEncoder separate;
+        Png::GpuPngEncoder separate;
         CheckImage(separate, 129, 65, 3, Pattern::Transparent);
     });
     auto second = std::async(std::launch::async, [device] {
         ASSERT_EQ(cudaSetDevice(device), cudaSuccess);
-        FractalShark::Png::GpuPngEncoder separate;
+        Png::GpuPngEncoder separate;
         CheckImage(separate, 65, 129, 1, Pattern::Noise);
     });
     first.get();
@@ -953,7 +941,7 @@ CheckReuseAndConcurrency()
 void
 CheckInvalidInputs()
 {
-    FractalShark::Png::GpuPngEncoder encoder;
+    Png::GpuPngEncoder encoder;
     PngTestStream stream;
     PngDeviceBuffer<Color16> pixels{1};
     std::vector<unsigned char> output{1, 2, 3};
@@ -974,10 +962,8 @@ CheckInvalidInputs()
               cudaErrorInvalidValue);
     ASSERT_EQ(encoder.Encode(pixels.Get(), 0xffffffffu, 1, 8, stream.Get(), output),
               cudaErrorInvalidValue);
-    ASSERT_EQ(FractalShark::Png::Detail::EncodeZlib(nullptr, 1, stream.Get(), output),
-              cudaErrorInvalidValue);
-    ASSERT_EQ(FractalShark::Png::Detail::EncodeZlib(
-                  reinterpret_cast<unsigned char *>(pixels.Get()), 0, stream.Get(), output),
+    ASSERT_EQ(Png::EncodeZlib(nullptr, 1, stream.Get(), output), cudaErrorInvalidValue);
+    ASSERT_EQ(Png::EncodeZlib(reinterpret_cast<unsigned char *>(pixels.Get()), 0, stream.Get(), output),
               cudaErrorInvalidValue);
     ASSERT_EQ(encoder.GetWorkspaceBytes(), size_t{0});
     CheckImage(encoder, 1, 1, 0, Pattern::Gradient);
@@ -1039,7 +1025,7 @@ Benchmark4K()
                                   stream.Get()),
                   cudaSuccess);
         ASSERT_EQ(cudaStreamSynchronize(stream.Get()), cudaSuccess);
-        FractalShark::Png::GpuPngEncoder encoder;
+        Png::GpuPngEncoder encoder;
         std::vector<unsigned char> gpu;
         const auto coldStart = std::chrono::steady_clock::now();
         ASSERT_EQ(encoder.Encode(input.Get(), width, height, width * sizeof(Color16), stream.Get(), gpu),
@@ -1081,11 +1067,9 @@ Benchmark4K()
                                   stream.Get()),
                   cudaSuccess);
         std::vector<unsigned char> fixedZlib;
-        ASSERT_EQ(FractalShark::Png::Detail::EncodeZlibFixed(
-                      compressionInput.Get(), filtered.size(), stream.Get(), fixedZlib),
+        ASSERT_EQ(Png::EncodeZlibFixed(compressionInput.Get(), filtered.size(), stream.Get(), fixedZlib),
                   cudaSuccess);
-        const size_t fixedChunks =
-            (fixedZlib.size() - 1) / FractalShark::Png::Detail::IdatPayloadBytes + 1;
+        const size_t fixedChunks = (fixedZlib.size() - 1) / Png::IdatPayloadBytes + 1;
         const size_t fixedPngBytes = fixedZlib.size() + fixedChunks * 12 + 45;
         ASSERT_TRUE(gpu.size() <= fixedPngBytes);
         if (label != "noise") {

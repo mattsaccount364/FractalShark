@@ -6,7 +6,7 @@
 
 #include <limits>
 
-namespace FractalShark::Png::Detail::Huffman {
+namespace Png::Huffman {
 
 // Boundary package merge constructs optimal length-limited codes in a single lane.
 // Sorting, node chains, and the explicit traversal stack all reside in device workspace.
@@ -446,4 +446,4 @@ WriteHeader(Writer &writer, const Region *region)
     }
 }
 
-} // namespace FractalShark::Png::Detail::Huffman
+} // namespace Png::Huffman

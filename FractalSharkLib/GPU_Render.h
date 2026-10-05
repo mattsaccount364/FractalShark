@@ -18,7 +18,7 @@
 #include <mutex>
 #include <vector>
 
-namespace FractalShark::Png {
+namespace Png {
 class GpuPngEncoder;
 }
 
@@ -242,7 +242,7 @@ private:
     std::condition_variable *m_ComputeDoneCV{nullptr};
 
     PerturbResultsCollection m_PerturbResults;
-    std::unique_ptr<FractalShark::Png::GpuPngEncoder> m_PngEncoder;
+    std::unique_ptr<Png::GpuPngEncoder> m_PngEncoder;
 };
 
 #endif // GPGPU_RENDER_GPU_HPP

@@ -9,7 +9,7 @@
 
 struct Color16;
 
-namespace FractalShark::Png {
+namespace Png {
 
 // A context belongs to the CUDA device on which its first operation runs. Calls on one
 // context must be serialized. Input remains caller-owned until Encode returns.
@@ -43,4 +43,4 @@ private:
     std::unique_ptr<Storage> m_Storage;
 };
 
-} // namespace FractalShark::Png
+} // namespace Png

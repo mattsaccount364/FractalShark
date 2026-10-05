@@ -719,7 +719,7 @@ GPURenderer::EncodePng(const IterType *hostIters,
     }
     if (result == cudaSuccess) {
         if (!m_PngEncoder) {
-            m_PngEncoder = std::make_unique<FractalShark::Png::GpuPngEncoder>();
+            m_PngEncoder = std::make_unique<Png::GpuPngEncoder>();
         }
     }
     if (result == cudaSuccess) {

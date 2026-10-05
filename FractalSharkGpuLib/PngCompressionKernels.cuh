@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-namespace FractalShark::Png::Detail {
+namespace Png {
 
 // Encoder policy: regions reset the LZ77 dictionary to permit independent warp compression.
 // IDAT payloads split one continuous zlib stream; they do not reset that dictionary.
@@ -186,4 +186,4 @@ cudaError_t EncodeCodeLengthRuns(const unsigned *deviceLengths,
                                  cudaStream_t stream,
                                  std::vector<CodeLengthRun> &runs);
 
-} // namespace FractalShark::Png::Detail
+} // namespace Png

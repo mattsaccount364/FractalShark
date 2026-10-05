@@ -71,7 +71,7 @@ The CUDA-facing interface is declared in
 \code{FractalSharkGpuLib/PngEncoder.cuh}:
 
 \begin{lstlisting}
-FractalShark::Png::GpuPngEncoder encoder;
+Png::GpuPngEncoder encoder;
 std::vector<unsigned char> pngBytes;
 const cudaError_t error = encoder.Encode(
     devicePixels, width, height, rowStrideBytes, stream, pngBytes);

@@ -785,6 +785,63 @@ TEST(FractalSharkLib_SavePoolContinuesAfterTaskFailure)
     ASSERT_FALSE(pool.Cleanup(false));
 }
 
+TEST(FractalSharkLib_SavePoolGpuLeaseLeavesQueueAvailable)
+{
+    FractalSaveThreadPool pool(2, [] { return uint32_t{0}; });
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool cpuCompleted = false;
+    std::atomic<bool> gpuEntered = false;
+    bool cpuRanWhileGpuBlocked = false;
+    bool gpuWaited = false;
+    {
+        const auto lease = pool.AcquireGpuEncoding();
+        pool.Submit([&] {
+            return FractalSaveThreadPool::Task([&] {
+                const auto workerLease = pool.AcquireGpuEncoding();
+                gpuEntered.store(true);
+            });
+        });
+        pool.Submit([&] {
+            return FractalSaveThreadPool::Task([&] {
+                {
+                    std::lock_guard lock(mutex);
+                    cpuCompleted = true;
+                }
+                condition.notify_all();
+            });
+        });
+        std::unique_lock lock(mutex);
+        cpuRanWhileGpuBlocked =
+            condition.wait_for(lock, std::chrono::seconds(5), [&] { return cpuCompleted; });
+        gpuWaited = !gpuEntered.load();
+    }
+    ASSERT_TRUE(pool.Cleanup(true));
+    ASSERT_TRUE(cpuRanWhileGpuBlocked);
+    ASSERT_TRUE(gpuWaited);
+    ASSERT_TRUE(gpuEntered.load());
+}
+
+TEST(FractalSharkLib_SavePoolGpuLeaseReleasesAfterTaskFailure)
+{
+    FractalSaveThreadPool pool(1, [] { return uint32_t{0}; });
+    pool.Submit([&] {
+        return FractalSaveThreadPool::Task([&] {
+            const auto lease = pool.AcquireGpuEncoding();
+            throw std::runtime_error("GPU encoding failed while holding the lease");
+        });
+    });
+    std::atomic<bool> completed = false;
+    pool.Submit([&] {
+        return FractalSaveThreadPool::Task([&] {
+            const auto lease = pool.AcquireGpuEncoding();
+            completed.store(true);
+        });
+    });
+    ASSERT_TRUE(pool.Cleanup(true));
+    ASSERT_TRUE(completed.load());
+}
+
 TEST(FractalSharkLib_SavePoolPreservesImageSnapshotsAcrossResize)
 {
     const auto directory = std::filesystem::temp_directory_path();

@@ -58,6 +58,31 @@ FractalSaveThreadPool::FractalSaveThreadPool(size_t maxWorkers, MemoryLoadFuncti
 
 FractalSaveThreadPool::~FractalSaveThreadPool() { Shutdown(); }
 
+FractalSaveThreadPool::GpuEncodingLease::GpuEncodingLease(FractalSaveThreadPool &pool) : m_Pool(pool)
+{
+    std::unique_lock lock(m_Pool.m_Mutex);
+    // Accepted jobs must still acquire the encoder while Shutdown waits for them to finish.
+    m_Pool.m_SlotAvailable.wait(lock, [this] { return !m_Pool.m_GpuEncodingBusy; });
+    m_Pool.m_GpuEncodingBusy = true;
+}
+
+FractalSaveThreadPool::GpuEncodingLease::~GpuEncodingLease()
+{
+    {
+        std::lock_guard lock(m_Pool.m_Mutex);
+        m_Pool.m_GpuEncodingBusy = false;
+    }
+    // Capacity, completion, and encoder waiters share this condition variable. Wake all so
+    // each waiter can recheck its own predicate, including during exception unwinding.
+    m_Pool.m_SlotAvailable.notify_all();
+}
+
+FractalSaveThreadPool::GpuEncodingLease
+FractalSaveThreadPool::AcquireGpuEncoding()
+{
+    return GpuEncodingLease(*this);
+}
+
 void
 FractalSaveThreadPool::Submit(const TaskFactory &makeTask)
 {

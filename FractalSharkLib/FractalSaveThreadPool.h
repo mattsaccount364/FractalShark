@@ -15,6 +15,20 @@ public:
     using TaskFactory = std::function<Task()>;
     using MemoryLoadFunction = std::function<uint32_t()>;
 
+    // Serialize the reusable GPU workspace without holding the queue mutex during CUDA work.
+    // A lease must end before its owning task completes or the pool is destroyed.
+    class GpuEncodingLease {
+    public:
+        ~GpuEncodingLease();
+        GpuEncodingLease(const GpuEncodingLease &) = delete;
+        GpuEncodingLease &operator=(const GpuEncodingLease &) = delete;
+
+    private:
+        friend class FractalSaveThreadPool;
+        explicit GpuEncodingLease(FractalSaveThreadPool &pool);
+        FractalSaveThreadPool &m_Pool;
+    };
+
     FractalSaveThreadPool(size_t maxWorkers, MemoryLoadFunction getMemoryLoad);
     ~FractalSaveThreadPool();
 
@@ -22,6 +36,7 @@ public:
     FractalSaveThreadPool &operator=(const FractalSaveThreadPool &) = delete;
 
     void Submit(const TaskFactory &makeTask);
+    GpuEncodingLease AcquireGpuEncoding();
     bool Cleanup(bool all);
     void Shutdown();
 
@@ -39,4 +54,5 @@ private:
     size_t m_UnreportedCompletions = 0;
     bool m_Accepting = true;
     bool m_Stopping = false;
+    bool m_GpuEncodingBusy = false;
 };

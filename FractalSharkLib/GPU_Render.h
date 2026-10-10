@@ -134,7 +134,8 @@ public:
 
     uint32_t SyncComputeStream();
 
-    // The caller must drain rendering before uploading a save snapshot. Encoding is synchronous.
+    // Synchronous on the calling worker. The caller must exclusively own this renderer's
+    // workspace; background saves use a separate renderer and the save pool's encoding lease.
     template <typename IterType>
     uint32_t EncodePng(const IterType *hostIters,
                        size_t rowStrideElements,

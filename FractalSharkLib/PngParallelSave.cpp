@@ -3,6 +3,7 @@
 #include "ConsoleLog.h"
 #include "Environment.h"
 #include "Fractal.h"
+#include "FractalSaveThreadPool.h"
 #include "PngParallelSave.h"
 
 #include <cinttypes>
@@ -108,7 +109,13 @@ PngParallelSave::EncodeGpuPng(std::vector<unsigned char> &pngBytes)
         m_CurIters.m_Height > std::numeric_limits<uint32_t>::max()) {
         return 1;
     }
-    auto &renderer = m_Fractal.GetRenderer(RendererIndex::Renderer0);
+    // The lease protects both lazy construction and all GPU workspace use. Its destructor
+    // releases the encoder before Run writes the host PNG bytes to disk.
+    const auto lease = m_Fractal.m_SavePool->AcquireGpuEncoding();
+    if (!m_Fractal.m_SaveGpuRenderer) {
+        m_Fractal.m_SaveGpuRenderer = std::make_unique<GPURenderer>();
+    }
+    auto &renderer = *m_Fractal.m_SaveGpuRenderer;
     auto result = renderer.InitializeMemory<IterType>(static_cast<uint32_t>(m_CurIters.m_Width),
                                                       static_cast<uint32_t>(m_CurIters.m_Height),
                                                       m_GpuAntialiasing,

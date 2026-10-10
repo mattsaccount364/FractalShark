@@ -2922,11 +2922,6 @@ Fractal::SaveFractalData(std::wstring filenameBase, bool copyTheIters)
     const auto backend = Typ == PngParallelSave::Type::PngImg && !RequiresUseLocalColor()
                              ? PngParallelSave::EncoderBackend::Gpu
                              : PngParallelSave::EncoderBackend::Cpu;
-    if (backend == PngParallelSave::EncoderBackend::Gpu) {
-        PngParallelSave save(Typ, backend, std::move(filenameBase), copyTheIters, *this);
-        return save.Run();
-    }
-
     m_SavePool->Submit([this, backend, filenameBase = std::move(filenameBase), copyTheIters] {
         auto save = std::make_unique<PngParallelSave>(Typ, backend, filenameBase, copyTheIters, *this);
         return FractalSaveThreadPool::Task([save = std::move(save)] { save->Run(); });

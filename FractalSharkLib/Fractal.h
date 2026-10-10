@@ -49,6 +49,7 @@ class Fractal {
 public:
     // TODO get rid of this junk:
     friend class PngParallelSave;
+    friend class FractalSaveTestAccess;
     friend class BenchmarkData;
     friend class AutoZoomer;
     friend class RenderThreadPool;
@@ -427,6 +428,10 @@ private:
     std::unique_ptr<FeatureFinderOrchestrator> m_FeatureOrchestrator;
 
     std::unique_ptr<FractalSaveThreadPool> m_SavePool;
+
+    // Save workers share this workspace under the save pool's GPU encoding lease. It never
+    // aliases a render worker's buffers; Uninitialize drains saves before member destruction.
+    std::unique_ptr<GPURenderer> m_SaveGpuRenderer;
 
     // Defaults
     static constexpr IterTypeFull DefaultIterations = 256 * 32;

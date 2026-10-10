@@ -44,7 +44,7 @@ struct RenderRequest {
     RenderAlgorithm Algorithm; // mandatory
     std::optional<RefOrbitCalc::PerturbationAlg> Perturbation;
 
-    // Filename WITHOUT the .png extension. SaveCurrentFractal appends it.
+    // Output path; .png is appended only when its filename has no extension.
     // If empty, PNG output is skipped (useful when the caller only wants
     // the computed Fractal for other output like console rendering).
     std::wstring OutPngBasename;
@@ -54,10 +54,11 @@ struct RenderRequest {
     PngCompletionMode PngCompletion = PngCompletionMode::Wait;
 };
 
-// Returns 0 on success, non-zero on failure (message appended to *err if non-null).
+// Returns 0 after rendering and save submission, non-zero for request/setup failures
+// (message appended to *err if non-null). Save workers log encoding and file errors.
 // Exceptions from the underlying render path propagate to the caller.
 // PreserveIterationBuffer keeps the computed frame available for additional output.
 // Background PNG completion is drained later by the owning Fractal for either encoder backend.
-// Wait drains the save pool. Worker encoding/write failures are logged, as for CPU saves.
+// Wait drains the save pool before returning.
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err);
 int RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out);

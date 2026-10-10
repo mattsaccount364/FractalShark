@@ -25,6 +25,7 @@ target_sources(FractalSharkLib PRIVATE
     OrbitParameterPack.cpp
     PerturbationResults.cpp
     PngParallelSave.cpp
+    SaveFileTransaction.cpp
     RecommendedSettings.cpp
     RefOrbitCalc.cpp
     RenderAlgorithm.cpp

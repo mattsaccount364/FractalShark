@@ -3,9 +3,9 @@
 #include <cuda_runtime.h>
 
 #include "FractalPalette.h"
-#include "FractalSharkGpuLib/PngCompressionKernels.cuh"
 #include "FractalSharkGpuLib/PngEncoder.cuh"
 #include "GPU_Render.h"
+#include "PngEncoderTestSupport.cuh"
 #include "TestFramework.h"
 #include "WPngImage/WPngImage.hh"
 #include "WPngImage/lodepng.h"
@@ -241,7 +241,13 @@ CheckImage(Png::GpuPngEncoder &encoder, uint32_t width, uint32_t height, size_t 
                               stream.Get()),
               cudaSuccess);
     std::vector<unsigned char> gpu;
-    ASSERT_EQ(encoder.Encode(input.Get(), width, height, pitch * sizeof(Color16), stream.Get(), gpu),
+    ASSERT_EQ(encoder.Encode(input.Get(),
+                             width,
+                             height,
+                             pitch * sizeof(Color16),
+                             Png::AlphaMode::Detect,
+                             stream.Get(),
+                             gpu),
               cudaSuccess);
     CheckStructure(gpu, pattern == Pattern::Transparent ? 6 : 2);
     CompareDecoded(gpu, expected, width, height);
@@ -259,15 +265,22 @@ CheckImage(Png::GpuPngEncoder &encoder, uint32_t width, uint32_t height, size_t 
               cudaSuccess);
     std::vector<unsigned char> baseline;
     std::vector<unsigned char> improved;
-    ASSERT_EQ(Png::EncodeZlibFixed(compressionInput.Get(), filtered.size(), stream.Get(), baseline),
-              cudaSuccess);
-    ASSERT_EQ(Png::EncodeZlib(compressionInput.Get(), filtered.size(), stream.Get(), improved),
-              cudaSuccess);
+    ASSERT_EQ(
+        PngTestSupport::EncodeZlibFixed(compressionInput.Get(), filtered.size(), stream.Get(), baseline),
+        cudaSuccess);
+    ASSERT_EQ(
+        PngTestSupport::EncodeZlib(compressionInput.Get(), filtered.size(), stream.Get(), improved),
+        cudaSuccess);
     ASSERT_TRUE(improved.size() <= baseline.size());
     std::vector<unsigned char> repeated;
-    ASSERT_EQ(
-        encoder.Encode(input.Get(), width, height, pitch * sizeof(Color16), stream.Get(), repeated),
-        cudaSuccess);
+    ASSERT_EQ(encoder.Encode(input.Get(),
+                             width,
+                             height,
+                             pitch * sizeof(Color16),
+                             Png::AlphaMode::Detect,
+                             stream.Get(),
+                             repeated),
+              cudaSuccess);
     ASSERT_TRUE(gpu == repeated);
     return gpu;
 }
@@ -495,9 +508,10 @@ CheckZlib(const std::vector<unsigned char> &input)
         cudaMemcpyAsync(device.Get(), input.data(), input.size(), cudaMemcpyHostToDevice, stream.Get()),
         cudaSuccess);
     std::vector<unsigned char> bytes;
-    ASSERT_EQ(Png::EncodeZlib(device.Get(), input.size(), stream.Get(), bytes), cudaSuccess);
+    ASSERT_EQ(PngTestSupport::EncodeZlib(device.Get(), input.size(), stream.Get(), bytes), cudaSuccess);
     std::vector<unsigned char> baseline;
-    ASSERT_EQ(Png::EncodeZlibFixed(device.Get(), input.size(), stream.Get(), baseline), cudaSuccess);
+    ASSERT_EQ(PngTestSupport::EncodeZlibFixed(device.Get(), input.size(), stream.Get(), baseline),
+              cudaSuccess);
     ASSERT_TRUE(bytes.size() <= baseline.size());
     unsigned error = 0;
     ASSERT_TRUE(DecodeZlib(baseline, error) == input);
@@ -580,7 +594,7 @@ CheckFilters()
                                       stream.Get()),
                       cudaSuccess);
             ASSERT_EQ(
-                Png::LaunchFilterScanlines(
+                PngTestSupport::LaunchFilterScanlines(
                     source.Get(), width, height, channels, selected.Get(), output.Get(), stream.Get()),
                 cudaSuccess);
             std::vector<unsigned char> filtered(raw.size() + height);
@@ -780,8 +794,9 @@ CheckHuffmanLengths()
                                       stream.Get()),
                       cudaSuccess);
             std::vector<unsigned> gpu;
-            ASSERT_EQ(Png::BuildHuffmanCodeLengths(input.Get(), count, maximum, stream.Get(), gpu),
-                      cudaSuccess);
+            ASSERT_EQ(
+                PngTestSupport::BuildHuffmanCodeLengths(input.Get(), count, maximum, stream.Get(), gpu),
+                cudaSuccess);
             std::vector<unsigned> cpu(count);
             ASSERT_EQ(lodepng_huffman_code_lengths(cpu.data(), frequencies.data(), count, maximum), 0u);
             uint64_t gpuCost = 0;
@@ -805,7 +820,7 @@ CheckHuffmanLengths()
         }
     }
     std::vector<unsigned> output{1};
-    ASSERT_EQ(Png::BuildHuffmanCodeLengths(nullptr, 286, 15, stream.Get(), output),
+    ASSERT_EQ(PngTestSupport::BuildHuffmanCodeLengths(nullptr, 286, 15, stream.Get(), output),
               cudaErrorInvalidValue);
     ASSERT_TRUE(output.empty());
 }
@@ -830,7 +845,7 @@ CheckHeaderRuns()
                                       stream.Get()),
                       cudaSuccess);
             std::vector<Png::CodeLengthRun> runs;
-            ASSERT_EQ(Png::EncodeCodeLengthRuns(
+            ASSERT_EQ(PngTestSupport::EncodeCodeLengthRuns(
                           input.Get(), static_cast<unsigned>(lengths.size()), stream.Get(), runs),
                       cudaSuccess);
             std::vector<unsigned> restored;
@@ -865,7 +880,8 @@ CheckHeaderRuns()
             invalid.Get(), &invalidLength, sizeof(invalidLength), cudaMemcpyHostToDevice, stream.Get()),
         cudaSuccess);
     std::vector<Png::CodeLengthRun> runs;
-    ASSERT_EQ(Png::EncodeCodeLengthRuns(invalid.Get(), 1, stream.Get(), runs), cudaErrorInvalidValue);
+    ASSERT_EQ(PngTestSupport::EncodeCodeLengthRuns(invalid.Get(), 1, stream.Get(), runs),
+              cudaErrorInvalidValue);
     ASSERT_TRUE(runs.empty());
 }
 
@@ -945,25 +961,43 @@ CheckInvalidInputs()
     PngTestStream stream;
     PngDeviceBuffer<Color16> pixels{1};
     std::vector<unsigned char> output{1, 2, 3};
-    ASSERT_EQ(encoder.Encode(nullptr, 1, 1, 8, stream.Get(), output), cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(nullptr, 1, 1, 8, Png::AlphaMode::Detect, stream.Get(), output),
+              cudaErrorInvalidValue);
     ASSERT_TRUE(output.empty());
-    ASSERT_EQ(encoder.Encode(pixels.Get(), 0, 1, 8, stream.Get(), output), cudaErrorInvalidValue);
-    ASSERT_EQ(encoder.Encode(pixels.Get(), 1, 0, 8, stream.Get(), output), cudaErrorInvalidValue);
-    ASSERT_EQ(encoder.Encode(pixels.Get(), 1, 1, 7, stream.Get(), output), cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(pixels.Get(), 0, 1, 8, Png::AlphaMode::Detect, stream.Get(), output),
+              cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(pixels.Get(), 1, 0, 8, Png::AlphaMode::Detect, stream.Get(), output),
+              cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(pixels.Get(), 1, 1, 7, Png::AlphaMode::Detect, stream.Get(), output),
+              cudaErrorInvalidValue);
     const auto *unaligned =
         reinterpret_cast<const Color16 *>(reinterpret_cast<const unsigned char *>(pixels.Get()) + 1);
-    ASSERT_EQ(encoder.Encode(unaligned, 1, 1, 8, stream.Get(), output), cudaErrorInvalidValue);
-    ASSERT_EQ(encoder.Encode(pixels.Get(), 1, 2, 9, stream.Get(), output), cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(unaligned, 1, 1, 8, Png::AlphaMode::Detect, stream.Get(), output),
+              cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(pixels.Get(), 1, 2, 9, Png::AlphaMode::Detect, stream.Get(), output),
+              cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(pixels.Get(),
+                             1,
+                             2,
+                             std::numeric_limits<size_t>::max() - 1,
+                             Png::AlphaMode::Detect,
+                             stream.Get(),
+                             output),
+              cudaErrorInvalidValue);
+    ASSERT_EQ(encoder.Encode(pixels.Get(),
+                             1,
+                             2,
+                             std::numeric_limits<size_t>::max() - 15,
+                             Png::AlphaMode::Detect,
+                             stream.Get(),
+                             output),
+              cudaErrorInvalidValue);
     ASSERT_EQ(
-        encoder.Encode(pixels.Get(), 1, 2, std::numeric_limits<size_t>::max() - 1, stream.Get(), output),
+        encoder.Encode(pixels.Get(), 0xffffffffu, 1, 8, Png::AlphaMode::Detect, stream.Get(), output),
         cudaErrorInvalidValue);
-    ASSERT_EQ(encoder.Encode(
-                  pixels.Get(), 1, 2, std::numeric_limits<size_t>::max() - 15, stream.Get(), output),
-              cudaErrorInvalidValue);
-    ASSERT_EQ(encoder.Encode(pixels.Get(), 0xffffffffu, 1, 8, stream.Get(), output),
-              cudaErrorInvalidValue);
-    ASSERT_EQ(Png::EncodeZlib(nullptr, 1, stream.Get(), output), cudaErrorInvalidValue);
-    ASSERT_EQ(Png::EncodeZlib(reinterpret_cast<unsigned char *>(pixels.Get()), 0, stream.Get(), output),
+    ASSERT_EQ(PngTestSupport::EncodeZlib(nullptr, 1, stream.Get(), output), cudaErrorInvalidValue);
+    ASSERT_EQ(PngTestSupport::EncodeZlib(
+                  reinterpret_cast<unsigned char *>(pixels.Get()), 0, stream.Get(), output),
               cudaErrorInvalidValue);
     ASSERT_EQ(encoder.GetWorkspaceBytes(), size_t{0});
     CheckImage(encoder, 1, 1, 0, Pattern::Gradient);
@@ -1028,7 +1062,13 @@ Benchmark4K()
         Png::GpuPngEncoder encoder;
         std::vector<unsigned char> gpu;
         const auto coldStart = std::chrono::steady_clock::now();
-        ASSERT_EQ(encoder.Encode(input.Get(), width, height, width * sizeof(Color16), stream.Get(), gpu),
+        ASSERT_EQ(encoder.Encode(input.Get(),
+                                 width,
+                                 height,
+                                 width * sizeof(Color16),
+                                 Png::AlphaMode::Detect,
+                                 stream.Get(),
+                                 gpu),
                   cudaSuccess);
         const double coldMs =
             std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - coldStart)
@@ -1038,9 +1078,14 @@ Benchmark4K()
         std::vector<unsigned char> cpu;
         for (unsigned repeat = 0; repeat < 3; ++repeat) {
             auto start = std::chrono::steady_clock::now();
-            ASSERT_EQ(
-                encoder.Encode(input.Get(), width, height, width * sizeof(Color16), stream.Get(), gpu),
-                cudaSuccess);
+            ASSERT_EQ(encoder.Encode(input.Get(),
+                                     width,
+                                     height,
+                                     width * sizeof(Color16),
+                                     Png::AlphaMode::Detect,
+                                     stream.Get(),
+                                     gpu),
+                      cudaSuccess);
             gpuTimes.push_back(
                 std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start)
                     .count());
@@ -1067,7 +1112,8 @@ Benchmark4K()
                                   stream.Get()),
                   cudaSuccess);
         std::vector<unsigned char> fixedZlib;
-        ASSERT_EQ(Png::EncodeZlibFixed(compressionInput.Get(), filtered.size(), stream.Get(), fixedZlib),
+        ASSERT_EQ(PngTestSupport::EncodeZlibFixed(
+                      compressionInput.Get(), filtered.size(), stream.Get(), fixedZlib),
                   cudaSuccess);
         const size_t fixedChunks = (fixedZlib.size() - 1) / Png::IdatPayloadBytes + 1;
         const size_t fixedPngBytes = fixedZlib.size() + fixedChunks * 12 + 45;
@@ -1083,7 +1129,34 @@ Benchmark4K()
     }
 }
 
+void
+CheckOpaqueMode()
+{
+    PngTestStream stream;
+    const auto pixels = MakePixels(33, 17, 35, Pattern::Gradient);
+    PngDeviceBuffer<Color16> input{pixels.size()};
+    ASSERT_EQ(cudaMemcpyAsync(input.Get(),
+                              pixels.data(),
+                              pixels.size() * sizeof(Color16),
+                              cudaMemcpyHostToDevice,
+                              stream.Get()),
+              cudaSuccess);
+    Png::GpuPngEncoder detected;
+    Png::GpuPngEncoder opaque;
+    std::vector<unsigned char> a, b;
+    ASSERT_EQ(detected.Encode(
+                  input.Get(), 33, 17, 35 * sizeof(Color16), Png::AlphaMode::Detect, stream.Get(), a),
+              cudaSuccess);
+    ASSERT_EQ(opaque.Encode(
+                  input.Get(), 33, 17, 35 * sizeof(Color16), Png::AlphaMode::Opaque, stream.Get(), b),
+              cudaSuccess);
+    ASSERT_TRUE(a == b);
+    ASSERT_EQ(detected.GetWorkspaceBytes(), opaque.GetWorkspaceBytes() + sizeof(unsigned));
+    CheckStructure(b, 2);
+}
+
 const bool registered = [] {
+    TestFramework::RegisterCase("CudaPng_OpaqueModeMatchesDetection", CheckOpaqueMode, true, "", false);
     TestFramework::RegisterCase("CudaPng_ShapesAnd16BitPixels", CheckShapes, true, "", false);
     TestFramework::RegisterCase(
         "CudaPng_NoiseCompressionAndIdatChunks", CheckNoiseAndChunks, true, "", false);

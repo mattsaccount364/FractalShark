@@ -78,6 +78,7 @@
     <ClCompile Include="TestGuiShared.cpp" />
     <ClCompile Include="TestGrowableVector.cpp" />
     <ClCompile Include="TestFractalSharkLib.cpp" />
+    <ClCompile Include="TestSaveTransactions.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GpuTestRuntime.h" />

@@ -190,5 +190,14 @@ outputs unless they are intentional fixtures. Follow `SECURITY.md` for vulnerabi
 
 ## Agent Guardrails
 
+Temporary Python or other helper scripts are allowed for one-off work, but must be cleaned up after
+the run, including failure or cancellation. Prefer the OS temporary directory; do not leave helpers
+in the working tree, including ignored build directories.
+
+If a helper's purpose has reusable value, prefer implementing it in the application or existing test
+suites with normal build integration. Do not create or evolve a parallel test framework or a separate
+script-based validation harness. Use the repository's existing test runner, fixtures, and build tools
+for repeatable validation.
+
 Do not run `git add` or `git commit`; leave changes unstaged for review. Do not modify source files in
 plan-only workflows.

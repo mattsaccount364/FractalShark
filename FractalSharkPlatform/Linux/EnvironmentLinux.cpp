@@ -34,7 +34,7 @@ namespace {
 // Helper: convert wchar_t (UTF-32 on Linux) to UTF-8.
 // -------------------------------------------------------------------------
 std::string
-WideToUtf8(const wchar_t *wide)
+EncodeWidePath(const wchar_t *wide)
 {
     if (wide == nullptr || *wide == L'\0') {
         return {};
@@ -755,6 +755,30 @@ Environment::FileRename(const wchar_t *sourcePath, const wchar_t *destinationPat
     return ::rename(source.c_str(), destination.c_str()) == 0;
 }
 
+Environment::FilePublication
+Environment::PublishFile(const wchar_t *sourcePath,
+                         const wchar_t *destinationPath,
+                         bool replaceExisting,
+                         std::error_code &error)
+{
+    error.clear();
+    const std::string source = WideToUtf8(sourcePath);
+    const std::string destination = WideToUtf8(destinationPath);
+    // link is an atomic no-overwrite publication. A prior existence check followed
+    // by rename would let two independent pools overwrite one another's output.
+    const int result = replaceExisting ? ::rename(source.c_str(), destination.c_str())
+                                       : ::link(source.c_str(), destination.c_str());
+    if (result == 0) {
+        return FilePublication::Published;
+    }
+    const int code = errno;
+    if (!replaceExisting && code == EEXIST) {
+        return FilePublication::AlreadyExists;
+    }
+    error = std::error_code(code, std::generic_category());
+    return FilePublication::Failed;
+}
+
 std::optional<uint64_t>
 Environment::FileSizeBytes(const wchar_t *path)
 {
@@ -924,6 +948,12 @@ void
 Environment::PumpUIEvents()
 {
     // Linux UI integrations pump their own event loops.
+}
+
+std::string
+Environment::WideToUtf8(std::wstring_view text)
+{
+    return EncodeWidePath(std::wstring(text).c_str());
 }
 
 std::wstring

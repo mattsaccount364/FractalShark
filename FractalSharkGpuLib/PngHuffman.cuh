@@ -1,6 +1,6 @@
 #pragma once
 
-#include "PngCompressionKernels.cuh"
+#include "PngFormat.cuh"
 
 #include <cuda_runtime.h>
 
@@ -8,6 +8,8 @@
 
 namespace Png::Huffman {
 
+// Production device routines used to build dynamic DEFLATE headers. The CUDA tests call
+// these same routines through fixture kernels defined in the test project's adapters.
 // Boundary package merge constructs optimal length-limited codes in a single lane.
 // Sorting, node chains, and the explicit traversal stack all reside in device workspace.
 inline constexpr unsigned LiteralSymbols = Format::LiteralLengthSymbols;

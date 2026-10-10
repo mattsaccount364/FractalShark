@@ -87,12 +87,8 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::o
     fractal.CalcFractal(/*drawFractal=*/true);
 
     if (!req.OutPngBasename.empty()) {
-        const int rc = fractal.SaveCurrentFractal(req.OutPngBasename, req.PreserveIterationBuffer);
-        if (rc != 0) {
-            std::ostringstream message;
-            message << "RenderToPng: SaveCurrentFractal returned code " << rc;
-            return fail(message.str(), rc);
-        }
+        fractal.SaveCurrentFractal(
+            req.OutPngBasename, req.PreserveIterationBuffer, SaveOverwritePolicy::SkipExisting);
         if (req.PngCompletion == PngCompletionMode::Wait) {
             fractal.CleanupThreads(/*all=*/true);
         }

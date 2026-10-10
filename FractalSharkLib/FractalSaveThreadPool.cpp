@@ -4,6 +4,7 @@
 
 #include "ConsoleLog.h"
 #include "Environment.h"
+#include "FractalSharkGpuLib/GpuSaveEncoder.h"
 
 #include <algorithm>
 #include <chrono>
@@ -77,6 +78,15 @@ FractalSaveThreadPool::GpuEncodingLease::~GpuEncodingLease()
     m_Pool.m_SlotAvailable.notify_all();
 }
 
+Png::GpuSaveEncoder &
+FractalSaveThreadPool::GpuEncodingLease::GetEncoder() const
+{
+    if (!m_Pool.m_GpuEncoder) {
+        m_Pool.m_GpuEncoder = std::make_unique<Png::GpuSaveEncoder>();
+    }
+    return *m_Pool.m_GpuEncoder;
+}
+
 FractalSaveThreadPool::GpuEncodingLease
 FractalSaveThreadPool::AcquireGpuEncoding()
 {
@@ -142,6 +152,8 @@ FractalSaveThreadPool::Shutdown()
         worker.join();
     }
     m_Workers.clear();
+    // Tasks and moved-buffer recyclers have been destroyed before outstanding reaches zero.
+    m_GpuEncoder.reset();
 }
 
 void
@@ -168,6 +180,8 @@ FractalSaveThreadPool::WorkerLoop()
                 FractalSharkLog::LogLine(__FILE__, __LINE__)
                     << "Fractal save worker failed with an unknown exception";
             }
+            // Destroy the copied data and moved-buffer recycler before decrementing
+            // outstanding. A drain must also guarantee that buffer recycling has finished.
         }
         {
             std::lock_guard lock(m_Mutex);

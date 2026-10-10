@@ -232,17 +232,17 @@ Fractal::InitializeGPUMemory(RendererIndex idx, bool expectedReuse, ItersMemoryC
 }
 
 void
-Fractal::ReturnIterMemory(ItersMemoryContainer &&to_return)
+Fractal::ReturnIterMemory(ItersMemoryContainer &&toReturn)
 {
     std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
 
     // Discard containers with stale dimensions or antialiasing (from before a resize/AA change)
-    if (to_return.m_OutputWidth != m_ScrnWidth || to_return.m_OutputHeight != m_ScrnHeight ||
-        to_return.m_Antialiasing != m_GpuAntialiasing) {
+    if (toReturn.m_OutputWidth != m_ScrnWidth || toReturn.m_OutputHeight != m_ScrnHeight ||
+        toReturn.m_Antialiasing != m_GpuAntialiasing || toReturn.GetIterType() != m_IterType) {
         return;
     }
 
-    m_ItersMemoryStorage.push_back(std::move(to_return));
+    m_ItersMemoryStorage.push_back(std::move(toReturn));
     lock.unlock();
     m_ItersMemoryStorageCV.notify_one();
 }
@@ -260,23 +260,7 @@ Fractal::AcquireItersMemory()
 void
 Fractal::SetCurItersMemory()
 {
-    std::unique_lock<std::mutex> lock(m_ItersMemoryStorageLock);
-    if (!m_ItersMemoryStorage.empty()) {
-        m_CurIters = std::move(m_ItersMemoryStorage.back());
-        m_ItersMemoryStorage.pop_back();
-        return;
-    }
-
-    for (;;) {
-        lock.unlock();
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));
-        lock.lock();
-        if (!m_ItersMemoryStorage.empty()) {
-            m_CurIters = std::move(m_ItersMemoryStorage.back());
-            m_ItersMemoryStorage.pop_back();
-            return;
-        }
-    }
+    m_CurIters = AcquireItersMemory();
 }
 
 void
@@ -301,7 +285,7 @@ Fractal::Uninitialize()
 // Resets the dimensions of the screen to width x height.
 //////////////////////////////////////////////////////////////////////////////
 void
-Fractal::ResetDimensions(size_t width, size_t height, uint32_t gpu_antialiasing)
+Fractal::ResetDimensions(size_t width, size_t height, uint32_t gpuAntialiasing)
 {
     if (width == SIZE_MAX) {
         width = m_ScrnWidth;
@@ -310,20 +294,28 @@ Fractal::ResetDimensions(size_t width, size_t height, uint32_t gpu_antialiasing)
         height = m_ScrnHeight;
     }
 
-    if (gpu_antialiasing == UINT32_MAX) {
-        gpu_antialiasing = m_GpuAntialiasing;
+    if (gpuAntialiasing == UINT32_MAX) {
+        gpuAntialiasing = m_GpuAntialiasing;
     }
 
-    if (gpu_antialiasing > 4) {
+    if (gpuAntialiasing > 4) {
         FractalSharkLog::LogLine(__FILE__, __LINE__)
             << L"You're doing it wrong.  4x is max == 16 samples per pixel";
-        gpu_antialiasing = 4;
+        gpuAntialiasing = 4;
     }
 
-    if (m_ScrnWidth != width || m_ScrnHeight != height || m_GpuAntialiasing != gpu_antialiasing) {
-        m_ScrnWidth = width;
-        m_ScrnHeight = height;
-        m_GpuAntialiasing = gpu_antialiasing;
+    if (m_ScrnWidth != width || m_ScrnHeight != height || m_GpuAntialiasing != gpuAntialiasing) {
+        // Never drain while holding the storage mutex: moved saves return buffers
+        // through that same mutex before their outstanding reservation is released.
+        if (m_SavePool) {
+            m_SavePool->Cleanup(true);
+        }
+        {
+            std::lock_guard lock(m_ItersMemoryStorageLock);
+            m_ScrnWidth = width;
+            m_ScrnHeight = height;
+            m_GpuAntialiasing = gpuAntialiasing;
+        }
 
         m_ChangedScrn = true;
 
@@ -721,7 +713,7 @@ Fractal::ApproachTarget()
             // as simply watching it render one frame after another is not
             // particularly exciting.
             int ret = 0;
-            ret = SaveCurrentFractal(temp2, false);
+            ret = SaveCurrentFractal(temp2, false, SaveOverwritePolicy::SkipExisting);
             if (ret == 0) {
                 break;
             }
@@ -877,7 +869,13 @@ void
 Fractal::SetIterType(IterTypeEnum type)
 {
     if (m_IterType != type) {
-        m_IterType = type;
+        if (m_SavePool) {
+            m_SavePool->Cleanup(true);
+        }
+        {
+            std::lock_guard lock(m_ItersMemoryStorageLock);
+            m_IterType = type;
+        }
         InitializeMemory();
     }
 }
@@ -2910,23 +2908,62 @@ Fractal::MessageBoxCudaError(uint32_t result, const char *file, int line)
 }
 
 int
-Fractal::SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters)
+Fractal::SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters, SaveOverwritePolicy overwrite)
 {
-    return SaveFractalData<PngParallelSave::Type::PngImg>(std::move(filenameBase), copyTheIters);
+    return SaveFractalData<PngParallelSave::Type::PngImg>(
+        std::move(filenameBase), copyTheIters, overwrite);
 }
 
 template <PngParallelSave::Type Typ>
 int
-Fractal::SaveFractalData(std::wstring filenameBase, bool copyTheIters)
+Fractal::SaveFractalData(std::wstring filenameBase, bool copyTheIters, SaveOverwritePolicy overwrite)
 {
     const auto backend = Typ == PngParallelSave::Type::PngImg && !RequiresUseLocalColor()
                              ? PngParallelSave::EncoderBackend::Gpu
                              : PngParallelSave::EncoderBackend::Cpu;
-    m_SavePool->Submit([this, backend, filenameBase = std::move(filenameBase), copyTheIters] {
-        auto save = std::make_unique<PngParallelSave>(Typ, backend, filenameBase, copyTheIters, *this);
+    m_SavePool->Submit([this, backend, filenameBase = std::move(filenameBase), copyTheIters, overwrite] {
+        auto save = CreateSaveTask(Typ, backend, filenameBase, copyTheIters, overwrite);
         return FractalSaveThreadPool::Task([save = std::move(save)] { save->Run(); });
     });
     return 0;
+}
+
+std::unique_ptr<PngParallelSave>
+Fractal::CreateSaveTask(PngParallelSave::Type type,
+                        PngParallelSave::EncoderBackend backend,
+                        std::wstring filenameBase,
+                        bool copyTheIters,
+                        SaveOverwritePolicy overwrite)
+{
+    std::vector<Color16> palette;
+    if (type == PngParallelSave::Type::PngImg) {
+        palette =
+            m_Palette.GetPalInterleaved(m_Palette.GetPaletteType())[m_Palette.GetPaletteDepthIndex()];
+    }
+    PngParallelSave::ReturnIterationsFunction returnIterations;
+    if (!copyTheIters) {
+        // Uninitialize and dimension changes drain saves before this owner can disappear.
+        returnIterations = [this](ItersMemoryContainer &&iterations) {
+            ReturnIterMemory(std::move(iterations));
+        };
+    }
+    auto save = std::make_unique<PngParallelSave>(type,
+                                                  backend,
+                                                  std::move(filenameBase),
+                                                  overwrite,
+                                                  m_CurIters,
+                                                  copyTheIters,
+                                                  m_NumIterations,
+                                                  m_Palette.GetPaletteRotation(),
+                                                  static_cast<uint32_t>(m_Palette.GetAuxDepth()),
+                                                  GetMaxIterationsRT(),
+                                                  std::move(palette),
+                                                  *m_SavePool,
+                                                  std::move(returnIterations));
+    if (!copyTheIters) {
+        SetCurItersMemory();
+    }
+    return save;
 }
 
 bool
@@ -2978,9 +3015,9 @@ Fractal::GetRenderHeight() const
 }
 
 //////////////////////////////////////////////////////////////////////////////
-// The resolution is 4096x4096.
+// The resolution is 16384x16384.
 // Re-renders the current fractal at very high resolution,
-// and saves that to the the given file.
+// and queues a save to the given file.
 // Note that making the view "square" may screw with the aspect ratio
 // in ways the person didn't anticipate.  For best results,
 // make sure the window itself is square beforehand, then run the "square view"
@@ -2988,40 +3025,43 @@ Fractal::GetRenderHeight() const
 // view to a larger one doesn't screw anything up.
 //////////////////////////////////////////////////////////////////////////////
 int
-Fractal::SaveHiResFractal(std::wstring filename)
+Fractal::SaveHiResFractal(std::wstring filename, SaveOverwritePolicy overwrite)
 {
-    // Drain any in-flight render pool work before rendering/saving directly.
-    // SaveHiResFractal calls CalcFractal(true) and SaveCurrentFractal directly,
-    // bypassing the pool, so we must ensure no workers are active to avoid
-    // data races on m_CurIters. Mirrors the pattern in the headless render tests.
+    // Direct rendering bypasses the render pool, so its workers must finish before
+    // changing dimensions or accessing m_CurIters.
     if (m_RenderPool) {
         m_RenderPool->Drain();
     }
 
-    size_t OldScrnWidth = m_ScrnWidth;
-    size_t OldScrnHeight = m_ScrnHeight;
+    const size_t oldScrnWidth = m_ScrnWidth;
+    const size_t oldScrnHeight = m_ScrnHeight;
 
     // Set us up with high res
-    ResetDimensions(16384, 16384);
+    constexpr size_t highResolutionDimension = 16384;
+    ResetDimensions(highResolutionDimension, highResolutionDimension, UINT32_MAX);
     SquareCurrentView();
 
     // Calculate the high res image.
     // Do it in memory! :)
     CalcFractal(true);
 
-    // Save the bitmap.
-    int ret = SaveCurrentFractal(filename, true);
-
-    // Back to the previous res.
-    ResetDimensions(OldScrnWidth, OldScrnHeight);
-
-    return ret;
+    // Capture the high-resolution iterations and palette before restoring dimensions.
+    // The copied job owns its data, so resizing cannot invalidate it. Restore before
+    // submitting so the resize's existing save drain does not wait for this new job.
+    const auto backend = RequiresUseLocalColor() ? PngParallelSave::EncoderBackend::Cpu
+                                                 : PngParallelSave::EncoderBackend::Gpu;
+    auto save =
+        CreateSaveTask(PngParallelSave::Type::PngImg, backend, std::move(filename), true, overwrite);
+    ResetDimensions(oldScrnWidth, oldScrnHeight, UINT32_MAX);
+    m_SavePool->Submit(
+        [&save] { return FractalSaveThreadPool::Task([save = std::move(save)] { save->Run(); }); });
+    return 0;
 }
 
 int
-Fractal::SaveItersAsText(std::wstring filename_base)
+Fractal::SaveItersAsText(std::wstring filenameBase, SaveOverwritePolicy overwrite)
 {
-    return SaveFractalData<PngParallelSave::Type::ItersText>(filename_base, true);
+    return SaveFractalData<PngParallelSave::Type::ItersText>(std::move(filenameBase), true, overwrite);
 }
 
 void

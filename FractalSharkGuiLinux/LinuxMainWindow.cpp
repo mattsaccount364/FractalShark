@@ -607,7 +607,7 @@ LinuxMainWindow::HandleEvent(const XEvent &ev)
                 const int w = cfg.width;
                 const int h = cfg.height;
                 fractal->EnqueueCommand("resize window", [w, h](Fractal &f) {
-                    f.ResetDimensions(static_cast<size_t>(w), static_cast<size_t>(h));
+                    f.ResetDimensions(static_cast<size_t>(w), static_cast<size_t>(h), UINT32_MAX);
                 });
             }
             break;

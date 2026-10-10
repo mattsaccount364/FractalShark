@@ -7,6 +7,7 @@
 #include <conio.h>
 #include <cstring>
 #include <limits>
+#include <stdexcept>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -538,6 +539,24 @@ Environment::FileRename(const wchar_t *sourcePath, const wchar_t *destinationPat
     return ::MoveFileExW(sourcePath, destinationPath, flags) != FALSE;
 }
 
+Environment::FilePublication
+Environment::PublishFile(const wchar_t *sourcePath,
+                         const wchar_t *destinationPath,
+                         bool replaceExisting,
+                         std::error_code &error)
+{
+    error.clear();
+    if (::MoveFileExW(sourcePath, destinationPath, replaceExisting ? MOVEFILE_REPLACE_EXISTING : 0)) {
+        return FilePublication::Published;
+    }
+    const DWORD code = ::GetLastError();
+    if (!replaceExisting && (code == ERROR_FILE_EXISTS || code == ERROR_ALREADY_EXISTS)) {
+        return FilePublication::AlreadyExists;
+    }
+    error = std::error_code(static_cast<int>(code), std::system_category());
+    return FilePublication::Failed;
+}
+
 std::optional<uint64_t>
 Environment::FileSizeBytes(const wchar_t *path)
 {
@@ -738,6 +757,27 @@ Environment::PumpUIEvents()
 {
     MSG msg;
     ::PeekMessageW(&msg, nullptr, 0, 0, PM_NOREMOVE);
+}
+
+std::string
+Environment::WideToUtf8(std::wstring_view text)
+{
+    if (text.empty()) {
+        return {};
+    }
+    if (text.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
+        throw std::length_error("UTF-16 path exceeds conversion limits");
+    }
+    const int length = static_cast<int>(text.size());
+    const int bytes = ::WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS, text.data(), length, nullptr, 0, nullptr, nullptr);
+    if (bytes == 0) {
+        throw std::invalid_argument("invalid UTF-16 path");
+    }
+    std::string result(static_cast<size_t>(bytes), '\0');
+    ::WideCharToMultiByte(
+        CP_UTF8, WC_ERR_INVALID_CHARS, text.data(), length, result.data(), bytes, nullptr, nullptr);
+    return result;
 }
 
 std::wstring

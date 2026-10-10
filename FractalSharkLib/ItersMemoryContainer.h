@@ -1,6 +1,6 @@
 #pragma once
 
-#include "GPU_Render.h"
+#include "GPU_Types.h"
 #include "HighPrecision.h"
 #include "Vectors.h"
 
@@ -16,6 +16,19 @@ struct ItersMemoryContainer {
 
     ItersMemoryContainer(ItersMemoryContainer &) = delete;
     ItersMemoryContainer &operator=(const ItersMemoryContainer &);
+
+    // Saves recolor iterations from captured palettes and never consume render colors.
+    void CopyIterationsFrom(const ItersMemoryContainer &other);
+    template <typename IterType>
+    const IterType *
+    GetIters() const
+    {
+        if constexpr (std::is_same_v<IterType, uint32_t>) {
+            return m_ItersMemory32.GetData();
+        } else {
+            return m_ItersMemory64.GetData();
+        }
+    }
 
     template <typename IterType>
     IterType *
@@ -40,9 +53,20 @@ struct ItersMemoryContainer {
     }
 
     IterTypeFull GetItersArrayValSlow(size_t x, size_t y) const;
+    size_t
+    GetIterationCount() const
+    {
+        return m_IterType == IterTypeEnum::Bits32 ? m_ItersMemory32.GetSize()
+                                                  : m_ItersMemory64.GetSize();
+    }
     void SetItersArrayValSlow(size_t x, size_t y, uint64_t val);
 
     void GetReductionResults(ReductionResults &results) const;
+    IterTypeEnum
+    GetIterType() const
+    {
+        return m_IterType;
+    }
 
     // These include antialiasing, so 4x antialiasing implies each is ~2x screen dimension
     size_t m_Width;
@@ -71,6 +95,7 @@ struct ItersMemoryContainer {
     size_t m_Antialiasing;
 
 private:
+    void CopyFrom(const ItersMemoryContainer &other, bool copyColors);
     static std::wstring GetTempFilename(uint64_t numBits);
 
     IterTypeEnum m_IterType;

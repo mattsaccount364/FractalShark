@@ -18,10 +18,6 @@
 #include <mutex>
 #include <vector>
 
-namespace Png {
-class GpuPngEncoder;
-}
-
 // This is the main class that does the rendering on the GPU
 class GPURenderer {
 public:
@@ -134,13 +130,6 @@ public:
 
     uint32_t SyncComputeStream();
 
-    // Synchronous on the calling worker. The caller must exclusively own this renderer's
-    // workspace; background saves use a separate renderer and the save pool's encoding lease.
-    template <typename IterType>
-    uint32_t EncodePng(const IterType *hostIters,
-                       size_t rowStrideElements,
-                       IterType numIterations,
-                       std::vector<unsigned char> &pngBytes);
     uint32_t SyncDisplayStream();
     uint32_t QueryComputeStream();
     uint32_t EnqueueComputeDoneCallback();
@@ -243,7 +232,6 @@ private:
     std::condition_variable *m_ComputeDoneCV{nullptr};
 
     PerturbResultsCollection m_PerturbResults;
-    std::unique_ptr<Png::GpuPngEncoder> m_PngEncoder;
 };
 
 #endif // GPGPU_RENDER_GPU_HPP

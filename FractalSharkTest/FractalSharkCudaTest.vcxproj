@@ -61,10 +61,13 @@
     <ClCompile Include="TestGpuRecolor.cpp" />
     <CudaCompile Include="TestLAUpload.cu" />
     <CudaCompile Include="TestPngCudaEncoder.cu" />
+    <!-- Test-only PNG adapters are compiled into this executable, never the GPU library. -->
+    <CudaCompile Include="PngEncoderTestSupport.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Crc64.h" />
     <ClInclude Include="TestFramework.h" />
+    <ClInclude Include="PngEncoderTestSupport.cuh" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">

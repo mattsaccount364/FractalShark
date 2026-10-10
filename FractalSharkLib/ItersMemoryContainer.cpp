@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include "GPU_Render.h"
 #include "ItersMemoryContainer.h"
 #include "Utilities.h"
 
@@ -133,8 +134,21 @@ ItersMemoryContainer::ItersMemoryContainer(ItersMemoryContainer &&other) noexcep
 ItersMemoryContainer &
 ItersMemoryContainer::operator=(const ItersMemoryContainer &other)
 {
+    CopyFrom(other, true);
+    return *this;
+}
+
+void
+ItersMemoryContainer::CopyIterationsFrom(const ItersMemoryContainer &other)
+{
+    CopyFrom(other, false);
+}
+
+void
+ItersMemoryContainer::CopyFrom(const ItersMemoryContainer &other, bool copyColors)
+{
     if (this == &other) {
-        return *this;
+        return;
     }
 
     m_IterType = other.m_IterType;
@@ -154,10 +168,13 @@ ItersMemoryContainer::operator=(const ItersMemoryContainer &other)
     m_RoundedOutputColorWidth = other.m_RoundedOutputColorWidth;
     m_RoundedOutputColorHeight = other.m_RoundedOutputColorHeight;
     m_RoundedOutputColorTotal = other.m_RoundedOutputColorTotal;
-    m_RoundedOutputColorMemory = std::make_unique<Color16[]>(m_RoundedOutputColorTotal);
-    memcpy(m_RoundedOutputColorMemory.get(),
-           other.m_RoundedOutputColorMemory.get(),
-           m_RoundedOutputColorTotal * sizeof(Color16));
+    m_RoundedOutputColorMemory.reset();
+    if (copyColors && other.m_RoundedOutputColorMemory) {
+        m_RoundedOutputColorMemory = std::make_unique<Color16[]>(m_RoundedOutputColorTotal);
+        memcpy(m_RoundedOutputColorMemory.get(),
+               other.m_RoundedOutputColorMemory.get(),
+               m_RoundedOutputColorTotal * sizeof(Color16));
+    }
 
     m_Antialiasing = other.m_Antialiasing;
 
@@ -198,8 +215,6 @@ ItersMemoryContainer::operator=(const ItersMemoryContainer &other)
                other.m_ItersMemory64.GetData(),
                other.m_RoundedTotal * sizeof(uint64_t));
     }
-
-    return *this;
 }
 
 ItersMemoryContainer &

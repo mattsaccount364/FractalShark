@@ -3,6 +3,14 @@ add_library(FractalSharkGpuLib STATIC)
 target_sources(FractalSharkGpuLib PRIVATE
     GPU_Render.cu
     PngEncoder.cu
+    PngScanlines.cu
+    PngDeflate.cu
+    PngChunks.cu
+    GpuSaveEncoder.cu
+    PngCudaSupport.cuh
+    PngStages.cuh
+    PngFormat.cuh
+    GpuSaveEncoder.h
     PngHuffman.cuh
     Main.cpp
 )

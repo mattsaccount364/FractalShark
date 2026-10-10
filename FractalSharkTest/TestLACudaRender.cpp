@@ -80,12 +80,33 @@ CheckRender(std::string_view algorithmName, const char *broadViewCrc)
     }
 }
 
+// Raw iteration CRCs follow the same Release-only policy as decoded image goldens.
+const bool registered = [] {
+    TestFramework::RegisterCase(
+        "CudaLARender_Full",
+        [] { CheckRender("GpuHDRx32PerturbedLAv2", "fce327cad6f3d50d"); },
+        true,
+        "",
+        true);
+    TestFramework::RegisterCase(
+        "CudaLARender_LAOnly",
+        [] { CheckRender("GpuHDRx32PerturbedLAv2LAO", "0000000000000000"); },
+        true,
+        "",
+        true);
+    TestFramework::RegisterCase(
+        "CudaLARender_CompressedFull",
+        [] { CheckRender("GpuHDRx32PerturbedRCLAv2", "fce327cad6f3d50d"); },
+        true,
+        "",
+        true);
+    TestFramework::RegisterCase(
+        "CudaLARender_CompressedLAOnly",
+        [] { CheckRender("GpuHDRx32PerturbedRCLAv2LAO", "0000000000000000"); },
+        true,
+        "",
+        true);
+    return true;
+}();
+
 } // namespace
-
-TEST(CudaLARender_Full) { CheckRender("GpuHDRx32PerturbedLAv2", "fce327cad6f3d50d"); }
-
-TEST(CudaLARender_LAOnly) { CheckRender("GpuHDRx32PerturbedLAv2LAO", "0000000000000000"); }
-
-TEST(CudaLARender_CompressedFull) { CheckRender("GpuHDRx32PerturbedRCLAv2", "fce327cad6f3d50d"); }
-
-TEST(CudaLARender_CompressedLAOnly) { CheckRender("GpuHDRx32PerturbedRCLAv2LAO", "0000000000000000"); }

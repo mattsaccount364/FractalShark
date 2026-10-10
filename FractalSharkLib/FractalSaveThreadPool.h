@@ -5,9 +5,14 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
+
+namespace Png {
+class GpuSaveEncoder;
+}
 
 class FractalSaveThreadPool {
 public:
@@ -22,6 +27,8 @@ public:
         ~GpuEncodingLease();
         GpuEncodingLease(const GpuEncodingLease &) = delete;
         GpuEncodingLease &operator=(const GpuEncodingLease &) = delete;
+        // Lazy construction and access are protected by this lease, not the queue lock.
+        Png::GpuSaveEncoder &GetEncoder() const;
 
     private:
         friend class FractalSaveThreadPool;
@@ -35,6 +42,8 @@ public:
     FractalSaveThreadPool(const FractalSaveThreadPool &) = delete;
     FractalSaveThreadPool &operator=(const FractalSaveThreadPool &) = delete;
 
+    // Reserve capacity before constructing a job, then return once it is queued.
+    // Cleanup(true) waits for jobs and their owned captures to be destroyed.
     void Submit(const TaskFactory &makeTask);
     GpuEncodingLease AcquireGpuEncoding();
     bool Cleanup(bool all);
@@ -55,4 +64,5 @@ private:
     bool m_Accepting = true;
     bool m_Stopping = false;
     bool m_GpuEncodingBusy = false;
+    std::unique_ptr<Png::GpuSaveEncoder> m_GpuEncoder;
 };

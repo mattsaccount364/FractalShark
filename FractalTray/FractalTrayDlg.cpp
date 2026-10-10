@@ -482,7 +482,7 @@ FractalTrayDialog::RunCalculation(std::stop_token stopToken)
         fractal->RecenterViewCalc(ptz);
         fractal->UsePalette(8);
         fractal->CalcFractal(true);
-        fractal->SaveCurrentFractal(fullPath, false);
+        fractal->SaveCurrentFractal(fullPath, false, SaveOverwritePolicy::SkipExisting);
     }
 
     PostMessage(m_hDlg, WM_FINISHED_CALCULATING, 0, 0);

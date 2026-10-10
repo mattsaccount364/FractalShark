@@ -164,7 +164,8 @@ RenderTests::SaveAndCheck(Fractal &fractal, std::string_view caseId)
                             : "render";
     const auto basename = std::filesystem::current_path() /
                           (suffix + "-" + Crc64::ToHex(Crc64::Compute(caseId.data(), caseId.size())));
-    ASSERT_EQ(fractal.SaveCurrentFractal(basename.wstring(), false), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(basename.wstring(), false, SaveOverwritePolicy::SkipExisting),
+              0);
     fractal.CleanupThreads(true);
     auto path = basename;
     path += ".png";

@@ -48,7 +48,6 @@ enum class GpuMode { Auto, Disabled };
 class Fractal {
 public:
     // TODO get rid of this junk:
-    friend class PngParallelSave;
     friend class FractalSaveTestAccess;
     friend class BenchmarkData;
     friend class AutoZoomer;
@@ -74,9 +73,7 @@ public:
     void SetPrecision();
     void SetPrecision(uint64_t prec);
 
-    void ResetDimensions(size_t width = SIZE_MAX,
-                         size_t height = SIZE_MAX,
-                         uint32_t gpu_antialiasing = UINT32_MAX);
+    void ResetDimensions(size_t width, size_t height, uint32_t gpuAntialiasing);
     bool RecenterViewCalc(const PointZoomBBConverter &ptz);
     bool RecenterViewScreen(Environment::ScreenRect rect);
     bool CenterAtPoint(size_t x, size_t y);
@@ -223,10 +220,11 @@ public:
     void DrawAllPerturbationResults(bool LeaveScreen);
     void DrawFeatureFinderResults();
 
-    // Saving images of the fractal
-    int SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters);
-    int SaveHiResFractal(std::wstring filename_base);
-    int SaveItersAsText(std::wstring filename_base);
+    // Queue saves and return 0 after submission. Workers log encoding and file errors;
+    // CleanupThreads(true) waits for all queued saves and buffer recycling to finish.
+    int SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters, SaveOverwritePolicy overwrite);
+    int SaveHiResFractal(std::wstring filenameBase, SaveOverwritePolicy overwrite);
+    int SaveItersAsText(std::wstring filenameBase, SaveOverwritePolicy overwrite);
     void SaveRefOrbit(CompressToDisk compression, std::wstring filename) const;
     void DiffRefOrbits(CompressToDisk compression,
                        std::wstring outFile,
@@ -416,7 +414,12 @@ private:
     void CalcGpuPerturbationFractalScaledBLA(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
     template <PngParallelSave::Type Typ>
-    int SaveFractalData(std::wstring filenameBase, bool copyTheIters);
+    int SaveFractalData(std::wstring filenameBase, bool copyTheIters, SaveOverwritePolicy overwrite);
+    std::unique_ptr<PngParallelSave> CreateSaveTask(PngParallelSave::Type type,
+                                                    PngParallelSave::EncoderBackend backend,
+                                                    std::wstring filenameBase,
+                                                    bool copyTheIters,
+                                                    SaveOverwritePolicy overwrite);
 
     uint64_t FindTotalItersUsed();
 
@@ -428,10 +431,6 @@ private:
     std::unique_ptr<FeatureFinderOrchestrator> m_FeatureOrchestrator;
 
     std::unique_ptr<FractalSaveThreadPool> m_SavePool;
-
-    // Save workers share this workspace under the save pool's GPU encoding lease. It never
-    // aliases a render worker's buffers; Uninitialize drains saves before member destruction.
-    std::unique_ptr<GPURenderer> m_SaveGpuRenderer;
 
     // Defaults
     static constexpr IterTypeFull DefaultIterations = 256 * 32;

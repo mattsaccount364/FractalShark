@@ -11,6 +11,9 @@ struct Color16;
 
 namespace Png {
 
+// Opaque is a caller guarantee and avoids the alpha scan and metadata fence.
+enum class AlphaMode { Detect, Opaque };
+
 // A context belongs to the CUDA device on which its first operation runs. Calls on one
 // context must be serialized. Input remains caller-owned until Encode returns.
 // Separate contexts may encode concurrently on separate streams. Workspace grows on
@@ -32,6 +35,7 @@ public:
                        uint32_t width,
                        uint32_t height,
                        size_t rowStrideBytes,
+                       AlphaMode alphaMode,
                        cudaStream_t stream,
                        std::vector<unsigned char> &pngBytes);
 

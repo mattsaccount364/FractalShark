@@ -29,6 +29,7 @@ target_sources(FractalSharkTest PRIVATE
     TestRenderGoldens.cpp
     TestGuiShared.cpp
     TestFractalSharkLib.cpp
+    TestSaveTransactions.cpp
 )
 
 # TestMpirSerialization exercises raw stream I/O that is byte-compatible
@@ -69,7 +70,19 @@ endif()
 target_link_libraries(FractalSharkTest PRIVATE CUDA::cudart_static FractalSharkLib FractalSharkGpuLib FractalSharkPlatform)
 
 # Separate hardware suite; the portable CPU suite remains runnable without CUDA hardware.
-add_executable(FractalSharkCudaTest main.cpp GpuTestRuntime.cpp TestLAUpload.cu TestLACudaRender.cpp TestPngCudaEncoder.cu TestPngSave.cpp TestGpuRecolor.cpp)
+add_executable(FractalSharkCudaTest
+    main.cpp
+    GpuTestRuntime.cpp
+    TestLAUpload.cu
+    TestLACudaRender.cpp
+    TestPngCudaEncoder.cu
+    TestPngSave.cpp
+    TestGpuRecolor.cpp
+)
+
+# Test-only PNG adapters belong exclusively to this executable, not the production GPU library.
+target_sources(FractalSharkCudaTest PRIVATE PngEncoderTestSupport.cu PngEncoderTestSupport.cuh)
+
 target_include_directories(FractalSharkCudaTest PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_SOURCE_DIR}

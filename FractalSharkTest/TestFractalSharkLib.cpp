@@ -860,13 +860,16 @@ TEST(FractalSharkLib_SavePoolPreservesImageSnapshotsAcrossResize)
     fractal.SetNumIterations<uint32_t>(64);
     fractal.CalcFractal(true);
 
-    ASSERT_EQ(fractal.SaveCurrentFractal(copiedOutput.wstring(), true), 0);
-    ASSERT_EQ(fractal.SaveCurrentFractal(movedOutput.wstring(), false), 0);
+    ASSERT_EQ(
+        fractal.SaveCurrentFractal(copiedOutput.wstring(), true, SaveOverwritePolicy::SkipExisting), 0);
+    ASSERT_EQ(
+        fractal.SaveCurrentFractal(movedOutput.wstring(), false, SaveOverwritePolicy::SkipExisting), 0);
     fractal.CalcFractal(true);
-    ASSERT_EQ(fractal.SaveItersAsText(textOutput.wstring()), 0);
-    fractal.ResetDimensions(24, 12);
+    ASSERT_EQ(fractal.SaveItersAsText(textOutput.wstring(), SaveOverwritePolicy::SkipExisting), 0);
+    fractal.ResetDimensions(24, 12, UINT32_MAX);
     fractal.CalcFractal(true);
-    ASSERT_EQ(fractal.SaveCurrentFractal(resizedOutput.wstring(), true), 0);
+    ASSERT_EQ(
+        fractal.SaveCurrentFractal(resizedOutput.wstring(), true, SaveOverwritePolicy::SkipExisting), 0);
     ASSERT_TRUE(fractal.CleanupThreads(true));
     for (const auto &output : {copiedOutput, movedOutput, resizedOutput}) {
         ASSERT_TRUE(std::filesystem::is_regular_file(output));

@@ -96,20 +96,46 @@ TEST(TestFramework_GpuAndDisabledCasesDoNotExecuteByDefault)
     int calls = 0;
     const std::vector<TestFramework::TestCase> tests = {
         {"Cpu", [&] { ++calls; }, false, "", false},
+        {"CpuGolden", [&] { ++calls; }, false, "", true},
         {"Gpu", [&] { ++calls; }, true, "", true},
         {"Incomplete", [&] { ++calls; }, true, "INCOMPLETE", true}};
     TestFramework::RunOptions options;
     std::ostringstream output, errors;
-    ASSERT_EQ(TestFramework::RunTests(tests, options, output, errors), 0);
-    ASSERT_EQ(calls, 1);
-    ASSERT_TRUE(output.str().find("1 skipped, 1 disabled") != std::string::npos);
-    options.UseGpu = true;
-    options.GenerateGoldens = true;
-    output.str("");
-    ASSERT_EQ(TestFramework::RunTests(tests, options, output, errors), 0);
-    ASSERT_EQ(calls, 3);
-    ASSERT_TRUE(output.str().find("GENERATED: Gpu") != std::string::npos);
-    ASSERT_TRUE(output.str().find("GENERATION COMPLETED") != std::string::npos);
+    // GPU opt-in and golden generation must not bypass the Debug CRC policy.
+    // Synthetic callbacks exercise CPU and GPU case accounting without rendering.
+    for (const bool useGpu : {false, true}) {
+        for (const bool generateGoldens : {false, true}) {
+            calls = 0;
+            output.str("");
+            errors.str("");
+            options.UseGpu = useGpu;
+            options.GenerateGoldens = generateGoldens;
+            ASSERT_EQ(TestFramework::RunTests(tests, options, output, errors), 0);
+#if defined(_DEBUG) || (!defined(_WIN32) && !defined(NDEBUG))
+            ASSERT_EQ(calls, 1);
+            ASSERT_TRUE(output.str().find("2 skipped, 1 disabled") != std::string::npos);
+            ASSERT_TRUE(output.str().find("SKIP: CpuGolden - CRC baseline tests run only in Release") !=
+                        std::string::npos);
+            ASSERT_TRUE(output.str().find("SKIP: Gpu - CRC baseline tests run only in Release") !=
+                        std::string::npos);
+            ASSERT_TRUE(output.str().find("GENERATED:") == std::string::npos);
+#else
+            ASSERT_EQ(calls, useGpu ? 3 : 2);
+            ASSERT_TRUE(output.str().find(useGpu ? "0 skipped, 1 disabled" : "1 skipped, 1 disabled") !=
+                        std::string::npos);
+            if (generateGoldens) {
+                ASSERT_TRUE(output.str().find("GENERATED: CpuGolden") != std::string::npos);
+                ASSERT_EQ(output.str().find("GENERATED: Gpu") != std::string::npos, useGpu);
+            } else {
+                ASSERT_TRUE(output.str().find("GENERATED:") == std::string::npos);
+            }
+#endif
+            ASSERT_TRUE(errors.str().empty());
+            if (generateGoldens) {
+                ASSERT_TRUE(output.str().find("GENERATION COMPLETED") != std::string::npos);
+            }
+        }
+    }
 }
 
 TEST(TestFramework_RenderOptionsParse)

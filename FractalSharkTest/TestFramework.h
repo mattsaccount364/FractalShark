@@ -187,6 +187,7 @@ PrintHelp(std::ostream &output)
               "                        [--list-tests] [--fail-fast] [--help]\n"
               "                        [--use-gpu] [--generate-goldens] [--output-dir PATH]\n"
               "GPU cases require --use-gpu; disabled incomplete cases never execute.\n"
+              "CRC baseline cases run only in Release builds.\n"
               "Generation writes candidate CRCs and retains images; it does not validate goldens.\n"
               "Patterns match full names case-sensitively: * matches any sequence, ? one character.\n"
               "Repeat --filter to include groups; exclusions take precedence. No filters runs all.\n"
@@ -243,6 +244,18 @@ RunTests(std::span<const TestCase> tests,
             ++disabled;
             continue;
         }
+        // CRC baselines come from Release builds. Debug CUDA uses different
+        // optimization and floating-point settings, so bit-for-bit agreement
+        // is not guaranteed. These tests also take fucking forever in Debug.
+        // Preserve sanity: validate CRCs in Release instead of maintaining
+        // a separate set of Debug goldens.
+#if defined(_DEBUG) || (!defined(_WIN32) && !defined(NDEBUG))
+        if (test.Golden) {
+            output << "  SKIP: " << test.name << " - CRC baseline tests run only in Release\n";
+            ++skipped;
+            continue;
+        }
+#endif
         if (test.RequiresGpu && !options.UseGpu) {
             output << "  SKIP: " << test.name << " - requires --use-gpu\n";
             ++skipped;

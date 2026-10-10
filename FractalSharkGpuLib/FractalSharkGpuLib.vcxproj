@@ -65,6 +65,10 @@
   <ItemGroup>
     <CudaCompile Include="GPU_Render.cu" />
     <CudaCompile Include="PngEncoder.cu" />
+    <CudaCompile Include="PngScanlines.cu" />
+    <CudaCompile Include="PngDeflate.cu" />
+    <CudaCompile Include="PngChunks.cu" />
+    <CudaCompile Include="GpuSaveEncoder.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
@@ -72,7 +76,10 @@
   <ItemGroup>
     <ClInclude Include="AntialiasingKernel.cuh" />
     <ClInclude Include="PngEncoder.cuh" />
-    <ClInclude Include="PngCompressionKernels.cuh" />
+    <ClInclude Include="PngCudaSupport.cuh" />
+    <ClInclude Include="PngStages.cuh" />
+    <ClInclude Include="PngFormat.cuh" />
+    <ClInclude Include="GpuSaveEncoder.h" />
     <ClInclude Include="PngHuffman.cuh" />
     <ClInclude Include="BLA.cuh" />
     <ClInclude Include="BLAKernels.cuh" />

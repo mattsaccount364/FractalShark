@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #ifdef _MSC_VER
 #include <malloc.h>
 #else
@@ -19,6 +20,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 #include "PlatformTypes.h"
 
@@ -275,6 +277,14 @@ bool FileDelete(const wchar_t *path);
 // Rename a file.  If replaceExisting is true, replace an existing destination when supported.
 bool FileRename(const wchar_t *sourcePath, const wchar_t *destinationPath, bool replaceExisting);
 
+enum class FilePublication { Published, AlreadyExists, Failed };
+// Atomic publication within one filesystem. Without replacement, an existing
+// destination wins. Linux retains the source hard link until its owner removes it.
+FilePublication PublishFile(const wchar_t *sourcePath,
+                            const wchar_t *destinationPath,
+                            bool replaceExisting,
+                            std::error_code &error);
+
 // Size of a regular file in bytes, or std::nullopt if the path does not
 // exist, is not a regular file, or cannot be queried.
 std::optional<uint64_t> FileSizeBytes(const wchar_t *path);
@@ -383,6 +393,7 @@ bool SetClipboardText(std::string_view text);
 void PumpUIEvents();
 
 std::wstring Utf8ToWide(std::string_view text);
+std::string WideToUtf8(std::wstring_view text);
 
 // =========================================================================
 // Filesystem helpers
@@ -400,8 +411,18 @@ ToFsPath(const std::wstring &s)
 inline std::filesystem::path
 ToFsPath(const std::wstring &s)
 {
-    return std::filesystem::path(s);
+    return std::filesystem::path(WideToUtf8(s));
 }
 #endif
+
+inline std::wstring
+FromFsPath(const std::filesystem::path &path)
+{
+#ifdef _MSC_VER
+    return path.wstring();
+#else
+    return Utf8ToWide(path.string());
+#endif
+}
 
 } // namespace Environment

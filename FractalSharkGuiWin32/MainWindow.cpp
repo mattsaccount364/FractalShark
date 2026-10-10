@@ -729,7 +729,7 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
                 auto w = LOWORD(lParam);
                 auto h = HIWORD(lParam);
                 gFractal->EnqueueCommand("resize window",
-                                         [w, h](Fractal &f) { f.ResetDimensions(w, h); });
+                                         [w, h](Fractal &f) { f.ResetDimensions(w, h, UINT32_MAX); });
             }
             return 0;
         }
@@ -1011,7 +1011,8 @@ MainWindow::MenuWindowed(bool square)
             GetClientRect(hWnd, &rt);
             auto w = rt.right;
             auto h = rt.bottom;
-            gFractal->EnqueueCommand("resize window", [w, h](Fractal &f) { f.ResetDimensions(w, h); });
+            gFractal->EnqueueCommand("resize window",
+                                     [w, h](Fractal &f) { f.ResetDimensions(w, h, UINT32_MAX); });
         }
     } else {
         int width = GetSystemMetrics(SM_CXSCREEN);
@@ -1037,7 +1038,8 @@ MainWindow::MenuWindowed(bool square)
             GetClientRect(hWnd, &rt);
             auto w = rt.right;
             auto h = rt.bottom;
-            gFractal->EnqueueCommand("resize window", [w, h](Fractal &f) { f.ResetDimensions(w, h); });
+            gFractal->EnqueueCommand("resize window",
+                                     [w, h](Fractal &f) { f.ResetDimensions(w, h, UINT32_MAX); });
         }
     }
 }

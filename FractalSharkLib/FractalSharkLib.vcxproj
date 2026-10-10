@@ -53,6 +53,9 @@
     <ClInclude Include="PerturbationResultsHelpers.h" />
     <ClInclude Include="FractalPalette.h" />
     <ClInclude Include="PngParallelSave.h" />
+    <ClInclude Include="SaveFileTransaction.h" />
+    <ClInclude Include="SaveResult.h" />
+    <ClInclude Include="PngSaveLayout.h" />
     <ClInclude Include="QuadDouble\common.cuh" />
     <ClInclude Include="QuadDouble\cuda_header.cuh" />
     <ClInclude Include="QuadDouble\gqd_basic.cuh" />
@@ -101,6 +104,7 @@
     <ClCompile Include="PerturbationResults.cpp" />
     <ClCompile Include="FractalPalette.cpp" />
     <ClCompile Include="PngParallelSave.cpp" />
+    <ClCompile Include="SaveFileTransaction.cpp" />
     <ClCompile Include="RecommendedSettings.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
     <ClCompile Include="RenderAlgorithm.cpp" />

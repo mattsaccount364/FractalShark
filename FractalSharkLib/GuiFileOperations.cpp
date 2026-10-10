@@ -39,21 +39,6 @@ LowercaseAscii(std::string &value)
     });
 }
 
-void
-RemoveExistingRegularFile(const std::wstring &filename)
-{
-    const std::filesystem::path path(filename);
-    std::error_code error;
-    if (std::filesystem::is_regular_file(path, error)) {
-        if (!std::filesystem::remove(path, error)) {
-            throw FractalSharkSeriousException("Could not replace the selected output file");
-        }
-    }
-    if (error && error != std::errc::no_such_file_or_directory) {
-        throw FractalSharkSeriousException("Could not inspect the selected output file");
-    }
-}
-
 } // namespace
 
 std::string
@@ -134,16 +119,15 @@ SaveFractalOutput(Fractal &fractal, FractalOutputFile type, std::wstring filenam
     if (auto *pool = fractal.GetRenderPool()) {
         pool->Drain();
     }
-    RemoveExistingRegularFile(filename);
     switch (type) {
         case FractalOutputFile::CurrentImage:
-            fractal.SaveCurrentFractal(std::move(filename), true);
+            fractal.SaveCurrentFractal(std::move(filename), true, SaveOverwritePolicy::ReplaceExisting);
             return;
         case FractalOutputFile::HighResolutionImage:
-            fractal.SaveHiResFractal(std::move(filename));
+            fractal.SaveHiResFractal(std::move(filename), SaveOverwritePolicy::ReplaceExisting);
             return;
         case FractalOutputFile::IterationsText:
-            fractal.SaveItersAsText(std::move(filename));
+            fractal.SaveItersAsText(std::move(filename), SaveOverwritePolicy::ReplaceExisting);
             return;
     }
     throw FractalSharkSeriousException("Unknown fractal output type");

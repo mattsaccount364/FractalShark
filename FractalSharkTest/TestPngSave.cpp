@@ -1,5 +1,6 @@
 #include "Environment.h"
 #include "FractalSaveThreadPool.h"
+#include "FractalSharkGpuLib/GpuSaveEncoder.h"
 #include "PngParallelSave.h"
 #include "RenderThreadPool.h"
 #include "RenderToPng.h"
@@ -19,10 +20,38 @@
 // This keeps scheduling controls out of Fractal's public interface.
 class FractalSaveTestAccess {
 public:
+    static std::unique_ptr<PngParallelSave>
+    CreateSave(Fractal &fractal,
+               PngParallelSave::EncoderBackend backend,
+               const std::filesystem::path &path,
+               bool copyTheIters)
+    {
+        return fractal.CreateSaveTask(PngParallelSave::Type::PngImg,
+                                      backend,
+                                      path.wstring(),
+                                      copyTheIters,
+                                      SaveOverwritePolicy::SkipExisting);
+    }
+
     static FractalSaveThreadPool &
     GetPool(Fractal &fractal)
     {
         return *fractal.m_SavePool;
+    }
+
+    static bool
+    BuffersMatch(Fractal &fractal)
+    {
+        std::lock_guard lock(fractal.m_ItersMemoryStorageLock);
+        for (const auto &buffer : fractal.m_ItersMemoryStorage) {
+            if (buffer.GetIterType() != fractal.GetIterType() ||
+                buffer.m_OutputWidth != fractal.GetRenderWidth() ||
+                buffer.m_OutputHeight != fractal.GetRenderHeight() ||
+                buffer.m_Antialiasing != fractal.GetGpuAntialiasing()) {
+                return false;
+            }
+        }
+        return true;
     }
 };
 
@@ -47,7 +76,7 @@ public:
     std::filesystem::path
     File(const std::wstring &name)
     {
-        const auto path = m_Path / name;
+        const auto path = m_Path / Environment::ToFsPath(name);
         std::error_code error;
         std::filesystem::remove(path, error);
         m_Files.push_back(path);
@@ -78,12 +107,9 @@ DecodeSavedPng(const std::filesystem::path &path, unsigned expectedWidth, unsign
 std::vector<unsigned char>
 SaveCpuOracle(Fractal &fractal, const std::filesystem::path &path)
 {
-    PngParallelSave save(PngParallelSave::Type::PngImg,
-                         PngParallelSave::EncoderBackend::Cpu,
-                         path.wstring(),
-                         true,
-                         fractal);
-    ASSERT_EQ(save.Run(), 0);
+    auto save =
+        FractalSaveTestAccess::CreateSave(fractal, PngParallelSave::EncoderBackend::Cpu, path, true);
+    ASSERT_TRUE(save->Run().Succeeded());
     return DecodeSavedPng(path,
                           static_cast<unsigned>(fractal.GetRenderWidth()),
                           static_cast<unsigned>(fractal.GetRenderHeight()));
@@ -109,12 +135,16 @@ CheckSnapshotsAndResize()
             fractal.CalcFractal(true);
             const auto expected = SaveCpuOracle(fractal, directory.File(L"oracle.png"));
             const auto copied = directory.File(L"copied.png");
-            ASSERT_EQ(fractal.SaveCurrentFractal(copied.wstring(), true), 0);
+            ASSERT_EQ(
+                fractal.SaveCurrentFractal(copied.wstring(), true, SaveOverwritePolicy::SkipExisting),
+                0);
             ASSERT_TRUE(fractal.CleanupThreads(true));
             ASSERT_TRUE(DecodeSavedPng(copied, width, height) == expected);
             ASSERT_FALSE(fractal.CleanupThreads(false));
             const auto moved = directory.File(L"moved.png");
-            ASSERT_EQ(fractal.SaveCurrentFractal(moved.wstring(), false), 0);
+            ASSERT_EQ(
+                fractal.SaveCurrentFractal(moved.wstring(), false, SaveOverwritePolicy::SkipExisting),
+                0);
             ASSERT_TRUE(fractal.CleanupThreads(true));
             ASSERT_TRUE(DecodeSavedPng(moved, width, height) == expected);
             ASSERT_FALSE(fractal.CleanupThreads(true));
@@ -141,7 +171,9 @@ CheckRenderPoolSnapshot()
     const auto expected = SaveCpuOracle(fractal, directory.File(L"pool-oracle.png"));
     ASSERT_TRUE(expected != original);
     const auto output = directory.File(L"pool.png");
-    ASSERT_EQ(fractal.SaveCurrentFractal(output.wstring(), true), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(
+                  Environment::FromFsPath(output), true, SaveOverwritePolicy::SkipExisting),
+              0);
     ASSERT_TRUE(fractal.CleanupThreads(true));
     ASSERT_TRUE(DecodeSavedPng(output, 23, 15) == expected);
     ASSERT_FALSE(fractal.CleanupThreads(true));
@@ -178,21 +210,15 @@ CheckRotatedSnapshots()
                 fractal.SetPaletteAuxDepth(2);
                 const auto cpuPath = directory.File(L"rotated-cpu.png");
                 const auto gpuPath = directory.File(L"rotated-gpu.png");
-                PngParallelSave cpu(PngParallelSave::Type::PngImg,
-                                    PngParallelSave::EncoderBackend::Cpu,
-                                    cpuPath.wstring(),
-                                    true,
-                                    fractal);
-                PngParallelSave gpu(PngParallelSave::Type::PngImg,
-                                    PngParallelSave::EncoderBackend::Gpu,
-                                    gpuPath.wstring(),
-                                    true,
-                                    fractal);
+                auto cpu = FractalSaveTestAccess::CreateSave(
+                    fractal, PngParallelSave::EncoderBackend::Cpu, cpuPath, true);
+                auto gpu = FractalSaveTestAccess::CreateSave(
+                    fractal, PngParallelSave::EncoderBackend::Gpu, gpuPath, true);
                 // Both saves must use captured settings even if the renderer currently has newer ones.
                 fractal.RotateFractalPalette(11);
                 fractal.SetPaletteAuxDepth(1);
-                ASSERT_EQ(cpu.Run(), 0);
-                ASSERT_EQ(gpu.Run(), 0);
+                ASSERT_TRUE(cpu->Run().Succeeded());
+                ASSERT_TRUE(gpu->Run().Succeeded());
                 const auto expected = DecodeSavedPng(cpuPath, 23, 15);
                 ASSERT_TRUE(expected != unrotated);
                 ASSERT_TRUE(DecodeSavedPng(gpuPath, 23, 15) == expected);
@@ -216,14 +242,14 @@ CheckBackgroundAndWriteErrors()
     request.Algorithm = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::AUTO);
     request.PngCompletion = PngCompletionMode::Background;
     const auto output = directory.File(L"frame.with-dots-\u03bb.png");
-    request.OutPngBasename = output.wstring();
+    request.OutPngBasename = Environment::FromFsPath(output);
     std::string error;
     ASSERT_EQ(RenderToPng(request, fractal, &error), 0);
     ASSERT_FALSE(fractal.RequiresUseLocalColor());
     ASSERT_TRUE(fractal.CleanupThreads(true));
     const auto expected = DecodeSavedPng(output, 19, 13);
     ASSERT_FALSE(fractal.CleanupThreads(true));
-    ASSERT_EQ(fractal.SaveCurrentFractal(output.wstring(), true), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(output.wstring(), true, SaveOverwritePolicy::SkipExisting), 0);
     ASSERT_TRUE(fractal.CleanupThreads(true));
     ASSERT_TRUE(DecodeSavedPng(output, 19, 13) == expected);
     request.OutPngBasename = directory.File(L"missing-parent").wstring() + L"/frame.png";
@@ -231,6 +257,13 @@ CheckBackgroundAndWriteErrors()
     ASSERT_TRUE(error.empty());
     ASSERT_TRUE(fractal.CleanupThreads(true));
     ASSERT_FALSE(std::filesystem::exists(std::filesystem::path(request.OutPngBasename)));
+
+    request.PngCompletion = PngCompletionMode::Wait;
+    // Wait drains saves; write failures are logged by the worker in either mode.
+    ASSERT_EQ(RenderToPng(request, fractal, &error), 0);
+    ASSERT_TRUE(error.empty());
+    ASSERT_FALSE(std::filesystem::exists(std::filesystem::path(request.OutPngBasename)));
+    ASSERT_FALSE(fractal.CleanupThreads(true));
 
     // A failed worker write must not retain the encoder lease. Wait mode returns only after
     // the following valid save has been written, using the same reusable GPU workspace.
@@ -245,7 +278,8 @@ CheckBackgroundAndWriteErrors()
     ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
     fractal.CalcFractal(true);
     const auto cpuOutput = directory.File(L"cpu.png");
-    ASSERT_EQ(fractal.SaveCurrentFractal(cpuOutput.wstring(), true), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(cpuOutput.wstring(), true, SaveOverwritePolicy::SkipExisting),
+              0);
     ASSERT_TRUE(fractal.CleanupThreads(true));
     DecodeSavedPng(cpuOutput, 19, 13);
 }
@@ -263,7 +297,9 @@ CheckAsyncSubmissionAndRenderOverlap()
     const auto original = SaveCpuOracle(fractal, directory.File(L"original.png"));
     const auto copied = directory.File(L"queued-copy.png");
 
-    std::packaged_task<int()> submit([&] { return fractal.SaveCurrentFractal(copied.wstring(), true); });
+    std::packaged_task<int()> submit([&] {
+        return fractal.SaveCurrentFractal(copied.wstring(), true, SaveOverwritePolicy::SkipExisting);
+    });
     auto submitted = submit.get_future();
     std::jthread submitter;
     bool returnedWhileBlocked = false;
@@ -296,8 +332,9 @@ CheckAsyncSubmissionAndRenderOverlap()
     ASSERT_TRUE(next != original);
     const auto moved = directory.File(L"queued-move.png");
     const auto secondCopy = directory.File(L"second-copy.png");
-    ASSERT_EQ(fractal.SaveCurrentFractal(secondCopy.wstring(), true), 0);
-    ASSERT_EQ(fractal.SaveCurrentFractal(moved.wstring(), false), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(secondCopy.wstring(), true, SaveOverwritePolicy::SkipExisting),
+              0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(moved.wstring(), false, SaveOverwritePolicy::SkipExisting), 0);
     fractal.CalcFractal(true);
     // Resize uses the existing CPU save drain, including returning the moved buffer.
     fractal.ResetDimensions(29, 17, 2);
@@ -307,7 +344,8 @@ CheckAsyncSubmissionAndRenderOverlap()
     ASSERT_TRUE(DecodeSavedPng(moved, 31, 19) == next);
     const auto resized = directory.File(L"resized.png");
     const auto resizedOracle = SaveCpuOracle(fractal, directory.File(L"resized-oracle.png"));
-    ASSERT_EQ(fractal.SaveCurrentFractal(resized.wstring(), false), 0);
+    ASSERT_EQ(fractal.SaveCurrentFractal(resized.wstring(), false, SaveOverwritePolicy::SkipExisting),
+              0);
     ASSERT_TRUE(fractal.CleanupThreads(true));
     ASSERT_TRUE(DecodeSavedPng(resized, 29, 17) == resizedOracle);
 }
@@ -327,12 +365,224 @@ CheckShutdownCompletesSave()
         fractal.SetNumIterations<uint32_t>(64);
         fractal.CalcFractal(true);
         expected = SaveCpuOracle(fractal, directory.File(L"oracle.png"));
-        ASSERT_EQ(fractal.SaveCurrentFractal(output.wstring(), false), 0);
+        ASSERT_EQ(fractal.SaveCurrentFractal(output.wstring(), false, SaveOverwritePolicy::SkipExisting),
+                  0);
     }
     ASSERT_TRUE(DecodeSavedPng(output, 23, 15) == expected);
 }
 
+void
+CheckWorkspaceReuseAndFailureRecovery()
+{
+    PngSaveDirectory directory;
+    Fractal fractal{61, 35, nullptr, false, UINT64_MAX, true, GpuMode::Auto};
+    fractal.GetRenderPool()->Drain();
+    fractal.View(0, false);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32)));
+    fractal.SetIterType(IterTypeEnum::Bits64);
+    fractal.ResetDimensions(61, 35, 2);
+    fractal.SetNumIterations<uint64_t>(97);
+    fractal.CalcFractal(true);
+    const auto firstOracle = SaveCpuOracle(fractal, directory.File(L"reuse-first-oracle.png"));
+    const auto first = directory.File(L"reuse-first.png");
+    ASSERT_EQ(fractal.SaveCurrentFractal(first.wstring(), true, SaveOverwritePolicy::SkipExisting), 0);
+    fractal.CleanupThreads(true);
+    ASSERT_TRUE(DecodeSavedPng(first, 61, 35) == firstOracle);
+
+    auto &pool = FractalSaveTestAccess::GetPool(fractal);
+    size_t capacity = 0;
+    {
+        const auto lease = pool.AcquireGpuEncoding();
+        auto &encoder = lease.GetEncoder();
+        capacity = encoder.GetWorkspaceBytes();
+        ASSERT_TRUE(capacity > 0);
+        std::vector<unsigned char> bytes{1, 2, 3};
+        // A rejected input must clear stale output and leave this same context usable.
+        ASSERT_NE(encoder.Encode<uint64_t>(nullptr,
+                                           1,
+                                           1,
+                                           1,
+                                           1,
+                                           97,
+                                           fractal.GetPalette().GetCurrentPalInterleaved(),
+                                           fractal.GetPalette().GetCurrentNumColors(),
+                                           0,
+                                           0,
+                                           static_cast<uint64_t>(INT64_MAX - 1),
+                                           bytes),
+                  0u);
+        ASSERT_TRUE(bytes.empty());
+        ASSERT_EQ(encoder.GetWorkspaceBytes(), capacity);
+    }
+
+    fractal.ResetDimensions(23, 15, 1);
+    fractal.CalcFractal(true);
+    const auto nextOracle = SaveCpuOracle(fractal, directory.File(L"reuse-next-oracle.png"));
+    const auto next = directory.File(L"reuse-next.png");
+    ASSERT_EQ(fractal.SaveCurrentFractal(next.wstring(), false, SaveOverwritePolicy::SkipExisting), 0);
+    fractal.CleanupThreads(true);
+    ASSERT_TRUE(DecodeSavedPng(next, 23, 15) == nextOracle);
+    {
+        const auto lease = pool.AcquireGpuEncoding();
+        // Smaller frames retain the complete save workspace, not only compression scratch.
+        ASSERT_EQ(lease.GetEncoder().GetWorkspaceBytes(), capacity);
+    }
+}
+
+void
+CheckControlledStorageChanges()
+{
+    PngSaveDirectory directory;
+    Fractal fractal{19, 13, nullptr, false, UINT64_MAX, true, GpuMode::Auto};
+    fractal.GetRenderPool()->Drain();
+    fractal.View(0, false);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32)));
+    fractal.SetNumIterations<uint32_t>(64);
+    fractal.CalcFractal(true);
+    const auto expected = SaveCpuOracle(fractal, directory.File(L"controlled-oracle.png"));
+    const auto path = directory.File(L"controlled.png");
+    std::atomic<bool> entered{false}, finished{false};
+    int submissionCode = 0;
+    std::jthread mutation;
+    bool waited = false;
+    {
+        const auto lease = FractalSaveTestAccess::GetPool(fractal).AcquireGpuEncoding();
+        submissionCode =
+            fractal.SaveCurrentFractal(path.wstring(), false, SaveOverwritePolicy::SkipExisting);
+        mutation = std::jthread([&] {
+            entered.store(true);
+            entered.notify_one();
+            fractal.SetIterType(IterTypeEnum::Bits64);
+            fractal.ResetDimensions(23, 17, 3);
+            finished.store(true);
+        });
+        entered.wait(false);
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        waited = !fractal.CleanupThreads(false) && !finished.load();
+    }
+    // Release the lease and join before assertions, so a failing predicate cannot deadlock cleanup.
+    mutation.join();
+    ASSERT_TRUE(waited);
+    ASSERT_EQ(submissionCode, 0);
+    ASSERT_TRUE(DecodeSavedPng(path, 19, 13) == expected);
+    ASSERT_TRUE(FractalSaveTestAccess::BuffersMatch(fractal));
+    ASSERT_TRUE(fractal.GetIterType() == IterTypeEnum::Bits64);
+    ASSERT_EQ(fractal.GetGpuAntialiasing(), uint32_t{3});
+}
+
+void
+CheckTypedSaturationAndValidation()
+{
+    PngSaveDirectory directory;
+    FractalSaveThreadPool pool(2, [] { return uint32_t{0}; });
+    const std::vector<Color16> palette{
+        {1000, 2000, 3000, 65535}, {4000, 5000, 6000, 65535}, {7000, 8000, 9000, 65535}};
+    for (auto type : {IterTypeEnum::Bits32, IterTypeEnum::Bits64}) {
+        for (size_t aa = 1; aa <= 4; ++aa) {
+            ItersMemoryContainer iterations(type, 3, 5, aa);
+            for (size_t y = 0; y < iterations.m_Height; ++y) {
+                for (size_t x = 0; x < iterations.m_Width; ++x) {
+                    iterations.SetItersArrayValSlow(x, y, (x + y) % 5);
+                }
+            }
+            const auto cpuPath = directory.File(L"saturation-cpu.png");
+            const auto gpuPath = directory.File(L"saturation-gpu.png");
+            PngParallelSave cpu(PngParallelSave::Type::PngImg,
+                                PngParallelSave::EncoderBackend::Cpu,
+                                cpuPath.wstring(),
+                                SaveOverwritePolicy::ReplaceExisting,
+                                iterations,
+                                true,
+                                4,
+                                UINT64_MAX,
+                                1,
+                                100,
+                                palette,
+                                pool,
+                                {});
+            PngParallelSave gpu(PngParallelSave::Type::PngImg,
+                                PngParallelSave::EncoderBackend::Gpu,
+                                gpuPath.wstring(),
+                                SaveOverwritePolicy::ReplaceExisting,
+                                iterations,
+                                true,
+                                4,
+                                UINT64_MAX,
+                                1,
+                                100,
+                                palette,
+                                pool,
+                                {});
+            ASSERT_TRUE(cpu.Run().Succeeded());
+            ASSERT_TRUE(gpu.Run().Succeeded());
+            ASSERT_TRUE(DecodeSavedPng(cpuPath, 3, 5) == DecodeSavedPng(gpuPath, 3, 5));
+        }
+    }
+    for (auto backend : {PngParallelSave::EncoderBackend::Cpu, PngParallelSave::EncoderBackend::Gpu}) {
+        for (unsigned invalid = 0; invalid < 3; ++invalid) {
+            ItersMemoryContainer iterations(IterTypeEnum::Bits32, 3, 5, 1);
+            if (invalid == 0) {
+                iterations.m_Antialiasing = 5;
+            } else if (invalid == 1) {
+                iterations.m_RoundedWidth = SIZE_MAX;
+            } else {
+                iterations.m_RoundedTotal = SIZE_MAX;
+            }
+            const auto path = directory.File(L"invalid-snapshot.png");
+            PngParallelSave save(PngParallelSave::Type::PngImg,
+                                 backend,
+                                 path.wstring(),
+                                 SaveOverwritePolicy::ReplaceExisting,
+                                 iterations,
+                                 false,
+                                 4,
+                                 0,
+                                 1,
+                                 100,
+                                 palette,
+                                 pool,
+                                 {});
+            const auto result = save.Run();
+            ASSERT_TRUE(result.Outcome == SaveOutcome::Failed);
+            ASSERT_TRUE(!result.Diagnostic.empty());
+            ASSERT_FALSE(std::filesystem::exists(path));
+        }
+    }
+}
+
+void
+CheckReplacementBehavior()
+{
+    PngSaveDirectory directory;
+    Fractal fractal{19, 13, nullptr, false, UINT64_MAX, true, GpuMode::Auto};
+    fractal.GetRenderPool()->Drain();
+    fractal.View(0, false);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x32)));
+    fractal.SetNumIterations<uint32_t>(64);
+    fractal.CalcFractal(true);
+    const auto path = directory.File(L"replace.png");
+    const auto save = [&](SaveOverwritePolicy policy) {
+        ASSERT_EQ(fractal.SaveCurrentFractal(path.wstring(), true, policy), 0);
+        fractal.CleanupThreads(true);
+    };
+    save(SaveOverwritePolicy::SkipExisting);
+    const auto original = DecodeSavedPng(path, 19, 13);
+    fractal.RotateFractalPalette(17);
+    save(SaveOverwritePolicy::SkipExisting);
+    ASSERT_TRUE(DecodeSavedPng(path, 19, 13) == original);
+    const auto expected = SaveCpuOracle(fractal, directory.File(L"replacement-oracle.png"));
+    ASSERT_TRUE(expected != original);
+    save(SaveOverwritePolicy::ReplaceExisting);
+    ASSERT_TRUE(DecodeSavedPng(path, 19, 13) == expected);
+}
+
 const bool registered = [] {
+    TestFramework::RegisterCase(
+        "CudaPngSave_ReplacementBehavior", CheckReplacementBehavior, true, "", false);
+    TestFramework::RegisterCase(
+        "CudaPngSave_TypedSaturationAndValidation", CheckTypedSaturationAndValidation, true, "", false);
+    TestFramework::RegisterCase(
+        "CudaPngSave_ControlledStorageChanges", CheckControlledStorageChanges, true, "", false);
     TestFramework::RegisterCase(
         "CudaPngSave_SnapshotsAndResize", CheckSnapshotsAndResize, true, "", false);
     TestFramework::RegisterCase(
@@ -347,6 +597,11 @@ const bool registered = [] {
                                 false);
     TestFramework::RegisterCase(
         "CudaPngSave_ShutdownCompletesSave", CheckShutdownCompletesSave, true, "", false);
+    TestFramework::RegisterCase("CudaPngSave_WorkspaceReuseAndFailureRecovery",
+                                CheckWorkspaceReuseAndFailureRecovery,
+                                true,
+                                "",
+                                false);
     return true;
 }();
 

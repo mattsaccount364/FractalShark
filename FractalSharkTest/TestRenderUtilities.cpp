@@ -328,7 +328,7 @@ CheckResize(bool useGpu)
     const auto initWidth = fractal.GetRenderWidth();
     const auto initHeight = fractal.GetRenderHeight();
 
-    fractal.ResetDimensions(baseW, baseH);
+    fractal.ResetDimensions(baseW, baseH, UINT32_MAX);
 
     // Simulate a smooth drag: small deltas, many calls
     int w = baseW;
@@ -338,7 +338,7 @@ CheckResize(bool useGpu)
     for (int i = 0; i < 120; ++i) {
         w += (i & 1) ? 1 : 2;
         h += (i & 1) ? 2 : 1;
-        fractal.ResetDimensions(w, h);
+        fractal.ResetDimensions(w, h, UINT32_MAX);
         capture();
     }
 
@@ -356,7 +356,7 @@ CheckResize(bool useGpu)
         if (h < 64)
             h = 64;
 
-        fractal.ResetDimensions(w, h);
+        fractal.ResetDimensions(w, h, UINT32_MAX);
         capture();
     }
 
@@ -370,19 +370,19 @@ CheckResize(bool useGpu)
         if (h < 256)
             h = 256;
 
-        fractal.ResetDimensions(w, h);
+        fractal.ResetDimensions(w, h, UINT32_MAX);
         capture();
     }
 
     // Phase 4: oscillate around a fixed size
     for (int i = 0; i < 100; ++i) {
         const int wobble = (i & 1) ? 3 : -3;
-        fractal.ResetDimensions(w + wobble, h - wobble);
+        fractal.ResetDimensions(w + wobble, h - wobble, UINT32_MAX);
         capture();
     }
 
     // The final settled dimensions catch cases where an earlier resize wins.
-    fractal.ResetDimensions(initWidth, initHeight);
+    fractal.ResetDimensions(initWidth, initHeight, UINT32_MAX);
     capture();
     ASSERT_EQ(frame, size_t{521});
 }

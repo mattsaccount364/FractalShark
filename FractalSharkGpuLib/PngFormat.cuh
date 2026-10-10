@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <vector>
 
 namespace Png {
 
@@ -142,48 +141,12 @@ inline constexpr uint32_t CrcBytePower = 0x00800000u;
 
 } // namespace Format
 
+// Shared production representation for runs in a dynamic DEFLATE header. Test adapters
+// return this same representation so their assertions inspect the actual encoder layout.
 struct CodeLengthRun {
     unsigned m_Symbol;    // Literal code length or a repetition symbol from the header alphabet.
     unsigned m_Extra;     // Value written to the repetition's extra-bit field.
     unsigned m_ExtraBits; // Width of that field in bits, not bytes.
 };
-
-// Raw samples are already serialized in PNG byte order. One filter byte per row
-// selects a standard PNG filter (0 through 4). Output includes scanline filter bytes.
-// RGB16/RGBA16 rows are packed; output needs (width * channels * SampleBytes + 1) * height bytes.
-// Launch-only: callers retain all device buffers until the supplied stream completes.
-cudaError_t LaunchFilterScanlines(const unsigned char *deviceRaw,
-                                  uint32_t width,
-                                  uint32_t height,
-                                  uint32_t channels,
-                                  const unsigned char *deviceFilters,
-                                  unsigned char *deviceFiltered,
-                                  cudaStream_t stream);
-
-// The lower-level compression seam used by format-boundary tests. Produces one
-// complete RFC 1950 zlib stream; production encoding uses the same implementation.
-// Host-output seams synchronize the supplied stream before returning and clear output on CUDA errors.
-cudaError_t EncodeZlib(const unsigned char *deviceInput,
-                       size_t inputBytes,
-                       cudaStream_t stream,
-                       std::vector<unsigned char> &zlibBytes);
-
-// Internal baseline and algorithm seams. These use the production device routines.
-// Fixed coding still permits stored fallback. Huffman symbolCount is 2..LiteralLengthSymbols,
-// maximumBits is 1..MaximumCodeBits, and symbolCount must fit within 2^maximumBits.
-// Run encoding accepts 1..(LiteralLengthSymbols + DistanceSymbols) lengths, each 0..MaximumCodeBits.
-cudaError_t EncodeZlibFixed(const unsigned char *deviceInput,
-                            size_t inputBytes,
-                            cudaStream_t stream,
-                            std::vector<unsigned char> &zlibBytes);
-cudaError_t BuildHuffmanCodeLengths(const unsigned *deviceFrequencies,
-                                    unsigned symbolCount,
-                                    unsigned maximumBits,
-                                    cudaStream_t stream,
-                                    std::vector<unsigned> &lengths);
-cudaError_t EncodeCodeLengthRuns(const unsigned *deviceLengths,
-                                 unsigned lengthCount,
-                                 cudaStream_t stream,
-                                 std::vector<CodeLengthRun> &runs);
 
 } // namespace Png

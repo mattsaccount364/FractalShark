@@ -3,11 +3,12 @@
 #include <array>
 
 #include "GPU_Types.h"
-#include "PngParallelSave.h"
 
 #include <cstdint>
 #include <filesystem>
 #include <vector>
+
+enum FractalPaletteType : size_t { Basic = 0, Default, Patriotic, Summer, Random, Custom, Num };
 
 class FractalPalette {
 public:

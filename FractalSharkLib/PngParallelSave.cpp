@@ -2,9 +2,14 @@
 
 #include "ConsoleLog.h"
 #include "Environment.h"
-#include "Fractal.h"
 #include "FractalSaveThreadPool.h"
+#include "FractalSharkGpuLib/GpuSaveEncoder.h"
 #include "PngParallelSave.h"
+#include "PngSaveLayout.h"
+#include "SaveFileTransaction.h"
+#include "Utilities.h"
+#include "WPngImage/lodepng.h"
+#include <algorithm>
 
 #include <cinttypes>
 #include <exception>
@@ -41,241 +46,263 @@ ReportSaveError(const std::wstring &filename, const std::wstring &message, const
 }
 
 std::wstring
-DefaultFilename(int index, const std::wstring &extension)
+DefaultFilename(uint64_t index, const std::wstring &extension)
 {
     std::wostringstream name;
     name << L"output" << std::setfill(L'0') << std::setw(5) << index << extension;
     return name.str();
 }
 
-bool
-WriteBinaryFile(const std::filesystem::path &path, const std::vector<unsigned char> &bytes)
-{
-    std::ofstream out(path, std::ios::binary);
-    if (!out) {
-        return false;
-    }
-
-    if (!bytes.empty()) {
-        out.write(reinterpret_cast<const char *>(bytes.data()),
-                  static_cast<std::streamsize>(bytes.size()));
-    }
-
-    out.close();
-    return out.good();
-}
-
 } // namespace
 
-PngParallelSave::PngParallelSave(
-    Type typ, EncoderBackend backend, std::wstring filenameBase, bool copyTheIters, Fractal &fractal)
-    : m_Type(typ), m_Backend(backend), m_Fractal(fractal), m_ScrnWidth(fractal.m_ScrnWidth),
-      m_ScrnHeight(fractal.m_ScrnHeight), m_GpuAntialiasing(fractal.m_GpuAntialiasing),
-      m_NumIterations(fractal.m_NumIterations),
-      m_PaletteRotate(fractal.GetPalette().GetPaletteRotation()),
-      m_PaletteDepthIndex(fractal.GetPalette().GetPaletteDepthIndex()),
-      m_PaletteAuxDepth(fractal.GetPalette().GetAuxDepth()),
-      m_MaxPossibleIters(fractal.GetMaxIterationsRT()),
-      m_WhichPalette(fractal.GetPalette().GetPaletteType()), m_PaletteColors{}, m_NumPaletteColors(),
-      m_PaletteGeneration(fractal.GetPalette().GetPaletteGeneration()),
-      m_IterType(fractal.GetIterType()), m_CurIters{}, m_CopyTheIters(copyTheIters),
-      m_FilenameBase(std::move(filenameBase))
+PngParallelSave::PngParallelSave(Type type,
+                                 EncoderBackend backend,
+                                 std::wstring filenameBase,
+                                 SaveOverwritePolicy overwrite,
+                                 ItersMemoryContainer &iterations,
+                                 bool copyTheIters,
+                                 uint64_t numIterations,
+                                 uint64_t paletteRotation,
+                                 uint32_t paletteAuxDepth,
+                                 uint64_t maxPossibleIterations,
+                                 std::vector<Color16> paletteColors,
+                                 FractalSaveThreadPool &pool,
+                                 ReturnIterationsFunction returnIterations)
+    : m_Type(type), m_Backend(backend), m_FilenameBase(std::move(filenameBase)), m_Overwrite(overwrite),
+      m_NumIterations(numIterations), m_PaletteRotate(paletteRotation),
+      m_PaletteAuxDepth(paletteAuxDepth), m_MaxPossibleIters(maxPossibleIterations),
+      m_PaletteColors(std::move(paletteColors)), m_Pool(pool),
+      m_ReturnIterations(std::move(returnIterations))
 {
-
-    const std::vector<Color16> *palInterleaved = fractal.GetPalette().GetPalInterleaved(m_WhichPalette);
-    m_PaletteColors = palInterleaved[m_PaletteDepthIndex];
-    m_NumPaletteColors = static_cast<uint32_t>(m_PaletteColors.size());
-
-    if (m_CopyTheIters) {
-        m_CurIters = fractal.m_CurIters;
+    // Capture under the submitting thread's existing render-state ownership. A factory
+    // reservation bounds these buffers before any copy or move takes place.
+    if (copyTheIters) {
+        m_CurIters.CopyIterationsFrom(iterations);
     } else {
-        m_CurIters = std::move(fractal.m_CurIters);
-        fractal.SetCurItersMemory();
+        m_CurIters = std::move(iterations);
     }
 }
 
 PngParallelSave::~PngParallelSave()
 {
-    if (!m_CopyTheIters) {
-        m_Fractal.ReturnIterMemory(std::move(m_CurIters));
+    if (m_ReturnIterations) {
+        m_ReturnIterations(std::move(m_CurIters));
     }
+}
+
+std::wstring
+PngParallelSave::ResolveFilename(uint64_t index) const
+{
+    const std::wstring extension = m_Type == Type::PngImg ? L".png" : L".txt";
+    if (!m_FilenameBase.empty()) {
+        return PathHasFilenameExtension(m_FilenameBase) ? m_FilenameBase : m_FilenameBase + extension;
+    }
+    return DefaultFilename(index, extension);
+}
+
+bool
+PngParallelSave::Validate(std::wstring &error) const
+{
+    const auto aa = m_CurIters.m_Antialiasing;
+    size_t bytes = 0;
+    const bool bits32 = m_CurIters.GetIterType() == IterTypeEnum::Bits32;
+    const bool validType = bits32 || m_CurIters.GetIterType() == IterTypeEnum::Bits64;
+    const auto maximumCount = bits32 ? static_cast<uint64_t>(UINT32_MAX) : UINT64_MAX;
+    // Check every product before accessing rows; padded storage remains authoritative.
+    if (!validType || aa < 1 || aa > 4 ||
+        !Png::Rgb16ByteCount(m_CurIters.m_OutputWidth, m_CurIters.m_OutputHeight, bytes) ||
+        m_CurIters.m_OutputWidth > SIZE_MAX / aa || m_CurIters.m_OutputHeight > SIZE_MAX / aa ||
+        m_CurIters.m_Width != m_CurIters.m_OutputWidth * aa ||
+        m_CurIters.m_Height != m_CurIters.m_OutputHeight * aa ||
+        m_CurIters.m_RoundedWidth < m_CurIters.m_Width ||
+        m_CurIters.m_RoundedHeight < m_CurIters.m_Height ||
+        m_CurIters.m_RoundedWidth > SIZE_MAX / m_CurIters.m_RoundedHeight ||
+        m_CurIters.m_RoundedTotal < m_CurIters.m_RoundedWidth * m_CurIters.m_RoundedHeight ||
+        m_CurIters.m_RoundedTotal > m_CurIters.GetIterationCount() ||
+        (bits32 ? m_CurIters.GetIters<uint32_t>() == nullptr
+                : m_CurIters.GetIters<uint64_t>() == nullptr) ||
+        m_NumIterations == 0 || m_NumIterations > maximumCount || m_MaxPossibleIters < 2 ||
+        m_NumIterations > m_MaxPossibleIters || m_PaletteAuxDepth >= 64 ||
+        (m_Type == Type::PngImg && m_PaletteColors.empty())) {
+        error = L"invalid save dimensions, iteration storage, or palette settings";
+        return false;
+    }
+    return true;
 }
 
 template <typename IterType>
-uint32_t
-PngParallelSave::EncodeGpuPng(std::vector<unsigned char> &pngBytes)
+int
+PngParallelSave::EncodeGpuPng(std::vector<unsigned char> &pngBytes, std::wstring &error)
 {
-    if (m_CurIters.m_Width > std::numeric_limits<uint32_t>::max() ||
-        m_CurIters.m_Height > std::numeric_limits<uint32_t>::max()) {
+    if (m_CurIters.m_OutputWidth > std::numeric_limits<uint32_t>::max() ||
+        m_CurIters.m_OutputHeight > std::numeric_limits<uint32_t>::max() ||
+        m_PaletteColors.size() > std::numeric_limits<uint32_t>::max()) {
+        error = L"GPU PNG dimensions or palette exceed supported limits";
         return 1;
     }
-    // The lease protects both lazy construction and all GPU workspace use. Its destructor
-    // releases the encoder before Run writes the host PNG bytes to disk.
-    const auto lease = m_Fractal.m_SavePool->AcquireGpuEncoding();
-    if (!m_Fractal.m_SaveGpuRenderer) {
-        m_Fractal.m_SaveGpuRenderer = std::make_unique<GPURenderer>();
+    // The pool owns the reusable context. The lease covers encoding, never file I/O.
+    const auto lease = m_Pool.AcquireGpuEncoding();
+    const auto result = lease.GetEncoder().Encode(m_CurIters.GetIters<IterType>(),
+                                                  m_CurIters.m_RoundedWidth,
+                                                  static_cast<uint32_t>(m_CurIters.m_OutputWidth),
+                                                  static_cast<uint32_t>(m_CurIters.m_OutputHeight),
+                                                  static_cast<uint32_t>(m_CurIters.m_Antialiasing),
+                                                  static_cast<IterType>(m_NumIterations),
+                                                  m_PaletteColors.data(),
+                                                  static_cast<uint32_t>(m_PaletteColors.size()),
+                                                  m_PaletteAuxDepth,
+                                                  m_PaletteRotate,
+                                                  m_MaxPossibleIters,
+                                                  pngBytes);
+    if (result != 0) {
+        error = L"GPU PNG encoder failed: " + WidenForLog(Png::GpuSaveEncoder::ErrorString(result));
     }
-    auto &renderer = *m_Fractal.m_SaveGpuRenderer;
-    auto result = renderer.InitializeMemory<IterType>(static_cast<uint32_t>(m_CurIters.m_Width),
-                                                      static_cast<uint32_t>(m_CurIters.m_Height),
-                                                      m_GpuAntialiasing,
-                                                      m_PaletteColors.data(),
-                                                      m_NumPaletteColors,
-                                                      m_PaletteAuxDepth,
-                                                      m_PaletteRotate,
-                                                      m_MaxPossibleIters,
-                                                      m_PaletteGeneration,
-                                                      true);
-    if (result == 0) {
-        result = renderer.EncodePng(m_CurIters.GetIters<IterType>(),
-                                    m_CurIters.m_RoundedWidth,
-                                    static_cast<IterType>(m_NumIterations),
-                                    pngBytes);
-    }
-    return result;
+    return static_cast<int>(result);
 }
 
 int
+PngParallelSave::EncodeCpuPng(std::vector<unsigned char> &pngBytes, std::wstring &error)
+{
+    return m_CurIters.GetIterType() == IterTypeEnum::Bits32
+               ? EncodeCpuPngTyped<uint32_t>(pngBytes, error)
+               : EncodeCpuPngTyped<uint64_t>(pngBytes, error);
+}
+
+template <typename IterType>
+int
+PngParallelSave::EncodeCpuPngTyped(std::vector<unsigned char> &pngBytes, std::wstring &error)
+{
+    size_t byteCount = 0;
+    if (!Png::Rgb16ByteCount(m_CurIters.m_OutputWidth, m_CurIters.m_OutputHeight, byteCount)) {
+        error = L"RGB16 byte count exceeds supported limits";
+        return 1;
+    }
+    std::vector<unsigned char> raw(byteCount);
+    const auto *iterations = m_CurIters.GetIters<IterType>();
+    const size_t aa = m_CurIters.m_Antialiasing;
+    const uint32_t samples = static_cast<uint32_t>(aa * aa);
+    size_t offset = 0;
+    for (size_t y = 0; y < m_CurIters.m_OutputHeight; ++y) {
+        for (size_t x = 0; x < m_CurIters.m_OutputWidth; ++x) {
+            // At most sixteen 16-bit samples: uint32_t is exact and division
+            // truncates identically to the former floating-point accumulation.
+            uint32_t red = 0;
+            uint32_t green = 0;
+            uint32_t blue = 0;
+            for (size_t sy = 0; sy < aa; ++sy) {
+                const size_t row = (y * aa + sy) * m_CurIters.m_RoundedWidth;
+                for (size_t sx = 0; sx < aa; ++sx) {
+                    const uint64_t count = iterations[row + x * aa + sx];
+                    if (count < m_NumIterations) {
+                        const uint64_t limit = m_MaxPossibleIters - 1;
+                        // Saturate before addition, including rotations near UINT64_MAX.
+                        const uint64_t rotated = count >= limit || m_PaletteRotate >= limit - count
+                                                     ? limit
+                                                     : count + m_PaletteRotate;
+                        const auto &color =
+                            m_PaletteColors[(rotated >> m_PaletteAuxDepth) % m_PaletteColors.size()];
+                        red += color.r;
+                        green += color.g;
+                        blue += color.b;
+                    }
+                }
+            }
+            const auto writeSample = [&](uint32_t sum) {
+                const auto value = static_cast<uint16_t>(sum / samples);
+                raw[offset++] = static_cast<unsigned char>(value >> 8);
+                raw[offset++] = static_cast<unsigned char>(value);
+            };
+            writeSample(red);
+            writeSample(green);
+            writeSample(blue);
+        }
+    }
+    // Preserve the CPU encoder policy while removing the intermediate Color16
+    // image and the wrapper's 32-bit raw-buffer size arithmetic.
+    lodepng::State state;
+    state.info_raw.colortype = LCT_RGB;
+    state.info_raw.bitdepth = 16;
+    state.info_png.color.colortype = LCT_RGB;
+    state.info_png.color.bitdepth = 16;
+    state.encoder.auto_convert = false;
+    state.encoder.zlibsettings.lazymatching = false;
+    state.encoder.zlibsettings.nicematch = 32;
+    const unsigned code = lodepng::encode(pngBytes,
+                                          raw,
+                                          static_cast<unsigned>(m_CurIters.m_OutputWidth),
+                                          static_cast<unsigned>(m_CurIters.m_OutputHeight),
+                                          state);
+    if (code != 0) {
+        error = L"PNG encoder failed: " + WidenForLog(lodepng_error_text(code));
+    }
+    return static_cast<int>(code);
+}
+
+void
+PngParallelSave::WriteIterations(std::ostream &out) const
+{
+    out << "# x, y, and iteration counts are decimal.\n";
+    for (size_t y = 0; y < m_CurIters.m_Height; ++y) {
+        for (size_t x = 0; x < m_CurIters.m_Width; ++x) {
+            out << "(x=" << x << ",y=" << y << "):iters=" << m_CurIters.GetItersArrayValSlow(x, y)
+                << " ";
+        }
+        out << "\n";
+    }
+}
+
+SaveResult
 PngParallelSave::Run()
 {
-    if (m_Backend == EncoderBackend::Cpu) {
-        Environment::SetCurrentThreadName(L"PngParallelSave::Run");
+    uint64_t index = 0;
+    auto filename = ResolveFilename(index);
+    const bool unnamed = m_FilenameBase.empty();
+    const auto overwrite = unnamed ? SaveOverwritePolicy::SkipExisting : m_Overwrite;
+    if (!unnamed && overwrite == SaveOverwritePolicy::SkipExisting &&
+        Utilities::FileExists(filename.c_str())) {
+        return {SaveOutcome::SkippedExisting, filename, 0, {}};
     }
-
-    std::wstring finalFilename;
-
-    std::wstring ext;
-    if (m_Type == Type::PngImg) {
-        ext = L".png";
-    } else {
-        ext = L".txt";
+    std::wstring error;
+    int code = Validate(error) ? 0 : 1;
+    std::vector<unsigned char> pngBytes;
+    if (code == 0 && m_Type == Type::PngImg) {
+        code = m_Backend == EncoderBackend::Cpu ? EncodeCpuPng(pngBytes, error)
+               : m_CurIters.GetIterType() == IterTypeEnum::Bits32
+                   ? EncodeGpuPng<uint32_t>(pngBytes, error)
+                   : EncodeGpuPng<uint64_t>(pngBytes, error);
     }
-
-    if (!m_FilenameBase.empty()) {
-        finalFilename = m_FilenameBase;
-        if (!PathHasFilenameExtension(finalFilename)) {
-            finalFilename += ext;
-        }
-        if (Utilities::FileExists(finalFilename.c_str())) {
-            FractalSharkLog::LogLine(__FILE__, __LINE__) << L"Not saving, file exists";
-            return 0;
-        }
-    } else {
-        int i = 0;
-        do {
-            finalFilename = DefaultFilename(i, ext);
-            i++;
-        } while (Utilities::FileExists(finalFilename.c_str()));
+    if (code != 0) {
+        ReportSaveError(filename, error, __FILE__, __LINE__);
+        return {SaveOutcome::Failed, filename, code, Environment::WideToUtf8(error)};
     }
-
-    const std::filesystem::path finalPath(finalFilename);
-
-    if (m_Type == Type::PngImg) {
-        if (m_NumPaletteColors == 0) {
-            ReportSaveError(finalFilename, L"selected palette has no colors", __FILE__, __LINE__);
-            return 1;
+    for (;;) {
+        // Avoid rewriting the encoded image for every previously occupied numbered
+        // name. This is only a hint: publication still arbitrates concurrent saves.
+        if (unnamed && Utilities::FileExists(filename.c_str())) {
+            filename = ResolveFilename(++index);
+            continue;
         }
-
-        std::vector<unsigned char> pngBytes;
-        if (m_Backend == EncoderBackend::Gpu) {
-            const auto result = m_IterType == IterTypeEnum::Bits32 ? EncodeGpuPng<uint32_t>(pngBytes)
-                                                                   : EncodeGpuPng<uint64_t>(pngBytes);
-            if (result != 0) {
-                ReportSaveError(
-                    finalFilename,
-                    L"GPU PNG encoder failed: " + WidenForLog(GPURenderer::ConvertErrorToString(result)),
-                    __FILE__,
-                    __LINE__);
-                return static_cast<int>(result);
-            }
-        } else {
-            double accR, accB, accG;
-            size_t inputX, inputY;
-            size_t outputX, outputY;
-            IterTypeFull numIters;
-
-            WPngImage image((int)m_ScrnWidth, (int)m_ScrnHeight, WPngImage::Pixel16(0, 0, 0));
-
-            for (outputY = 0; outputY < m_ScrnHeight; outputY++) {
-                for (outputX = 0; outputX < m_ScrnWidth; outputX++) {
-                    accR = 0;
-                    accG = 0;
-                    accB = 0;
-
-                    for (inputX = outputX * m_GpuAntialiasing;
-                         inputX < (outputX + 1) * m_GpuAntialiasing;
-                         inputX++) {
-                        for (inputY = outputY * m_GpuAntialiasing;
-                             inputY < (outputY + 1) * m_GpuAntialiasing;
-                             inputY++) {
-
-                            numIters = m_CurIters.GetItersArrayValSlow(inputX, inputY);
-                            if (numIters < m_NumIterations) {
-                                numIters += m_PaletteRotate;
-                                if (numIters >= m_MaxPossibleIters) {
-                                    numIters = m_MaxPossibleIters - 1;
-                                }
-
-                                auto shiftedIters = (numIters >> m_PaletteAuxDepth);
-                                auto palIndex = shiftedIters % m_NumPaletteColors;
-
-                                accR += m_PaletteColors[palIndex].r;
-                                accG += m_PaletteColors[palIndex].g;
-                                accB += m_PaletteColors[palIndex].b;
-                            }
-                        }
-                    }
-
-                    accR /= m_GpuAntialiasing * m_GpuAntialiasing;
-                    accG /= m_GpuAntialiasing * m_GpuAntialiasing;
-                    accB /= m_GpuAntialiasing * m_GpuAntialiasing;
-
-                    image.set((int)outputX,
-                              (int)outputY,
-                              WPngImage::Pixel16((uint16_t)accR, (uint16_t)accG, (uint16_t)accB));
+        auto result = SaveFileTransaction::Write(filename, overwrite, [&](std::ostream &out) {
+            if (m_Type == Type::ItersText) {
+                WriteIterations(out);
+            } else {
+                // Avoid narrowing a huge encoded vector to streamsize.
+                constexpr size_t writeChunkBytes = 1024 * 1024;
+                for (size_t offset = 0; offset < pngBytes.size() && out;) {
+                    const size_t bytes = std::min(writeChunkBytes, pngBytes.size() - offset);
+                    out.write(reinterpret_cast<const char *>(pngBytes.data() + offset),
+                              static_cast<std::streamsize>(bytes));
+                    offset += bytes;
                 }
             }
-
-            const WPngImage::PngEncodingOptions encodingOptions{false, false, 32};
-            const auto status = image.SaveImageToRAM(
-                pngBytes, WPngImage::PngFileFormat::kPngFileFormat_RGBA16, encodingOptions);
-            if (status != WPngImage::kIOStatus_Ok) {
-                std::wstring message = L"PNG encoder failed";
-                if (!status.pngLibErrorMsg.empty()) {
-                    message += L": ";
-                    message += WidenForLog(status.pngLibErrorMsg);
-                }
-                ReportSaveError(finalFilename, message, __FILE__, __LINE__);
-                return 1;
-            }
+        });
+        if (unnamed && result.Outcome == SaveOutcome::SkippedExisting) {
+            filename = ResolveFilename(++index);
+            continue;
         }
-
-        if (!WriteBinaryFile(finalPath, pngBytes)) {
-            ReportSaveError(finalFilename, L"could not write PNG file", __FILE__, __LINE__);
-            return 1;
+        if (!result.Succeeded()) {
+            ReportSaveError(filename, WidenForLog(result.Diagnostic), __FILE__, __LINE__);
         }
-    } else {
-        std::ofstream out(finalPath);
-        if (!out) {
-            ReportSaveError(finalFilename, L"could not open text file", __FILE__, __LINE__);
-            return 1;
-        }
-
-        out << "# x, y, and iteration counts are decimal.\n";
-
-        for (size_t outputY = 0; outputY < m_ScrnHeight * m_GpuAntialiasing; outputY++) {
-            for (size_t outputX = 0; outputX < m_ScrnWidth * m_GpuAntialiasing; outputX++) {
-                IterTypeFull numIters = m_CurIters.GetItersArrayValSlow(outputX, outputY);
-                out << "(x=" << outputX << ",y=" << outputY << "):iters=" << numIters << " ";
-            }
-
-            out << "\n";
-        }
-
-        if (!out) {
-            ReportSaveError(finalFilename, L"could not write text file", __FILE__, __LINE__);
-            return 1;
-        }
+        return result;
     }
-    return 0;
 }

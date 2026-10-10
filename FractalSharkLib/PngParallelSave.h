@@ -1,51 +1,61 @@
 #pragma once
 
-#include "GPU_Types.h"
-#include "HighPrecision.h"
 #include "ItersMemoryContainer.h"
-#include <stdint.h>
+#include "SaveResult.h"
+#include <functional>
+#include <ostream>
+#include <string>
 #include <vector>
 
-class Fractal;
+class FractalSaveThreadPool;
 
-// The palette!
-enum FractalPaletteType : size_t { Basic = 0, Default, Patriotic, Summer, Random, Custom, Num };
-
+// A queued save owns its iterations and captured palette. Only the optional buffer
+// recycler refers back to Fractal; encoding never reads live render or palette state.
 class PngParallelSave {
 public:
     enum class Type { ItersText, PngImg };
     enum class EncoderBackend { Cpu, Gpu };
+    using ReturnIterationsFunction = std::function<void(ItersMemoryContainer &&)>;
 
-    PngParallelSave(Type typ,
+    PngParallelSave(Type type,
                     EncoderBackend backend,
                     std::wstring filenameBase,
+                    SaveOverwritePolicy overwrite,
+                    ItersMemoryContainer &iterations,
                     bool copyTheIters,
-                    Fractal &fractal);
+                    uint64_t numIterations,
+                    uint64_t paletteRotation,
+                    uint32_t paletteAuxDepth,
+                    uint64_t maxPossibleIterations,
+                    std::vector<Color16> paletteColors,
+                    FractalSaveThreadPool &pool,
+                    ReturnIterationsFunction returnIterations);
     ~PngParallelSave();
-    int Run();
-
+    PngParallelSave(const PngParallelSave &) = delete;
+    PngParallelSave &operator=(const PngParallelSave &) = delete;
     PngParallelSave(PngParallelSave &&) = delete;
+    SaveResult Run();
+
+private:
+    std::wstring ResolveFilename(uint64_t index) const;
+    bool Validate(std::wstring &error) const;
+    int EncodeCpuPng(std::vector<unsigned char> &pngBytes, std::wstring &error);
+    template <typename IterType>
+    int EncodeCpuPngTyped(std::vector<unsigned char> &pngBytes, std::wstring &error);
+    template <typename IterType>
+    int EncodeGpuPng(std::vector<unsigned char> &pngBytes, std::wstring &error);
+    void WriteIterations(std::ostream &out) const;
 
     Type m_Type;
     EncoderBackend m_Backend;
-    Fractal &m_Fractal;
-    size_t m_ScrnWidth;
-    size_t m_ScrnHeight;
-    uint32_t m_GpuAntialiasing;
-    IterTypeFull m_NumIterations;
-    IterTypeFull m_PaletteRotate; // Used to shift the palette
-    int m_PaletteDepthIndex;      // 0, 1, 2
-    int m_PaletteAuxDepth;
-    IterTypeFull m_MaxPossibleIters;
-    FractalPaletteType m_WhichPalette;
-    std::vector<Color16> m_PaletteColors;
-    uint32_t m_NumPaletteColors;
-    uint64_t m_PaletteGeneration;
-    IterTypeEnum m_IterType;
-    ItersMemoryContainer m_CurIters;
-    bool m_CopyTheIters;
     std::wstring m_FilenameBase;
-
-private:
-    template <typename IterType> uint32_t EncodeGpuPng(std::vector<unsigned char> &pngBytes);
+    SaveOverwritePolicy m_Overwrite;
+    ItersMemoryContainer m_CurIters;
+    uint64_t m_NumIterations;
+    uint64_t m_PaletteRotate;
+    uint32_t m_PaletteAuxDepth;
+    uint64_t m_MaxPossibleIters;
+    std::vector<Color16> m_PaletteColors;
+    FractalSaveThreadPool &m_Pool;
+    ReturnIterationsFunction m_ReturnIterations;
 };

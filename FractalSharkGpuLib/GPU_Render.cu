@@ -7,7 +7,6 @@
 #include <stdio.h>
 
 #include "GPU_Render.h"
-#include "PngEncoder.cuh"
 #include "QuadDouble/gqd_basic.cuh"
 #include "QuadFloat/gqf_basic.cuh"
 #include "dbldbl.cuh"
@@ -699,49 +698,6 @@ template uint32_t GPURenderer::RecolorFromHostIterations<uint32_t>(
     const uint32_t *, size_t, uint32_t, FractalShark::ColoringMode, Color16 *, size_t);
 template uint32_t GPURenderer::RecolorFromHostIterations<uint64_t>(
     const uint64_t *, size_t, uint64_t, FractalShark::ColoringMode, Color16 *, size_t);
-
-template <typename IterType>
-uint32_t
-GPURenderer::EncodePng(const IterType *hostIters,
-                       size_t rowStrideElements,
-                       IterType numIterations,
-                       std::vector<unsigned char> &pngBytes)
-{
-    PendingRendererWork pendingWork(m_ComputeStream);
-    pngBytes.clear();
-    // Save palettes are snapshot-owned; their host address must not outlive the snapshot as a cache key.
-    Pals.cached_hostPalInterleaved = nullptr;
-    uint32_t result =
-        numIterations == 0 ? cudaErrorInvalidValue : UploadHostIterations(hostIters, rowStrideElements);
-    if (result == cudaSuccess) {
-        result =
-            RunAntialiasing(numIterations, m_ComputeStream, FractalShark::ColoringMode::PaletteLookup);
-    }
-    if (result == cudaSuccess) {
-        if (!m_PngEncoder) {
-            m_PngEncoder = std::make_unique<Png::GpuPngEncoder>();
-        }
-    }
-    if (result == cudaSuccess) {
-        result = m_PngEncoder->Encode(OutputColorMatrix.aa_colors,
-                                      m_ColorWidth,
-                                      m_ColorHeight,
-                                      static_cast<size_t>(m_ColorWidth) * sizeof(Color16),
-                                      m_ComputeStream,
-                                      pngBytes);
-    }
-    // The snapshot and palette may be released as soon as this method returns, even on failure.
-    return pendingWork.Finish(result);
-}
-
-template uint32_t GPURenderer::EncodePng<uint32_t>(const uint32_t *hostIters,
-                                                   size_t rowStrideElements,
-                                                   uint32_t numIterations,
-                                                   std::vector<unsigned char> &pngBytes);
-template uint32_t GPURenderer::EncodePng<uint64_t>(const uint64_t *hostIters,
-                                                   size_t rowStrideElements,
-                                                   uint64_t numIterations,
-                                                   std::vector<unsigned char> &pngBytes);
 
 uint32_t
 GPURenderer::SyncComputeStream()
@@ -2068,68 +2024,24 @@ GPURenderer::RunAntialiasing(IterType numIterations,
                              cudaStream_t stream,
                              FractalShark::ColoringMode coloringMode)
 {
-    if (numIterations == 0) {
-        return cudaErrorInvalidValue;
-    }
-    dim3 aaBlocks(m_ColorWidthBlocks, m_ColorHeightBlocks, 1);
-    dim3 aaThreadsPerBlock(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
-
-    switch (m_Antialiasing) {
-        case 1:
-            antialiasing_kernel<IterType, 1, true>
-                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
-                                                             m_Width,
-                                                             m_Height,
-                                                             OutputColorMatrix,
-                                                             Pals,
-                                                             m_ColorWidth,
-                                                             m_ColorHeight,
-                                                             numIterations,
-                                                             coloringMode);
-            break;
-        case 2:
-            antialiasing_kernel<IterType, 2, true>
-                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
-                                                             m_Width,
-                                                             m_Height,
-                                                             OutputColorMatrix,
-                                                             Pals,
-                                                             m_ColorWidth,
-                                                             m_ColorHeight,
-                                                             numIterations,
-                                                             coloringMode);
-            break;
-        case 3:
-            antialiasing_kernel<IterType, 3, true>
-                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
-                                                             m_Width,
-                                                             m_Height,
-                                                             OutputColorMatrix,
-                                                             Pals,
-                                                             m_ColorWidth,
-                                                             m_ColorHeight,
-                                                             numIterations,
-                                                             coloringMode);
-            break;
-        case 4:
-        default:
-            antialiasing_kernel<IterType, 4, true>
-                <<<aaBlocks, aaThreadsPerBlock, 0, stream>>>(static_cast<IterType *>(OutputIterMatrix),
-                                                             m_Width,
-                                                             m_Height,
-                                                             OutputColorMatrix,
-                                                             Pals,
-                                                             m_ColorWidth,
-                                                             m_ColorHeight,
-                                                             numIterations,
-                                                             coloringMode);
-            break;
-    }
-
-    const auto launchResult = cudaGetLastError();
+    const auto launchResult = LaunchColoring(static_cast<const IterType *>(OutputIterMatrix),
+                                             static_cast<size_t>(w_block) * NB_THREADS_W,
+                                             OutputColorMatrix.aa_colors,
+                                             Pals.local_pal,
+                                             Pals.local_palIters,
+                                             Pals.palette_aux_depth,
+                                             Pals.m_PaletteRotation,
+                                             Pals.m_MaxPossibleIterations,
+                                             m_ColorWidth,
+                                             m_ColorHeight,
+                                             m_Antialiasing,
+                                             numIterations,
+                                             coloringMode,
+                                             stream);
     if (launchResult != cudaSuccess) {
         return launchResult;
     }
+    const dim3 aaThreadsPerBlock(NB_THREADS_W_AA, NB_THREADS_H_AA, 1);
     // Reset before launching any reduction block; block-local barriers cannot order this globally.
     auto resetResult = cudaMemsetAsync(OutputReductionResults, 0, sizeof(ReductionResults), stream);
     if (resetResult != cudaSuccess) {

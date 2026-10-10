@@ -20,6 +20,7 @@
 #include "RenderToPng.h"
 
 #include <algorithm>
+#include <array>
 #include <cctype>
 #include <cerrno>
 #include <chrono>
@@ -49,6 +50,31 @@ enum class CliMode { SingleShot, Server, Client };
 constexpr int ConsoleWidth = 80;
 constexpr int ConsoleHeight = 40;
 
+struct PerturbationAlgorithmOption {
+    std::string_view Name;
+    RefOrbitCalc::PerturbationAlg Value;
+};
+
+// Parsing and help share the exact CLI spellings so every advertised reference backend is accepted.
+constexpr auto PerturbationAlgorithms = std::array{
+    PerturbationAlgorithmOption{"Auto", RefOrbitCalc::PerturbationAlg::Auto},
+    PerturbationAlgorithmOption{"ST", RefOrbitCalc::PerturbationAlg::ST},
+    PerturbationAlgorithmOption{"MT", RefOrbitCalc::PerturbationAlg::MT},
+    PerturbationAlgorithmOption{"STPeriodicity", RefOrbitCalc::PerturbationAlg::STPeriodicity},
+    PerturbationAlgorithmOption{"MTPeriodicity3", RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
+    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighSTMed",
+                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed},
+    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed1",
+                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1},
+    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed2",
+                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2},
+    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed3",
+                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed4",
+                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4},
+    PerturbationAlgorithmOption{"MTPeriodicity5", RefOrbitCalc::PerturbationAlg::MTPeriodicity5},
+    PerturbationAlgorithmOption{"GPU", RefOrbitCalc::PerturbationAlg::GPU}};
+
 struct CliArgs {
     int Width = 1024;
     int Height = 768;
@@ -74,6 +100,7 @@ struct CliArgs {
 
     std::string RenderAlgorithm;
     std::string PerturbationAlg; // empty => unspecified
+    bool ClearReferenceOrbits = false;
     std::string PaletteMapFile;
     std::optional<uint32_t> PaletteDepth;
 
@@ -85,6 +112,24 @@ struct CliArgs {
     bool Quiet = false;
     bool Help = false;
 };
+
+bool
+IsCliRenderAlgorithm(const RenderAlgorithm &algorithm)
+{
+    // MAX marks an unavailable/internal algorithm and cannot be used to render an image.
+    return algorithm.Algorithm != RenderAlgorithmEnum::MAX && algorithm.AlgorithmStr &&
+           algorithm.AlgorithmStr[0] != '\0';
+}
+
+void
+PrintRenderAlgorithms(std::string_view indent)
+{
+    for (const auto &algorithm : RenderAlgorithms) {
+        if (IsCliRenderAlgorithm(algorithm)) {
+            std::cout << indent << algorithm.AlgorithmStr << "\n";
+        }
+    }
+}
 
 void
 PrintUsage()
@@ -100,15 +145,16 @@ PrintUsage()
            "                   --center-x X --center-y Y --zoom Z}\n"
            "                  [--iterations N] [--antialiasing N]\n"
            "                  [--perturbation-alg NAME] [--palette-map FILE] [--palette-depth BITS]\n"
+           "                  [--clear-reference-orbits]\n"
            "                  [--commit-cap-bytes N]\n"
            "                  [--no-gpu]\n"
            "                  [--quiet]\n"
            "\n"
            "  FractalSharkCli --server [--endpoint NAME] [--width W --height H]\n"
-           "                   [--commit-cap-bytes N] [--no-gpu]\n"
+           "                   [--commit-cap-bytes N] [--no-gpu] [--quiet]\n"
            "  FractalSharkCli --connect [--endpoint NAME] <the render arguments above>\n"
            "  FractalSharkCli --connect --endpoint NAME --shutdown\n"
-           "  FractalSharkCli [--connect [--endpoint NAME]] --batch FILE\n"
+           "  FractalSharkCli [--connect [--endpoint NAME]] --batch FILE [--clear-reference-orbits]\n"
            "\n"
            "  FractalSharkCli --list-render-algorithms\n"
            "  FractalSharkCli --help\n"
@@ -116,6 +162,65 @@ PrintUsage()
            "The default endpoint is per-user: a Windows named pipe or a Unix-domain\n"
            "socket. Use --endpoint to select a different local endpoint. The server\n"
            "process stays in the foreground and handles requests in FIFO order.\n"
+           "\n"
+           "Server and batch mode:\n"
+           "  --server          Keep the renderer alive and serve local client requests\n"
+           "  --connect         Send a render, batch, or shutdown request to the server\n"
+           "  --endpoint NAME   Local endpoint string (default: per-user endpoint)\n"
+           "                    Windows accepts a pipe name or a full named-pipe path;\n"
+           "                    Linux accepts a socket name or a socket path\n"
+           "  --shutdown        Stop the server (requires --connect)\n"
+           "  --batch FILE      Read a batch file; put render options in its image sections\n"
+           "\n"
+           "View and image dimensions:\n"
+           "  --width W         Output width in pixels: integer 1-2147483647 (default: 1024)\n"
+           "  --height H        Output height in pixels: integer 1-2147483647 (default: 768)\n"
+           "                    Saved locations supply dimensions unless overridden;\n"
+           "                    client defaults come from the server's startup dimensions\n"
+           "                    Console-only output defaults to 80x40 if neither is set\n"
+           "  --builtin-view N  Non-negative preset index; built-in presets are 0-34\n"
+           "                    Other indices select the standard view (preset 0)\n"
+           "  --locations FILE  Read a saved-location file containing view records\n"
+           "  --location-index N\n"
+           "                    Zero-based record index into --locations (default: last record)\n"
+           "                    Must be within the records present in the file\n"
+           "  --center-x X      High-precision real decimal coordinate (e.g. -0.75)\n"
+           "  --center-y Y      High-precision imaginary decimal coordinate (e.g. 0.1)\n"
+           "  --zoom Z          Positive high-precision decimal zoom (e.g. 1.0e10000)\n"
+           "                    Specify --center-x, --center-y, and --zoom together\n"
+           "                    Decimal exponents may use e, E, or @\n"
+           "\n"
+           "Rendering:\n"
+           "  --render-algorithm NAME\n"
+           "                    Required per-pixel algorithm; valid case-sensitive names:\n";
+    PrintRenderAlgorithms("                      ");
+    std::cout << "                    AutoSelect chooses the per-pixel algorithm automatically\n"
+                 "  --iterations N    Maximum iterations: integer 1-18446744073709551615\n"
+                 "                    Omit to use the view's iteration count\n"
+                 "  --antialiasing N  Supersampling factor per dimension: 1, 2, 3, or 4\n"
+                 "                    These give 1, 4, 9, or 16 samples per pixel\n"
+                 "                    Integers up to 4294967295 are accepted; values above 4\n"
+                 "                    are capped at 4, except 4294967295 retains the current factor\n"
+                 "                    Omit to use the view's antialiasing factor\n"
+                 "  --commit-cap-bytes N\n"
+                 "                    Reference memory commit cap: integer 0-18446744073709551615\n"
+                 "                    Default: 18446744073709551615 (unlimited)\n"
+                 "                    For --connect requests, set this on --server instead\n"
+                 "  --no-gpu          Disable CUDA (single-shot or server startup option)\n"
+                 "\n"
+                 "Reference orbits:\n"
+                 "  --perturbation-alg NAME\n"
+                 "                    Select reference generation; valid case-sensitive names:\n";
+    for (const auto &algorithm : PerturbationAlgorithms) {
+        std::cout << "                      " << algorithm.Name << "\n";
+    }
+    std::cout
+        << "                    Auto chooses reference generation automatically\n"
+           "                    GPU uses CUDA with an HDR perturbation render algorithm\n"
+           "  --clear-reference-orbits\n"
+           "                    Clear all cached reference orbits before each render\n"
+           "                    Combine with --perturbation-alg GPU to force GPU recalculation\n"
+           "                    With --batch, force clearing before every image\n"
            "\n"
            "Output:\n"
            "  --out FILE.png    Write a PNG image (required unless --console is given)\n"
@@ -125,33 +230,39 @@ PrintUsage()
            "                    Load Fractal Zoomer RGB8 triplets; blank, #, and // lines are ignored\n"
            "                    (the first three values per row are clamped to 0-255)\n"
            "  --palette-depth BITS\n"
-           "                    Use a 5, 6, 8, 12, 16, or 20-bit palette resolution (default: 8)\n"
-           "  --quiet           Suppress progress and rendering details\n"
-           "  Successful renders print the GUI rendering-details report.\n"
-           "  Batch files use [defaults] and named [image NAME] sections with key = value\n"
-           "  render options. Batch summaries include render and CLI image times.\n"
-           "\n"
-           "Per-pixel render algorithm names match RenderAlgorithmEnum\n"
-           "(e.g. Cpu64PerturbedBLAV2HDR, Gpu1x32PerturbedLAv2, CpuHigh).\n"
-           "Run with --list-render-algorithms for the full list.\n";
-}
-
-void
-PrintRenderAlgorithms()
-{
-    for (const auto &alg : RenderAlgorithms) {
-        if (alg.AlgorithmStr && alg.AlgorithmStr[0] != '\0') {
-            std::cout << alg.AlgorithmStr << "\n";
+           "                    Palette resolution in bits; valid values: ";
+    for (size_t index = 0; index < FractalPalette::PaletteDepths.size(); ++index) {
+        if (index != 0) {
+            std::cout << ", ";
         }
+        std::cout << FractalPalette::PaletteDepths[index];
     }
+    std::cout << " (default: " << FractalPalette::DefaultPaletteDepth
+              << ")\n"
+                 "  --quiet           Suppress progress and rendering details\n"
+                 "  Successful renders print the GUI rendering-details report.\n"
+                 "\n"
+                 "Information:\n"
+                 "  --list-render-algorithms\n"
+                 "                    Print all valid --render-algorithm names, one per line\n"
+                 "  --help, -h        Print this help\n"
+                 "\n"
+                 "Batch files:\n"
+                 "  Batch files use [defaults] and named [image NAME] sections with key = value\n"
+                 "  render options. Batch summaries include render and CLI image times.\n"
+                 "  Algorithm names and palette depths use the same choices listed above.\n"
+                 "  Algorithm names are case-sensitive. The boolean keys console, color, quiet,\n"
+                 "  and clear-reference-orbits accept exactly true or false.\n"
+                 "  Use perturbation-alg = GPU and clear-reference-orbits = true in batch sections.\n"
+                 "  The command-line clearing flag overrides clear-reference-orbits = false.\n";
 }
 
 std::optional<RenderAlgorithm>
 ParseRenderAlgorithm(const std::string &name)
 {
-    for (const auto &alg : RenderAlgorithms) {
-        if (alg.AlgorithmStr && name == alg.AlgorithmStr) {
-            return alg;
+    for (const auto &algorithm : RenderAlgorithms) {
+        if (IsCliRenderAlgorithm(algorithm) && name == algorithm.AlgorithmStr) {
+            return algorithm;
         }
     }
     return std::nullopt;
@@ -160,30 +271,11 @@ ParseRenderAlgorithm(const std::string &name)
 std::optional<RefOrbitCalc::PerturbationAlg>
 ParsePerturbationAlg(const std::string &name)
 {
-    if (name == "ST")
-        return RefOrbitCalc::PerturbationAlg::ST;
-    if (name == "MT")
-        return RefOrbitCalc::PerturbationAlg::MT;
-    if (name == "STPeriodicity")
-        return RefOrbitCalc::PerturbationAlg::STPeriodicity;
-    if (name == "MTPeriodicity3")
-        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3;
-    if (name == "MTPeriodicity3PerturbMTHighSTMed")
-        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed1")
-        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed2")
-        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed3")
-        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3;
-    if (name == "MTPeriodicity3PerturbMTHighMTMed4")
-        return RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4;
-    if (name == "MTPeriodicity5")
-        return RefOrbitCalc::PerturbationAlg::MTPeriodicity5;
-    if (name == "GPU")
-        return RefOrbitCalc::PerturbationAlg::GPU;
-    if (name == "Auto")
-        return RefOrbitCalc::PerturbationAlg::Auto;
+    for (const auto &algorithm : PerturbationAlgorithms) {
+        if (name == algorithm.Name) {
+            return algorithm.Value;
+        }
+    }
     return std::nullopt;
 }
 
@@ -393,6 +485,8 @@ ParseArgs(int argc, char *argv[], CliArgs &a, std::ostream &errorOut)
             if (!v)
                 return false;
             a.PerturbationAlg = v;
+        } else if (arg == "--clear-reference-orbits") {
+            a.ClearReferenceOrbits = true;
         } else if (arg == "--palette-map") {
             auto v = expectValue(i, "--palette-map");
             if (!v)
@@ -599,8 +693,8 @@ ValidateServerArgs(const CliArgs &args, std::string &error)
     }
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
         args.Console || args.Color || args.Iterations != 0 || args.Antialiasing != 0 ||
-        !args.PerturbationAlg.empty() || !args.PaletteMapFile.empty() || args.PaletteDepth.has_value() ||
-        args.LocationIndex != SIZE_MAX) {
+        !args.PerturbationAlg.empty() || args.ClearReferenceOrbits || !args.PaletteMapFile.empty() ||
+        args.PaletteDepth.has_value() || args.LocationIndex != SIZE_MAX) {
         error = "server accepts only --endpoint, --width, --height, --commit-cap-bytes, --no-gpu, and "
                 "--quiet";
         return false;
@@ -622,7 +716,7 @@ ValidateShutdownArgs(const CliArgs &args, std::string &error)
     if (!args.RenderAlgorithm.empty() || args.Source != ViewSource::None || !args.OutFile.empty() ||
         args.Console || args.Color || args.WidthSet || args.HeightSet || args.Iterations != 0 ||
         args.Antialiasing != 0 || args.CommitCapBytes != UINT64_MAX || !args.PerturbationAlg.empty() ||
-        !args.PaletteMapFile.empty() || args.PaletteDepth.has_value() ||
+        args.ClearReferenceOrbits || !args.PaletteMapFile.empty() || args.PaletteDepth.has_value() ||
         args.LocationIndex != SIZE_MAX) {
         error = "--shutdown cannot be combined with render arguments";
         return false;
@@ -684,6 +778,7 @@ BuildRenderRequest(const CliArgs &args,
     req.Iterations = args.Iterations;
     req.Antialiasing = args.Antialiasing;
     req.Quiet = args.Quiet;
+    req.ClearReferenceOrbits = args.ClearReferenceOrbits;
     req.PreserveIterationBuffer = args.Console;
 
     std::vector<ParsedSavedLocation> locations;
@@ -1051,6 +1146,11 @@ RunBatch(const CliArgs &args)
     size_t failedCount = 0;
     for (size_t index = 0; index < batch.Images.size(); ++index) {
         auto &image = batch.Images[index];
+        if (args.ClearReferenceOrbits) {
+            // A batch-level reset applies to every image, even when its inherited
+            // boolean option was false and therefore emitted no clearing argument.
+            image.Arguments.emplace_back("--clear-reference-orbits");
+        }
         if (image.Error.empty()) {
             CliArgs imageArgs;
             std::ostringstream parseError;
@@ -1287,7 +1387,7 @@ RunCli(int argc, char *argv[])
     }
 
     if (args.ListRenderAlgorithms) {
-        PrintRenderAlgorithms();
+        PrintRenderAlgorithms("");
         return 0;
     }
 

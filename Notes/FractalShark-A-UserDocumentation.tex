@@ -217,7 +217,8 @@ choice and triggers any necessary reconfiguration.
     compressed form (\cref{sec:ref-compression-zhuoran}).
     \item[Perturbation / Perturb] Per-pixel perturbation from a
     reference orbit (\cref{sec:perturbation-concept}).
-    \item[BLA] Bilinear Approximation v1 (\cref{sec:bilinear-approx}).
+    \item[BLA] Bilinear Approximation v1 (\cref{sec:bilinear-approx}),
+    the original approximation method retained for comparison and use.
     \item[LA~v2] Linear Approximation v2 (\cref{sec:la-v2-perturb}),
     the primary deep-zoom rendering path.
     \item[Scaled] An alternative perturbation formulation using a
@@ -230,6 +231,13 @@ choice and triggers any necessary reconfiguration.
   compression and the LA~v2 full pipeline.  Individual algorithm entries
   below are not further annotated because their names are
   self-documenting given this convention.
+
+  CPU API identifiers such as \code{Cpu64PerturbedBLAV2HDR} use the
+  historical \code{BLAV2} spelling for the same LA~v2 method. The
+  motivation for v2 and its differences from BLA~v1 are described in
+  \cref{sec:la-v2-motivation}. AT is an optional initialization
+  optimization within that method, rather than a requirement for
+  LA~v2 rendering (\cref{sec:attractor-transform}).
 
     \begin{itemize}
       \item \emph{Help} (command): Displays help for algorithm selection and
@@ -786,11 +794,11 @@ not as guaranteed real-time interaction during heavy computation.
 \subsubsection{Commentary}
 
 \begin{itemize}
-\item An interesting experiment is running with LA~v2 + ``LA only''. This 
-approach actually works pretty well once Linear Approximation kicks in at 
-deeper zooms --- it provides a sense of what the actual image should look like 
-but is very fast, since it does no perturbation. The images it produces are not 
-precise, and often leave out the fine detail; however, the mode is enjoyable to play with 
+\item An interesting experiment is running with LA~v2 + ``LA only''. This
+approach actually works pretty well once Linear Approximation kicks in at
+deeper zooms --- it provides a sense of what the actual image should look like
+but is very fast, since it does no perturbation. The images it produces are not
+precise, and often leave out the fine detail; however, the mode is enjoyable to play with
 when zooming in on a specific point.
 
 \item The most interesting reference orbit calculation is at
@@ -798,8 +806,8 @@ when zooming in on a specific point.
 which is used for the ``scaled'' CUDA kernels. The multithreaded approach
 handily beats the single-threaded implementation on my CPU in all scenarios.
 
-\item There are CPU renderers, but they were mostly to learn/debug more easily, 
-and are not optimized heavily. They are much easier to understand and reason 
+\item There are CPU renderers, but they were mostly to learn/debug more easily,
+and are not optimized heavily. They are much easier to understand and reason
 about though.
 \end{itemize}
 

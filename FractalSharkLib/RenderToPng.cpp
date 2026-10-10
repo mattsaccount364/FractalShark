@@ -32,6 +32,12 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::o
         return fail("RenderToPng: ViewSource must be set", 2);
     }
 
+    if (req.Perturbation.has_value()) {
+        // View setup chooses precision from the reference backend's reuse requirements.
+        // Apply this request's backend first so a preceding render cannot affect that choice.
+        fractal.SetPerturbationAlg(*req.Perturbation);
+    }
+
     fractal.SetIterType(IterTypeEnum::Bits64);
 
     try {
@@ -73,10 +79,6 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::o
         return fail(message.str(), 1);
     }
 
-    if (req.Perturbation.has_value()) {
-        fractal.SetPerturbationAlg(*req.Perturbation);
-    }
-
     if (!req.Quiet) {
         out << "Rendering " << req.Width << "x" << req.Height << " pixels with "
             << (req.Algorithm.AlgorithmStr ? req.Algorithm.AlgorithmStr : "<null>") << "...\n";
@@ -84,6 +86,12 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::o
     }
 
     fractal.GetRenderPool()->Drain();
+    if (req.ClearReferenceOrbits) {
+        // Workers must release their reference pointers before the cache is destroyed.
+        // Clearing all results also discards derived LA data and resets the reference guess.
+        fractal.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        fractal.ForceRecalc();
+    }
     fractal.CalcFractal(/*drawFractal=*/true);
 
     if (!req.OutPngBasename.empty()) {

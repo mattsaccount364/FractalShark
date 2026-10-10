@@ -1,0 +1,23 @@
+\section{Mandelbrot recurrence in real arithmetic}
+\label{sec:real-form}
+
+Writing \(z = x + i y\) and \(c = x_0 + i y_0\), the iteration becomes:
+
+\begin{align}
+x_{n+1} &= x_n^2 - y_n^2 + x_0, \\
+y_{n+1} &= 2 x_n y_n + y_0.
+\end{align}
+
+The escape test is:
+
+\begin{equation}
+x_n^2 + y_n^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+\end{equation}
+
+Many kernels cache squares:
+\[
+zrsqr = x^2,\quad zisqr = y^2,
+\]
+so that \(x^2-y^2\) and \(x^2+y^2\) can be formed cheaply as \code{zrsqr - zisqr}
+and \code{zrsqr + zisqr}. This optimization is especially valuable when \(x\) and \(y\) are
+represented by multi-component expansion types.

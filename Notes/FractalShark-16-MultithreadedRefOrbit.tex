@@ -1,0 +1,86 @@
+\section{Multithreaded Reference Orbit Acceleration}
+\label{subsec:ref-orbit-mt}
+
+The \code{MT3} reference-orbit path accelerates the high-cost MPIR arithmetic
+of the single-threaded authoritative orbit (\cref{subsec:ref-orbit-st}) by
+decomposing each iteration across multiple CPU threads.  The design targets
+independent, high-latency big-integer operations that naturally overlap in the
+perturbation recurrence, while minimizing synchronization overhead.  Two
+recurring implementation patterns characterize this approach.
+
+The \code{MT5} entry point is currently disabled and falls back to \code{MT3};
+it is not a distinct active backend.
+
+\paragraph{Asynchronous squaring.}
+During authoritative orbit evaluation, two worker threads compute the squared
+terms \(x_n^2\) and \(y_n^2\) concurrently.  In parallel, the main thread
+evaluates the cross term in
+\[
+  y_{n+1} = 2 x_n y_n + c_y,
+\]
+performs low-precision periodicity checks, and manages operand reuse and
+serialization.  Once the squared terms are returned, the real component update
+is completed as
+\begin{equation}
+  x_{n+1} = x_n^2 - y_n^2 + c_x.
+  \label{eq:mt-real-update}
+\end{equation}
+This decomposition exposes substantial instruction-level and thread-level
+parallelism while preserving the exact arithmetic semantics required for
+reference orbit computation.
+
+\paragraph{Lock-free handoff with prefetch.}
+Inter-thread communication is implemented using a minimal lock-free mailbox
+(\code{ThreadPtrs<T>}) consisting of atomic \code{In} and \code{Out}
+pointers.  The protocol proceeds as follows:
+\begin{enumerate}
+  \item The producer publishes a work pointer by storing it into \code{In}.
+  \item The worker spins until it atomically claims the pointer, prefetches the
+        referenced MPIR operands, executes the required arithmetic, and then
+        publishes the same pointer via \code{Out}.
+  \item The producer spins until it retrieves the completed pointer from
+        \code{Out}, after which the computed results are consumed.
+\end{enumerate}
+To reduce cache-miss latency when operating on large MPIR limb arrays, worker
+threads explicitly prefetch both MPIR metadata and limb data using a fixed
+64-byte stride.  This strategy is particularly beneficial at very high
+precision, where memory latency can otherwise dominate execution time.
+
+\subsection{Precision-dependent single-thread versus multi-thread trade-offs}
+\label{subsec:ref-orbit-mt-tradeoff}
+
+The relative effectiveness of single-threaded and multithreaded reference-orbit
+evaluation depends strongly on the active precision, which in practice is
+closely correlated with zoom level and MPIR limb count.  Consequently, the
+implementation supports both execution modes and selects between them
+automatically when \code{PerturbationAlg::Auto} is enabled.
+
+At lower precision (small limb counts), overall performance is often dominated
+by fixed overheads such as synchronization, atomic mailbox operations, thread
+spinning, and cache traffic.  In this regime, a single-threaded MPIR execution
+path benefits from tight instruction locality, reduced fencing, and predictable
+cache reuse, and may outperform a parallelized approach despite executing all
+arithmetic serially.
+
+As precision increases, the cost structure shifts toward throughput-dominated
+big-integer arithmetic.  Large limb counts cause MPIR squaring and multiplication
+to dominate total runtime, amortizing synchronization overhead and making
+concurrent execution increasingly effective.  Overlapping independent
+operations, such as the simultaneous computation of \(x_n^2\) and \(y_n^2\),
+yields substantial gains, while explicit limb prefetching further mitigates
+memory latency.  Beyond a hardware- and workload-dependent threshold,
+multithreaded reference-orbit computation can outperform the
+single-threaded path in practice, with speedups increasing as precision grows.
+
+The current \code{Auto} implementation uses the zoom factor as a proxy for
+required precision.  It selects \code{STPeriodicity} below $10^{150}$,
+\code{MTPeriodicity3} from $10^{150}$ through values below $10^{2000}$, and
+\code{MTPeriodicity3PerturbMTHighMTMed3} at $10^{2000}$ and beyond.  These are
+fixed code thresholds, not a hardware benchmark or CUDA capability test, and
+\code{Auto} never selects the GPU backend.
+
+Overall, single-threaded and multithreaded reference-orbit evaluation are
+treated as complementary strategies rather than a strict hierarchy: fewer limbs
+favor single-thread execution, while increasing precision increasingly favors
+multithreaded decomposition, with \code{Auto} providing an adaptive runtime
+selection mechanism.

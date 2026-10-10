@@ -86,9 +86,10 @@ provides the precision each stage requires (\cref{sec:hdr-float}).
 Building on this foundation, perturbation theory
 (\cref{sec:perturbation-concept}) reduces per-pixel work from
 arbitrary-precision arithmetic to lightweight floating-point deltas,
-and linear approximation (\cref{sec:approx-accel}) eliminates large
-blocks of iterations entirely by replacing them with a single
-matrix--vector product.
+and approximation methods (\cref{sec:bilinear-approx,sec:la-v2-perturb})
+skip large blocks of iterations using precomputed coefficients.
+BLA~v1 uses purely linear maps; the current LA~v2 path retains a
+nonlinear input operation before evaluating its staged maps.
 
 The second half of the document addressed the computation of the
 reference orbit that perturbation demands
@@ -107,8 +108,11 @@ Several design decisions merit emphasis.  \FractalShark{} adopts
 significance during perturbation iteration, avoiding the need for
 post-hoc detection and re-rendering of glitched pixels.  Linear
 approximation version~2 (LA~v2) was chosen over series approximation
-for its period-aligned skip structure, which enables longer effective
-jumps at deep zooms.  NTT-based multiplication was preferred over
+for its adaptive staged skip structure, which can enable longer
+effective jumps at deep zooms. Compared with BLA~v1, nonlinear
+preparation and useful return boundaries can reduce the individual
+updates required per pixel (\cref{sec:la-v2-motivation}), independently
+of optional AT initialization. NTT-based multiplication was preferred over
 Karatsuba for the GPU arithmetic backend, as the former maps naturally
 to the highly parallel CUDA execution model.  Throughout the
 codebase, C++ template instantiation over a fixed parameter-set

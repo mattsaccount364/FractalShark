@@ -1,0 +1,28 @@
+\section{Iteration chunking via \code{iteration\_precision}}
+\label{sec:chunking}
+
+A few of the base kernels described in \cref{sec:mandel-base-kernels}, which exclude linear approximation or
+perturbation, are templated on an integer \code{iteration\_precision}
+(\(1,2,4,8,16\)) and unroll multiple Mandelbrot steps inside the loop:
+
+\begin{itemize}
+  \item Each loop iteration performs \code{iteration\_precision} updates.
+  \item The counter \code{iter} increases by that amount.
+  \item The maximum iteration \code{n\_iterations} is adjusted so \code{iter}
+        does not exceed the requested limit.
+\end{itemize}
+
+This approach reduces loop overhead. The trade-off is that the escape predicate
+is typically checked only once per chunk; therefore the reported escape
+iteration can be larger than the true first-escape iteration by up to
+\code{iteration\_precision - 1}. For strict escape iteration counts (e.g., for
+continuous/smooth coloring based on the first bailout), use a chunk size of 1 or
+insert bailout checks within the unrolled body.
+
+This optimization was mainly explored for educational purposes; in practice, the
+benefit is small compared to other optimizations such as perturbation (\cref{sec:perturbation-concept}) and linear
+approximation (\cref{sec:approx-accel}).
+
+The kernels described above operate on standard IEEE~754 types.  The next
+chapter introduces the extended-precision and high-dynamic-range numeric types
+that \FractalShark{} employs when native precision is insufficient.

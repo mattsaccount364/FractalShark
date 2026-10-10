@@ -1,0 +1,237 @@
+\section{Reference Orbit Calculation}
+\label{sec:ref-orbit-calc}
+
+The reference orbit is the single most expensive computation in
+deep-zoom Mandelbrot rendering.  Perturbation theory
+(\cref{sec:perturbation-concept}) allows every pixel to be rendered at
+low precision, but it requires one orbit---the \emph{reference
+orbit}---to be computed at the full precision of the zoom depth.  At
+extreme magnifications this requirement means iterating
+\begin{equation}
+  z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
+  \label{eq:mandelbrot-recurrence}
+\end{equation}
+for potentially \emph{billions} of steps, with each step carried out at
+\emph{thousands} of bits of precision.  The resulting orbit may contain
+tens of billions of elements and occupy tens of gigabytes of memory.
+Computing it efficiently, compressing it to fit in RAM, and reusing it
+across multiple renders at different perturbation precisions are
+therefore critical to the overall performance of the system.
+
+This section describes how \code{RefOrbitCalc} orchestrates single-threaded and
+multithreaded MPIR backends and the manually selected CUDA implementation,
+together with storage and compression modes that trade memory footprint against
+recomputation.  The CUDA implementation uses a fused NTT recurrence while
+preserving the application contract and mathematical recurrence of the CPU
+backends.
+
+\subsection{High-level pipeline and dispatch}
+\label{subsec:ref-orbit-pipeline}
+
+A reference orbit is stored in a \code{PerturbationResults<IterType,T,PExtras>}
+instance, where:
+
+\begin{itemize}
+  \item \code{IterType} is the iteration index type (\code{uint32\_t} or \code{uint64\_t}).
+  \item \code{T} is the low-precision numeric type used for downstream perturbation math (e.g.\ \code{float},
+        \code{double}, \code{HDRFloat<...>}).
+  \item \code{PExtras} selects the storage format for per-iteration orbit data:
+        uncompressed (\code{Disable}), lightweight waypoint compression
+        (\code{SimpleCompression}), Imagina-compatible maximal compression
+        (\code{MaxCompression}), or diagnostic bookkeeping (\code{Bad}).
+\end{itemize}
+
+Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, which:
+
+\begin{enumerate}
+  \item Picks an initial guess \((c_x,c_y)\) (center of the current view
+        if unset).
+  \item Chooses an algorithm from \code{m\_Perturbation\-Alg}.  In
+        \code{Auto}, the zoom-factor heuristic selects
+        \code{STPeriodicity} below $10^{150}$,
+        \code{MTPeriodicity3} below $10^{2000}$, and
+        \code{MTPeriodicity3PerturbMTHighMTMed3} thereafter.  Automatic
+        selection does not choose the CUDA backend.  The manually selected
+        \code{GPU} value dispatches to the CUDA implementation.
+  \item Allocates a new \code{PerturbationResults} slot, initializes
+        metadata and bounds, and runs the chosen orbit kernel until escape,
+        periodicity detection, or the maximum iteration count is reached.
+\end{enumerate}
+
+To control memory pressure, \code{OptimizeMemory()} monitors process commit
+usage and opportunistically drops cached orbits that are not of the currently
+demanded variant type when the working set exceeds a configurable threshold.
+
+\subsection{Single-threaded authoritative orbit}
+\label{subsec:ref-orbit-st}
+
+The single-threaded path,
+\code{Add\-Perturbation\-Reference\-Point\-ST},
+computes the application-authoritative orbit using finite, explicitly selected
+precision in
+MPIR/GMP~\cite{MPIR_Library} \code{mpf\_t} for the recurrence, while
+simultaneously emitting a low-precision shadow copy
+\((\hat{x}_n,\hat{y}_n)\in T^2\) for downstream work (compression,
+bailout checks, periodicity tests).
+
+\paragraph{State and initialization.}
+
+Given a selected reference parameter \(c = c_x + i c_y\), the implementation:
+
+\begin{itemize}
+  \item Initializes \code{mpf\_t} temporaries for \(x,y,x^2\), and scratch products.
+  \item Sets the loop-entry iterate to \((x_1,y_1) = (c_x,c_y)\), which
+        corresponds to folding in the first iteration of the standard
+        recurrence \(z_{n+1}=z_n^2+c\) with \(z_0=0\).
+  \item Computes low-precision cast values \(\hat{c}_x,\hat{c}_y \in T\) either via \code{mpf\_get\_d} for
+        native float/double, or via a mantissa/exponent extraction for extended formats.
+\end{itemize}
+
+\paragraph{Recurrence.}
+Writing \(z_n = x_n + i y_n\), one iteration evaluates
+\begin{align}
+  x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:st-recurrence-real} \\
+  y_{n+1} &= 2 x_n y_n + c_y. \label{eq:st-recurrence-imag}
+\end{align}
+The implementation uses:
+\begin{itemize}
+  \item \code{mpf\_mul} and \code{mpf\_sub}/\code{mpf\_add} for the high-precision update.
+  \item A low-precision snapshot \((\hat{x}_n,\hat{y}_n)\) acquired once per iteration for storage/compression,
+        periodicity heuristics, and bailout checks.
+\end{itemize}
+
+\paragraph{Bailout.}
+
+The bailout threshold is evaluated in low precision using
+
+\begin{equation}
+  \lVert\hat{z}_n + \hat{c}\rVert^2 = (\hat{x}_n + \hat{c}_x)^2 + (\hat{y}_n + \hat{c}_y)^2 > 256,
+  \label{eq:bailout-test}
+\end{equation}
+
+which matches the code's use of \code{TwoFiftySix} and avoids a high-precision
+norm each step.  Here \(\hat{x}_n\) and \(\hat{y}_n\) are the low-precision
+shadows of the orbit state captured \emph{before} the high-precision recurrence
+update (i.e.\ they represent the current \(z_n\), not the just-computed
+\(z_{n+1}\)).  The sum \(\hat{z}_n + \hat{c}\) is therefore a cheap proxy that
+avoids re-extracting a low-precision snapshot after the update.
+Note that the bailout here is different from the one used in
+the lower-precision kernels discussed previously; this difference is acceptable because the
+reference orbit is used only for perturbation, not direct rendering.
+
+\subsection{Periodicity tracking via \texorpdfstring{$\partial z/\partial c$}{dz/dc}}
+\label{subsec:ref-orbit-periodicity}
+
+Several modes enable periodicity detection. The implementation tracks the complex derivative
+
+\(\frac{\partial z_n}{\partial c}\) in low precision:
+\begin{equation}
+  d_{n+1} = 2 z_n d_n + 1,\qquad d_0 = 0.
+  \label{eq:dzdc-def}
+\end{equation}
+Mathematically \(d_0 = \partial z_0/\partial c = 0\), since \(z_0=0\).
+Because the implementation begins its loop at \(z_1=c\) (folding in the
+first iteration), the code variable \code{dzdcX} is initialized to~$1$,
+which corresponds to \(d_1=1\) in the recurrence above.
+
+with \(d_n = d_{x,n} + i d_{y,n}\). Expanding into real and imaginary parts yields:
+
+\begin{align}
+  d_{x,n+1} &= 2(x_n d_{x,n} - y_n d_{y,n}) + 1, \label{eq:st-dzdc-real} \\
+  d_{y,n+1} &= 2(x_n d_{y,n} + y_n d_{x,n}). \label{eq:st-dzdc-imag}
+\end{align}
+
+The code applies an empirically chosen radius-based heuristic (no formal derivation is known): let
+
+\begin{equation}
+  n_2 = \max(|\hat{x}_n|,|\hat{y}_n|),\qquad
+  r_0 = \max(|d_{x,n}|,|d_{y,n}|),
+  \label{eq:periodicity-norms}
+\end{equation}
+
+and define a detection threshold
+
+\begin{equation}
+  n_3 = 2\,R_{\max}\,r_0,
+  \label{eq:periodicity-threshold}
+\end{equation}
+
+where \(R_{\max}\) is the maximum perturbation radius stored in \code{results}
+. If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the
+reference loop terminates early (unless periodicity detection is disabled).
+Otherwise, \((d_{x,n},d_{y,n})\) is advanced using the update above.
+See \cref{sec:hp-periodicity} for the analogous GPU-side periodicity mechanism.
+
+\subsection{Expanded versus factored evaluation of the reference orbit}
+
+The high-precision reference orbit evaluates the quadratic map
+
+\[
+z_{n+1} = z_n^2 + c,
+\qquad
+z_n = x_n + i y_n,
+\qquad
+c = c_x + i c_y,
+\]
+
+with the finite MPIR or fixed-width \code{HpSharkFloat} precision selected by
+the active backend.
+
+Writing the iteration in real and imaginary components gives the
+\emph{expanded form}:
+
+\begin{align}
+x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:ref-expanded-real} \\
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-expanded-imag}
+\end{align}
+
+This form follows directly from the algebraic definition of the polynomial.
+Each term is evaluated explicitly, requiring two full-precision squares and
+one full-precision multiplication per iteration.
+
+The same quadratic map can be evaluated in a mathematically equivalent
+\emph{factored form}. In particular, the real component may be written as
+
+\begin{align}
+x_{n+1}
+&= (x_n - y_n)(x_n + y_n) + c_x, \label{eq:ref-factored-real}
+\end{align}
+while the imaginary component remains
+\begin{align}
+y_{n+1} &= 2 x_n y_n + c_y. \label{eq:ref-factored-imag}
+\end{align}
+
+In exact arithmetic, \cref{eq:ref-factored-real,eq:ref-factored-imag} are
+identical to \cref{eq:ref-expanded-real,eq:ref-expanded-imag}. The difference
+lies solely in how the products are formed.
+
+From an implementation perspective, the expanded form evaluates
+$x_n^2$ and $y_n^2$ independently and makes the subtraction
+$x_n^2 - y_n^2$ explicit. This closely mirrors the mathematical definition
+of the Mandelbrot polynomial and exercises the full squaring and
+multiplication paths of the high-precision arithmetic.
+
+The factored form reduces the number of full-precision squares by replacing
+$x_n^2 - y_n^2$ with a single multiplication of the shared intermediates
+$(x_n \pm y_n)$. This factoring can reduce computational cost when multiplication and
+squaring have similar expense, but it introduces stronger coupling between
+terms and alters the way cancellation and rounding effects manifest in
+finite-precision arithmetic.
+
+The production CPU paths use the expanded-product schedule.  The CUDA engine
+implements the same component equations through the factored nonlinear products
+\begin{align}
+R_n &= (x_n+y_n)(x_n-y_n)=x_n^2-y_n^2, \\
+I_n &= 2x_ny_n,
+\end{align}
+which it constructs directly in the NTT domain.  It then incorporates $c_x$ and
+$c_y$ at their exact bit offsets during signed unpack, before positional carry
+propagation.  The CUDA engine therefore never materializes three normalized
+product values or invokes a standalone high-precision add/subtract pipeline.
+
+Fusion does not eliminate the final base-$2^{32}$ dependency.  The CUDA engine forms every
+nonlinear and linear contribution first, then resolves the completed real and
+imaginary components together in one packed decoupled-look-back carry phase.
+Each component remains an independent logical carry chain within that phase;
+\cref{subsec:fused-ntt-reference-step,subsec:fused-ntt-periodicity} describes
+the construction, operation schedule, carry mathematics, and periodicity test.

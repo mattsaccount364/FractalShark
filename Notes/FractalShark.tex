@@ -33,6 +33,8 @@
 
 % --- Code listings ---
 \usepackage{listings}
+\crefname{lstlisting}{listing}{listings}
+\crefformat{lstlisting}{#2listing~#1#3}
 \lstset{
   language=C++,
   basicstyle=\small\ttfamily,
@@ -85,45 +87,57 @@ recently and is getting better.}
 % Introduction
 % ============================================================
 \input{FractalShark-02-Introduction}
+\input{FractalShark-03-MandelbrotSet}
 
 % ============================================================
 % Part I: Rendering Algorithms
 % ============================================================
 \part{Rendering Algorithms}
 
-\input{FractalShark-04-DirectRendering}
-\input{FractalShark-08-NumericTypes}
+\input{FractalShark-04-PixelMapping}
+\input{FractalShark-05-MandelbrotRecurrence}
+\input{FractalShark-06-BaseKernels}
+\input{FractalShark-07-IterationChunking}
+\input{FractalShark-08-HDRFloatingPoint}
+\input{FractalShark-09-ExtendedPrecision}
 \input{FractalShark-10-Perturbation}
-\input{FractalShark-12-Approximation}
+\input{FractalShark-11-PerturbationOnly}
+\input{FractalShark-12-BLAv1}
+\input{FractalShark-13-LAv2}
 
 % ============================================================
 % Part II: Reference Orbit Computation
 % ============================================================
 \part{Reference Orbit Computation}
 
-\input{FractalShark-13-RefOrbit}
-\input{FractalShark-17-GpuArithmetic}
-\input{FractalShark-18-FeatureFinder}
+\input{FractalShark-14-RefOrbit}
+\input{FractalShark-15-CompressionAndReuse}
+\input{FractalShark-16-MultithreadedRefOrbit}
+\input{FractalShark-17-GpuPeriodicity}
+\input{FractalShark-18-GpuArithmetic}
+\input{FractalShark-19-FeatureFinder}
 
 % ============================================================
 % Part III: Supporting Infrastructure
 % ============================================================
 \part{Supporting Infrastructure}
 
-\input{FractalShark-19-RenderPipeline}
-\input{FractalShark-22-MemorySystem}
+\input{FractalShark-20-PostIteration}
+\input{FractalShark-21-RenderThreadPool}
+\input{FractalShark-22-TestingAndValidation}
+\input{FractalShark-23-MemorySystem}
 
 % ============================================================
 % Part IV: Further Techniques
 % ============================================================
 \part{Further Techniques}
 
-\input{FractalShark-23-FutureDirections}
+\input{FractalShark-24-FutureDirections}
 
 % ============================================================
 % Conclusion
 % ============================================================
-\input{FractalShark-24-Conclusion}
+\input{FractalShark-25-Conclusion}
 
 % ============================================================
 % Appendices

@@ -1,0 +1,167 @@
+\section{Per-Iteration Periodicity Checking under High-Precision Arithmetic on the GPU}
+\label{sec:hp-periodicity}
+
+The \FractalShark{} fused v2 GPU reference-orbit implementation
+(\cref{subsec:ref-orbit-gpu}) evaluates the Mandelbrot recurrence
+\(
+z_{n+1} = z_n^2 + c
+\)
+using high-precision arithmetic for the state \(z_n\), while interleaving a
+reduced-precision periodicity/termination test before the high-precision
+recurrence stages.  Early termination can avoid later arithmetic, but the
+check and its required cooperative-grid synchronization have a measurable cost
+that depends on precision and launch configuration.
+
+Application dispatch to the CUDA engine is manual.  Its stored-output type \code{T} may be
+\code{HDRFloat<float>}, \code{HDRFloat<double>}, or
+\code{HDRFloat<CudaDblflt<dblflt>>}.  The CUDA path forces
+\code{PExtras::Disable} and \code{ReuseMode::DontSaveForReuse}; neither produces
+a compressed or intermediate-reuse orbit.  These are policy constraints of the
+CUDA application path.
+
+\paragraph{State extraction and logging.}
+
+At iteration \(n\), the high-precision state \((x_n, y_n)\) is available in the
+persistent kernel's reference state. The periodicity checker converts
+these values into a reduced high-dynamic-range scalar format,
+\(\mathrm{HDR}(\cdot)\), via a lossy but monotone extraction
+(\code{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
+buffer:
+
+\begin{equation}
+  \widehat{x}_n \leftarrow \mathrm{HDR}(x_n), \quad
+  \widehat{y}_n \leftarrow \mathrm{HDR}(y_n), \quad
+  \code{OutputIters}[n] \leftarrow (\widehat{x}_n, \widehat{y}_n).
+  \label{eq:hdr-extraction}
+\end{equation}
+
+This trace is used both for downstream diagnostics and to provide a compact,
+device-side reduced representation of the orbit prefix.
+
+\paragraph{Derivative-based periodicity criterion.}
+
+In addition to the orbit state, the computation propagates the complex derivative
+\(
+\frac{dz}{dc}
+\)
+along the orbit (cf.\ the CPU-side counterpart in \cref{subsec:ref-orbit-periodicity}). For the Mandelbrot map \(f(z)=z^2+c\), the chain rule yields
+
+\begin{equation}
+  \frac{d z_{n+1}}{d c} = f'(z_n)\frac{d z_n}{d c} + 1
+  = 2 z_n \frac{d z_n}{d c} + 1,
+  \label{eq:dzdc-recurrence}
+\end{equation}
+
+with initialization \(\frac{dz_0}{dc}=0\) when \(z_0=0\).
+Writing \(z_n = x_n + i y_n\) and introducing the shorthand
+\(d_n \equiv \frac{\partial z_n}{\partial c}\) with real and imaginary parts
+\(d_{x,n}\) and \(d_{y,n}\), expanding
+\eqref{eq:dzdc-recurrence} into real and imaginary parts gives:
+
+\begin{align}
+  d_{x,n+1} &= 2\,(x_n\, d_{x,n} - y_n\, d_{y,n}) + 1, \label{eq:dzdc-real}\\
+  d_{y,n+1} &= 2\,(x_n\, d_{y,n} + y_n\, d_{x,n}). \label{eq:dzdc-imag}
+\end{align}
+
+In the CUDA engine, the orbit components are \code{HpSharkFloat}, but the
+application periodicity state \code{dzdcX}, \code{dzdcY}, and \code{RadiusY}
+uses \code{HDRFloat}.  The periodicity decision is performed on reduced HDR
+magnitudes:
+
+\begin{equation}
+  \lVert z_n\rVert_\infty \approx \max(|\widehat{x}_n|, |\widehat{y}_n|), \qquad
+  \left\lVert\frac{dz_n}{dc}\right\rVert_\infty \approx \max(|\widehat{d x}_n|, |\widehat{d y}_n|),
+  \label{eq:reduced-norms}
+\end{equation}
+
+where hats denote reduced HDR representations after a normalization/reduction
+step (\code{HdrReduce}) to ensure stable comparisons.
+
+The checker uses a sufficient condition of the form
+
+\begin{equation}
+  \lVert z_n\rVert_\infty < 2\,R\,\left\lVert\frac{dz_n}{dc}\right\rVert_\infty,
+  \label{eq:periodicity-ineq}
+\end{equation}
+
+where \(R\) is a problem-dependent bound (stored as \code{RadiusY} in the
+reference structure). Intuitively, \eqref{eq:periodicity-ineq} compares the
+current orbit magnitude against a scaled sensitivity radius implied by the
+derivative growth: when the orbit state becomes small relative to the local
+linearization bound, further iteration is treated as converging toward a
+previous state and the algorithm flags a periodic cycle.
+Concretely, the device computes
+
+\begin{equation}
+  n_2 \leftarrow \max(|\widehat{x}_n|, |\widehat{y}_n|), \quad
+  r_0 \leftarrow \max(|\widehat{d x}_n|, |\widehat{d y}_n|), \quad
+  n_3 \leftarrow 2\,R\,r_0,
+  \label{eq:gpu-periodicity-vars}
+\end{equation}
+
+and terminates when \(n_2 < n_3\), setting \code{PeriodicityStatus =
+PeriodFound} and recording \code{OutputIterCount = n+1}.
+
+\paragraph{Escape test.}
+We additionally apply a conventional escape-radius test in the same reduced
+domain. After forming the next-state candidates
+\(
+\widehat{x}_n + \widehat{c}_x
+\)
+and
+\(
+\widehat{y}_n + \widehat{c}_y
+\),
+the checker evaluates
+\begin{equation}
+  \lVert\widehat{z}_n + \widehat{c}\rVert_2^2
+  = (\widehat{x}_n + \widehat{c}_x)^2 + (\widehat{y}_n + \widehat{c}_y)^2,
+  \label{eq:gpu-escape-norm}
+\end{equation}
+and declares \code{Escaped} when this value exceeds a fixed threshold
+(\code{256.0} in the current implementation). As with the periodicity
+criterion, all comparisons are performed on reduced positive HDR values to avoid
+high-precision control-flow costs on the device.
+
+\paragraph{Control-flow placement and synchronization.}
+Periodicity checking is invoked once per iteration at the top of the reference
+step, before the fused high-precision stages compute
+\(z_{n+1}\). In the production kernel, a single distinguished thread
+(\code{block 0, thread 0}) executes the checker and updates the shared
+termination flag stored in the global \code{reference} structure. The kernel
+then executes a cooperative-grid barrier:
+\begin{equation}
+  \code{grid.sync()},
+  \label{eq:grid-sync}
+\end{equation}
+ensuring that (i) all blocks observe a consistent \code{PeriodicityStatus} and
+(ii) any updates to \code{dzdcX}, \code{dzdcY}, and the trace buffer are
+visible before subsequent work proceeds. If termination is requested, the
+iteration loop exits immediately; otherwise, the kernel proceeds into the
+fused NTT recurrence that produces the next high-precision state.
+
+This organization isolates termination logic from the fused recurrence pipeline
+while maintaining grid-wide early-exit behavior.  The checker publishes its
+status through one explicit \code{grid.sync()} per iteration.  The recurrence uses the same publication
+boundary to expose the iteration plan built by the leader.  The synchronization
+cost is amortized by the subsequent high-precision work but is not assumed to be
+negligible.
+
+\paragraph{Alternative host-side periodicity checking.}
+An alternative design would be to retain the authoritative high-precision orbit
+state entirely on the device, periodically copy the full-precision values
+\((x_n, y_n, dz_n/dc)\) back to the host, and perform periodicity and escape
+testing on the CPU using existing MPIR-based logic. While conceptually simpler,
+this approach is impractical at large precisions: each iteration would require
+transferring hundreds to thousands of limbs per component over the PCIe bus,
+and the cumulative bandwidth and synchronization costs would dominate the total
+runtime. Moreover, host-side checking would introduce additional latency and
+force a tighter coupling between device execution and CPU control flow. By
+performing periodicity detection directly on the GPU using reduced HDR
+representations, the implementation avoids repeated large data transfers while
+preserving an early-termination mechanism that is both inexpensive and tightly
+integrated with the cooperative-grid execution model.
+
+The reference-orbit algorithms described above rely on high-precision arithmetic
+that must execute efficiently on the GPU.  The next chapter details the
+NTT-based arithmetic engine that provides this capability.

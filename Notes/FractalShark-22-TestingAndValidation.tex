@@ -1,0 +1,107 @@
+\section{Testing and Validation}
+\label{sec:testing}
+%% ===================================================================
+
+\FractalShark{} maintains three independent test projects, each
+targeting a different layer of the system.  Together they provide
+coverage from low-level GPU arithmetic through high-level rendering
+correctness.
+
+\subsection{CrummyTest (rendering pipeline)}
+\label{subsec:crummytest}
+
+\code{CrummyTest} (in \code{FractalSharkLib/CrummyTest.cpp}) is a
+functional test suite invoked from the application's right-click menu
+(\emph{Run Basic Test}).  It exercises the full rendering pipeline by
+calling \code{Drain()} followed by \code{CalcFractal(true)}---the
+direct rendering path (\cref{subsec:two-render-paths})---so that
+iteration results are written to \code{m\_CurIters} and can be
+inspected or saved.
+
+The suite iterates over every \code{RenderAlgorithm} entry, rendering
+multiple built-in views (including Views~0, 5, 10, and~11) with both
+32-bit and 64-bit iteration types.  Eight named tests run in sequence:
+
+\begin{itemize}
+  \item \code{TestBasic}---renders each algorithm at several views and
+        iteration types.
+  \item \code{TestReferenceSave}---saves and reloads reference orbits,
+        verifying round-trip correctness.
+  \item \code{TestVariedCompression}---tests reference-orbit compression
+        at varying error thresholds.
+  \item \code{TestImaginaLoad}---loads orbits stored in Imagina format.
+  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
+        chains for numerical correctness.
+  \item \code{TestWindowResize}---resizes the application window and
+        verifies re-rendering completes correctly.
+  \item \code{TestStringConversion}---validates string-to-precision and
+        precision-to-string conversion utilities.
+  \item \code{TestGrowableVector}---validates the
+        \code{GrowableVector} data structure
+        (\cref{sec:disk_backed_growable_vectors}).
+\end{itemize}
+
+\noindent
+A separate stress test, \code{TestReallyHardView27}, renders View~\#27
+(period ${\sim}28$~billion, one quadrillion iterations) and is intended
+as an overnight correctness and stability check rather than a routine
+regression test.
+
+\subsection{HpSharkFloatTest (GPU arithmetic)}
+\label{subsec:hpsharkfloattest}
+
+\code{HpSharkFloatTest} is a standalone CUDA executable (in
+\code{HpSharkFloatTest/}) that validates the GPU high-precision
+reference-orbit implementation described in \cref{subsec:ref-orbit-gpu}.
+Its sole operator is \code{ReferenceOrbit2}, which exercises the complete
+fused v2 recurrence.
+
+Each vector is validated through complementary comparisons:
+
+\begin{enumerate}
+  \item \textbf{GPU vs.\ MPIR.}  The fused GPU result is converted to
+        MPIR values and compared with the same recurrence evaluated in
+        arbitrary-precision arithmetic.  MPIR is the ground truth.
+  \item \textbf{CPU oracle vs.\ MPIR.}  The CPU
+        \code{ReferenceReferenceOrbit2} implementation uses the
+        \code{HpSharkFloat} representation and is independently checked
+        against MPIR.
+  \item \textbf{Pipeline checksums.}  Deterministic host and device
+        checksums compare corresponding fused-stage boundaries and identify
+        the first stage at which their intermediate representations diverge.
+\end{enumerate}
+
+\noindent
+When a test fails, the checksum-guided debugging infrastructure
+(\cref{sec:checksums}) reduces the mismatch to a targeted fused pipeline
+stage.  Hardcoded and generated vectors cover signs, zero values,
+carry/borrow behavior, alignment shifts, and fused-stage bounds.  The
+Newton--Raphson cases use the same Ref2 engine to exercise first-derivative
+and checkpoint-resume paths.  Performance benchmarks exercise the full
+reference-orbit pipeline at three zoom depths: View~5
+(${\sim}16{,}000$ iterations), View~30 (${\sim}670{,}000$ iterations), and
+View~32 (${\sim}30{,}000{,}000$ iterations).
+
+\subsection{FractalSharkTest (utility types)}
+\label{subsec:fractalsharktest}
+
+\code{FractalSharkTest} (in \code{FractalSharkTest/}) is a standalone
+CPU executable that validates the fundamental data types and conversion
+utilities used throughout the codebase.  It uses a lightweight
+assertion-based framework (\code{TEST}, \code{ASSERT\_EQ},
+\code{ASSERT\_NEAR}) and covers:
+
+\begin{itemize}
+  \item \code{HDRFloat<T>} arithmetic and normalization
+        (\cref{sec:hdr-float}).
+  \item \code{HDRFloatComplex} operations (complex multiply, add,
+        magnitude).
+  \item \code{HighPrecision} string parsing and round-trip conversion.
+  \item \code{PointZoomBBConverter} coordinate transforms
+        (\cref{subsec:coordinates}).
+\end{itemize}
+
+The tiered allocation strategy introduced earlier in this chapter addresses one aspect of memory
+pressure.  The next chapter examines a complementary mechanism---disk-backed
+growable vectors---that manages the large reference-orbit buffers whose size
+can exceed available physical memory.

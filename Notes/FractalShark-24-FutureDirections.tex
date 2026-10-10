@@ -51,7 +51,7 @@ design choices at a glance.
 \node[option,  below left =0.8cm and -0.1cm of p2]  (a2) {Series Approx.\\(SA)};
 \node[chosen,  below right=0.8cm and -0.1cm of p2]  (b2) {Linear Approx.\\(LA~v2)};
 \node[why, below=0.15cm of a2] {Taylor series,\\divergence risk};
-\node[why, below=0.15cm of b2] {period-aligned,\\bounded error};
+\node[why, below=0.15cm of b2] {adaptive spans,\\validity thresholds};
 
 \draw[arr] (p2.south west) ++(0.3,0) -- (a2.north);
 \draw[arr] (p2.south east) ++(-0.3,0) -- (b2.north);
@@ -117,7 +117,7 @@ related strategies are discussed in
 Series Approximation was the original technique for skipping iterations
 in perturbation-based Mandelbrot rendering, introduced alongside
 perturbation theory itself~\cite{Martin2013Perturbation}.  It has since
-been largely superseded by linear approximation methods---both BLA
+been largely superseded by linear approximation methods---both BLA~v1
 (\cref{sec:bilinear-approx}) and LA~v2
 (\cref{sec:la-v2-perturb})---which are simpler, more robust, and faster
 in practice.  SA is documented here for historical context.
@@ -151,7 +151,7 @@ LA~v2 (\cref{sec:la-step-forward})---this equivalence is not a coincidence; both
 capture the partial derivative $\partial z_n / \partial c$.
 
 \paragraph{Why linear approximation superseded SA.}
-SA and linear approximation (BLA, LA~v2) address the same
+SA and linear approximation (BLA~v1, LA~v2) address the same
 problem---skipping iterations that would otherwise be computed one at a
 time---but they differ fundamentally in approach.  SA uses a
 higher-order polynomial in $\Delta c$: a single evaluation can skip many
@@ -162,21 +162,22 @@ fall back to full perturbation if the polynomial produces nonsense.
 
 Linear approximation, by contrast, uses first-order (linear)
 coefficients with explicit, precomputed validity thresholds
-(\cref{sec:la-threshold}).  BLA (\cref{sec:bilinear-approx}) builds a
+(\cref{sec:la-threshold}). BLA~v1 (\cref{sec:bilinear-approx}) builds a
 generic power-of-two hierarchy of composable linear maps, agnostic of
-the orbit's dynamics.  LA~v2 (\cref{sec:la-v2-perturb}) is more
-sophisticated: it aligns the approximation hierarchy with the detected
-period of the reference orbit, enabling each stage-0 entry to skip an
-entire period and higher stages to skip multiples of the period.  Both
-approaches degrade gracefully---when a validity threshold is
-exceeded, the kernel falls back to perturbation for a few
-iterations before attempting the next linear step.
+the orbit's dynamics. LA~v2 (\cref{sec:la-v2-perturb}) retains a
+nonlinear input operation and chooses adaptive boundaries near useful
+returns, with synthetic spans when no suitable return is detected.
+Higher stages compose consecutive entries; neither stage-0 spans nor
+their compositions must be multiples of a fundamental period.
+BLA~v1 falls back to individual perturbation updates when no retained
+map is usable. LA~v2 descends through finer stages before handing
+remaining work to its perturbation tail (\cref{sec:la-v2-motivation}).
 
-In practice, the linear approach is simpler to implement (no
-higher-order coefficient management), numerically more robust (bounded
-error by construction), and often faster (the period-aligned hierarchy
-in LA~v2 enables very large skip counts near periodic points without
-risk of polynomial divergence).  Optimized SA variants such as NanoMB1,
+The linear approach avoids higher-order coefficient management and
+checks block applicability before evaluation. Useful return spans can
+enable very large skips near periodic points, but the thresholds do
+not certify a complete orbit error bound or a universal performance
+advantage. Optimized SA variants such as NanoMB1,
 NanoMB2, and Super Series Approximation (SSA)
 (\cite{KallesFraktaler}) narrow the gap but remain more complex than
 linear approximation for comparable or inferior performance.

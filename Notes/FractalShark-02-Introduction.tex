@@ -64,8 +64,9 @@ or manually choose among many rendering paths (see \cref{subsec:ref-orbit-mt-tra
         see \cref{sec:mandel-base-kernels}.
   \item Scaled perturbation algorithms for extending low-precision arithmetic
         to deeper zooms (\cref{sec:perturbation-concept}).
-  \item Bilinear approximation (BLA v1) perturbation paths (\cref{sec:bilinear-approx}).
-  \item Linear approximation (LA~v2) pipelines, including full rendering,
+  \item The retained bilinear approximation (BLA~v1) perturbation paths
+        (\cref{sec:bilinear-approx}).
+  \item The current linear approximation (LA~v2) pipelines, including full rendering,
         linear-approximation-only, and perturbation-only variants
         (\cref{sec:la-v2-perturb}).
   \item Reference-compression–aware algorithms, including Imagina-compatible
@@ -76,6 +77,12 @@ or manually choose among many rendering paths (see \cref{subsec:ref-orbit-mt-tra
 
 Many of these modes are exposed explicitly for testing and comparison, and
 not all are intended as default or production-quality paths.
+
+LA~v2 is the primary deep-zoom approximation path. Its nonlinear
+input preparation and adaptive stage boundaries address limitations
+of BLA~v1 (\cref{sec:la-v2-motivation}). Automatic selection can still
+use other algorithms at shallower zooms, including BLA~v1 in the CPU
+fallback tiers.
 
 \paragraph{Linear approximation configuration.}
 Linear approximation behavior can be configured for multithreaded or
@@ -132,115 +139,3 @@ high-precision fractal rendering, prioritizing transparency, correctness, and
 performance.  It is not intended as a polished end-user application, but rather
 as an experimental platform for exploring and validating advanced fractal
 rendering algorithms.
-
-\section{The Mandelbrot set and escape-time rendering}
-\label{sec:mandelbrot-intro}
-
-The Mandelbrot set \(M\subset\mathbb{C}\) \cite{Mandelbrot1980Fractal} is defined as the set of complex
-parameters \(c\) for which the orbit of
-\begin{equation}
-z_{n+1} = z_n^2 + c,\qquad z_0 = 0
-\end{equation}
-remains bounded. A common rendering method is \emph{escape-time}: iterate until
-the orbit magnitude exceeds a bailout threshold, or until a maximum iteration
-count is reached.
-
-A standard bailout uses \(|z_n|^2 \ge 4\), since \(|z|>2\) implies divergence:
-\begin{equation}
-|z_n|^2 = \Re(z_n)^2 + \Im(z_n)^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
-\end{equation}
-For each pixel, the stored value is the smallest \(n\) (or a bounded proxy) at
-which escape occurs, or the maximum iteration limit if escape never occurs.
-
-
-\subsection*{System architecture}
-\label{sec:system-architecture}
-
-At a high level, \FractalShark{}'s rendering pipeline transforms a view
-specification (center, zoom, iteration limit) into a colored image through
-a sequence of stages.  Most stages are implemented as CUDA kernels; the CPU
-orchestrates data flow between them and handles high-precision coordinate
-arithmetic.
-
-\begin{lstlisting}[language={},basicstyle=\ttfamily\small,columns=flexible]
-  View parameters (center, zoom, iterations)
-          |
-          v
-  Coordinate mapping            [PointZoomBBConverter]
-   (high-precision -> per-pixel deltas)
-          |
-          v
-  Reference orbit computation   [RefOrbitCalc]
-   (CPU: MPIR single/multi-thread,
-    GPU: HpSharkFloat NTT pipeline)
-          |
-          v
-  Linear approximation setup    [LAReference]
-   (period detection, LA/BLA coefficient tables)
-          |
-          v
-  Per-pixel perturbation (GPU)  [mandel_1xHDR_float_perturb_lav2]
-   (LA stage traversal -> perturbation tail -> escape test)
-          |
-          v
-  Antialiasing + coloring (GPU) [antialiasing_kernel]
-   (supersample averaging, palette lookup)
-          |
-          v
-  Display (OpenGL)              [RenderThreadPool GL consumer]
-\end{lstlisting}
-
-The first two stages---coordinate mapping and reference orbit
-computation---dominate wall-clock time at extreme zoom depths, because
-the required arithmetic precision grows with the logarithm of the zoom
-factor.  Once the reference orbit is available, per-pixel perturbation
-on the GPU is comparatively fast: each pixel evolves only a low-precision
-delta relative to the shared reference
-(\cref{sec:perturbation-concept}), with linear approximation
-(\cref{sec:la-v2-perturb}) skipping the majority of iterations.
-
-Two rendering paths exist (\cref{subsec:two-render-paths}): the
-\emph{render pool path}, where worker threads each acquire a private
-iteration buffer and produce frames for the OpenGL consumer; and the
-\emph{direct path}, used by tests and save operations, which writes
-results into the shared \code{m\_CurIters} buffer.  The render thread
-pool (\cref{sec:render-thread-pool}) manages a command queue that
-serializes UI-driven mutations with rendering work, discarding stale
-renders when the user navigates faster than the GPU can complete them.
-
-\subsection*{Document roadmap}
-
-The remainder of this document is organized as follows:
-\begin{itemize}
-  \item \textbf{Direct rendering kernels and numeric types.}
-        The GPU escape-time kernels and the fixed-point and floating-point
-        numeric representations they operate on
-        (\cref{sec:mandel-base-kernels,sec:hdr-float,sec:extended-precision-types}).
-  \item \textbf{Perturbation theory and approximation-based acceleration.}
-        Scaled perturbation, bilinear approximation (BLA), and the LA~v2
-        pipeline that together enable deep-zoom rendering from a single
-        reference orbit
-        (\cref{sec:perturbation-concept,sec:bilinear-approx,sec:la-v2-perturb}).
-  \item \textbf{Reference orbit computation.}
-        CPU and GPU backends for computing the high-precision reference orbits
-        required by perturbation theory (\cref{sec:ref-orbit-calc}).
-  \item \textbf{GPU high-precision arithmetic.}
-        NTT-based multiplication, parallel carry propagation, and the
-        memory layout underlying GPU-side arbitrary-precision computation
-        (\cref{subsec:ref-orbit-gpu,sec:hp-add,sec:ntt-multiply}).
-  \item \textbf{Feature Finder.}
-        Periodic-point detection via Newton's method, period scanning, and
-        automatic deep-zoom target selection (\cref{sec:feature-finder}).
-  \item \textbf{Rendering pipeline and memory infrastructure.}
-        Antialiasing, coloring, file-backed growable vectors, and the overall
-        render orchestration (\cref{sec:misc-details,sec:render-thread-pool,sec:disk_backed_growable_vectors}).
-  \item \textbf{Appendices.}
-        User documentation, a map of the source and build targets
-        (\cref{sec:code-organization}), engineering reference material, and a
-        development history recording implementation milestones and design
-        decisions.
-\end{itemize}
-
-With the overview in place, Part~I turns to the rendering kernels themselves,
-beginning with pixel-to-parameter mapping and the base escape-time iteration
-that all subsequent optimizations build upon.

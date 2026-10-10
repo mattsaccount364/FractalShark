@@ -49,6 +49,7 @@ IsKnownKey(std::string_view key)
                                          "iterations",
                                          "antialiasing",
                                          "perturbation-alg",
+                                         "clear-reference-orbits",
                                          "palette-map",
                                          "palette-depth",
                                          "console",
@@ -60,7 +61,7 @@ IsKnownKey(std::string_view key)
 bool
 IsBooleanKey(std::string_view key)
 {
-    return key == "console" || key == "color" || key == "quiet";
+    return key == "console" || key == "color" || key == "quiet" || key == "clear-reference-orbits";
 }
 
 int

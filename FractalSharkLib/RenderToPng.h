@@ -44,6 +44,9 @@ struct RenderRequest {
     RenderAlgorithm Algorithm; // mandatory
     std::optional<RefOrbitCalc::PerturbationAlg> Perturbation;
 
+    // Discard cached references for this render; later requests may reuse the new orbits.
+    bool ClearReferenceOrbits = false;
+
     // Output path; .png is appended only when its filename has no extension.
     // If empty, PNG output is skipped (useful when the caller only wants
     // the computed Fractal for other output like console rendering).

@@ -1,38 +1,84 @@
+\section{Linear Approximation v2 (LA~v2)}
+\label{sec:la-v2-perturb}
 
-\section{Approximation-Based Orbit Acceleration}
-\label{sec:approx-accel}
-\crefname{lstlisting}{listing}{listings}
-\crefformat{lstlisting}{#2listing~#1#3}
+The LA~v2 pipeline~\cite{Imagina} combines staged approximation maps with
+an exact perturbation recurrence for the remaining updates. Its purpose
+is to amortize reference-dependent work across the image: the tables are
+built once for a reference, while each pixel evaluates only the blocks
+that remain valid for its state. Near a mini-Mandelbrot copy, returns
+close to the critical point can provide useful block boundaries and
+enable long skips.
 
-Perturbation theory (\cref{sec:perturbation-concept}) reduces the
-precision required for per-pixel iteration, but it does not reduce the
-\emph{number} of iterations: a pixel that does not escape still executes
-the recurrence up to the requested limit~$n_{\max}$. At deep zooms that
-limit can reach billions, and the work is repeated for every pixel.
-The stored reference orbit has its own length~$n_{\mathrm{ref}}$;
-rebasing permits evaluation to continue beyond that length. Neither
-quantity is necessarily the orbit's period~$p$.
+LA~v2 is the current approximation implementation. CPU algorithm
+identifiers such as \code{Cpu64PerturbedBLAV2HDR} retain the historical
+\code{BLAV2} spelling but execute the LA~v2 pipeline described here;
+they do not denote a separate second version of the purely linear
+BLA~v1 map.
 
-Approximation methods attack this remaining bottleneck by \emph{skipping}
-large blocks of iterations entirely.  Instead of stepping through the
-perturbation recurrence one iteration at a time, they precompute linear
-maps that advance the perturbation delta by many iterations in a single
-evaluation. \FractalShark{} implements two strategies:
-\begin{itemize}
-\item \textbf{Bilinear Approximation (BLA)}
-  (\cref{sec:bilinear-approx})---precomputes composable two-term linear
-  maps from the reference orbit, skipping iterations where the
-  perturbations satisfy the step's validity test.
-\item \textbf{Linear Approximation v2 (LA)}
-  (\cref{sec:la-v2-perturb})---precomputes staged linear-approximation
-  coefficients that can skip entire sections of the orbit in one
-  evaluation, achieving larger skips at the cost of more complex
-  coefficient management.
-\end{itemize}
-Both techniques preserve the perturbation framework's mixed-precision
-advantage while replacing many of the $n_{\max}$ individual updates
-with block evaluations. The achievable reduction depends on the orbit,
-the pixel offset, and the validity thresholds.
+\subsection{Motivation: improving on BLA~v1}
+\label{sec:la-v2-motivation}
+
+The main motivation for LA~v2 is to make longer skips useful across
+critical-point returns, where BLA~v1's input linearization becomes
+restrictive. BLA~v1 discards $(\Delta z)^2$ at every summarized update,
+and its one-step validity radius scales with $|2z_r^\star|$
+(\cref{sec:bla-v1-validity}). Near $z_r^\star=0$, that linear term is
+small even when the quadratic input term is significant. Composing
+more purely linear steps cannot restore the discarded term.
+
+\paragraph{Retaining the nonlinear input.}
+LA~v2 prepares each entry's input as
+$\tilde{\Delta z}=\Delta z(2z_\mathrm{ref}+\Delta z)$
+\eqref{eq:la-prepare}, then applies its precomputed linear
+coefficients to the prepared delta and $\Delta c$. At a zero reference
+the prepared input is $(\Delta z)^2$, rather than a vanishing
+$2z_\mathrm{ref}\Delta z$. The nonlinear input is therefore evaluated
+once per accepted block instead of being discarded. Subsequent
+updates within the block are still approximated, and validity
+thresholds remain necessary; retaining Prepare does not make the
+whole block exact or guarantee greater final-image accuracy.
+
+\paragraph{Choosing boundaries from the orbit.}
+BLA~v1 uses fixed binary alignment. LA~v2 instead detects useful
+magnitude or threshold drops near returns to the critical point and
+places block boundaries accordingly. Each block can start with a
+nonlinear Prepare operation and summarize the subsequent updates.
+Synthetic target spans permit construction when a useful return is
+not detected. Higher stages compose these variable spans, so an
+entry need not cover one fundamental period or a power-of-two number
+of iterations (\cref{sec:la-stage-hierarchy}).
+
+\paragraph{Reducing per-pixel work.}
+A pixel attempts coarse blocks first. When an entry fails a validity
+or remaining-budget check, its index maps directly into the finer
+stage at the same starting boundary, preserving completed work.
+Long accepted spans can reduce both arithmetic and reference accesses
+relative to repeated BLA lookups and individual perturbation updates.
+The benefit follows from nonlinear preparation, useful segmentation,
+and hierarchical traversal even when Approximation Transform (AT)
+initialization is disabled.
+
+The performance advantage depends on the reference, pixel offsets,
+accepted block lengths, and how much exact perturbation remains.
+Table construction and storage also have costs. BLA~v1 can remain
+competitive at shallow zooms, where those costs are not amortized
+by long skips. The illustration in \cref{fig:approx-skipping} shows
+the different traversals rather than a measured speedup.
+
+\subsection{Shared rendering path and optional initialization}
+CPU and GPU rendering both use
+\code{FractalShark::LA::\allowbreak AdvancePixel} for pixel initialization
+and LA traversal. The CPU supplies an orbit reader backed by its
+runtime decompressor; the GPU supplies one backed by
+\code{GPUPerturbSingleResults}. The core full-rendering path descends
+through the LA hierarchy and then runs a perturbation tail, which
+performs the rendering bailout test. Initialization may first advance
+the pixel through AT if the reference and pixel gates pass
+(\cref{sec:attractor-transform}); otherwise LA traversal starts from
+the zero delta. AT remains implemented behind the shared initialization
+interface, rather than as an explicit loop in the rendering kernel.
+AT is optional and is not required for ordinary LA traversal.
+The perturbation-only case is described in \cref{sec:perturb-only}.
 
 \begin{figure}[!htbp]
 \centering
@@ -68,23 +114,20 @@ the pixel offset, and the validity thresholds.
   \node[orange!70!black, font=\scriptsize] at (8, 0.5)
     {16 individual updates};
 
-  % --- Row 2: BLA (variable-length skips) ---
+  % --- Row 2: retained BLA v1 maps align to reference index r-1 ---
   \node[font=\scriptsize, anchor=east, green!50!black] at (-0.5, 2.8)
-    {BLA};
-  % Illustrative valid BLA spans.
-  \draw[arr, green!50!black, thick, bend left=30] (0, 2.6) to (2, 2.6);
-  \draw[arr, green!50!black, thick, bend left=30] (2, 2.6) to (4, 2.6);
-  \draw[arr, green!50!black, thick, bend left=30] (4, 2.6) to (5, 2.6);
-  \draw[arr, green!50!black, thick, bend left=30] (5, 2.6) to (8, 2.6);
-  \draw[arr, green!50!black, thick, bend left=30] (8, 2.6) to (9, 2.6);
-  \draw[arr, green!50!black, thick, bend left=30] (9, 2.6) to (12, 2.6);
-  \draw[arr, green!50!black, thick, bend left=30] (12, 2.6) to (13, 2.6);
-  \draw[arr, green!50!black, thick, bend left=30] (13, 2.6) to (16, 2.6);
-  \foreach \x in {0,2,4,5,8,9,12,13,16} {
+    {BLA~v1};
+  \draw[arr, orange!70!black, thin] (0, 2.6) -- (1, 2.6);
+  \draw[arr, green!50!black, thick, bend left=15] (1, 2.6) to (9, 2.6);
+  \draw[arr, green!50!black, thick, bend left=22] (9, 2.6) to (13, 2.6);
+  \foreach \a/\b in {13/14,14/15,15/16} {
+    \draw[arr, orange!70!black, thin] (\a, 2.6) -- (\b, 2.6);
+  }
+  \foreach \x in {0,1,9,13,14,15,16} {
     \node[dot, green!50!black] at (\x, 2.6) {};
   }
   \node[green!50!black, font=\scriptsize] at (8, 2.0)
-    {Illustrative variable-length skips};
+    {Two aligned maps and four individual updates};
 
   % --- Row 3: LA~v2 (adaptive staged skips) ---
   \node[font=\scriptsize, anchor=east, red!60!black] at (-0.5, 4.6)
@@ -112,115 +155,23 @@ the pixel offset, and the validity thresholds.
     {Stage 1: two composed block evaluations};
 \end{tikzpicture}%
 }% end resizebox
-\caption[Iteration skipping: perturbation vs.\ BLA vs.\ LA]{%
+\caption[Iteration skipping: perturbation, BLA~v1, and LA~v2]{%
   \sloppy
   Schematic iteration strategies over 16 original iterations.
   \emph{Perturbation} (orange) evaluates every update.
-  \emph{BLA} (green) selects valid aligned linear maps.
+  \emph{BLA~v1} selects aligned eight- and four-iteration maps (green),
+  with individual perturbation updates (orange) at the origin and
+  when the remaining budget is too short for another retained map.
   \emph{LA~v2} (red, solid) uses entries with adaptively chosen spans;
-  higher stages (red, dashed) compose consecutive entries.
+  higher stages (red, dashed) compose consecutive entries. AT is
+  disabled in the LA example, and no traversal rebases.
   The spans illustrate the hierarchy rather than a measured traversal
   or a guarantee that entries cover a particular period. A pixel uses
   a block only when its validity and remaining-budget checks pass.}
 \label{fig:approx-skipping}
 \end{figure}
 
-\subsection{Bilinear approximation (BLA) for orbit deltas}
-\label{sec:bilinear-approx}
-
-Bilinear approximation~\cite{Imagina,Thompson2023BLA} precomputes composable linear
-maps that advance the perturbation delta by multiple iterations at once,
-avoiding per-step evaluation when the linearization error remains small
-(\cref{fig:approx-skipping}).
-
-\subsubsection{Reference orbit and delta formulation}
-The perturbation framework (\cref{sec:perturbation-concept}) decomposes
-the orbit of a nearby pixel \(c = c_\star + \Delta c\) into a
-precomputed reference orbit \(z_n^\star\) and a delta
-\(\Delta z_n = z_n - z_n^\star\).  The exact delta recurrence
-(\cref{eq:perturb-exact}) is
-\[
-\Delta z_{n+1} = 2z_n^\star\,\Delta z_n + (\Delta z_n)^2 + \Delta c.
-\]
-When \(\Delta z_n\) remains small, the quadratic term can be neglected,
-yielding a linearized update:
-\begin{equation}
-\Delta z_{n+1} \approx A_n\,\Delta z_n + B_n\,\Delta c,\qquad
-A_n = 2z_n^\star,\quad B_n = 1.
-\end{equation}
-BLA generalizes this into precomputed multi-step maps that \emph{jump} multiple
-iterations while maintaining an explicit validity bound.
-
-\subsubsection{What \code{BLA<T>} stores}
-A \code{BLA<T>} instance stores two complex coefficients:
-\[
-A = A_x + iA_y,\qquad B = B_x + iB_y,
-\]
-plus:
-\begin{itemize}
-  \item \code{r2}: a squared-radius validity bound used during lookup,
-  \item \code{l}: the number of Mandelbrot iterations summarized by this step.
-\end{itemize}
-These objects exist to accelerate \emph{escape-time evaluation} by evolving
-\(\Delta z\) cheaply for many pixels, then reconstructing \(z \approx z^\star +
-\Delta z\) to perform bailout checks consistent with Mandelbrot rendering.
-
-\subsubsection{Applying a step: complex multiply-add}
-The method \code{getValue} (taking arguments
-\code{Real\-Delta\-SubN}, \code{Imag\-Delta\-SubN},
-\code{Real\-Delta\-Sub0}, \code{Imag\-Delta\-Sub0})
-applies:
-\[
-\Delta z \leftarrow A\,\Delta z + B\,\Delta c,
-\]
-expanded into real arithmetic:
-\begin{align}
-\Re(\Delta z') &= A_x \Re(\Delta z) - A_y \Im(\Delta z) + B_x \Re(\Delta c) - B_y \Im(\Delta c), \\
-\Im(\Delta z') &= A_x \Im(\Delta z) + A_y \Re(\Delta z) + B_x \Im(\Delta c) + B_y \Re(\Delta c).
-\end{align}
-
-\subsubsection{Composing steps to build longer jumps}
-If a first step maps \(\Delta z \mapsto A_1\Delta z + B_1\Delta c\) and a second maps
-\(\Delta z' \mapsto A_2\Delta z' + B_2\Delta c\), the composition is:
-\[
-A_{\text{new}} = A_2 A_1,\qquad B_{\text{new}} = A_2 B_1 + B_2.
-\]
-In the code (\code{BLA.h}), these two steps are passed as the parameters
-\code{x} and \code{y} to \code{getNewA} and \code{getNewB}, corresponding to
-step~1 and step~2 respectively.
-Composition supports a hierarchy of step sizes (often powers of two) for quickly
-advancing delta orbits while rendering the escape-time field.
-
-\subsubsection{GPU lookup: selecting a valid aligned step}
-A GPU-side helper such as \code{GPU\_BLAS} stores the hierarchy and selects a
-step that is both \emph{aligned} with the current iteration index and
-\emph{valid} under the current bound check (typically comparing a computed
-squared-magnitude proxy \code{z2} against \code{r2}). When a step is valid, the
-renderer can advance the orbit by \code{l} iterations at a cost far below
-performing \code{l} individual perturbation updates.
-
-\subsection{LA~v2 linear approximation with perturbation}
-\label{sec:la-v2-perturb}
-
-The LA~v2 pipeline~\cite{Imagina} combines staged approximation maps with
-an exact perturbation recurrence for the remaining updates. Its purpose
-is to amortize reference-dependent work across the image: the tables are
-built once for a reference, while each pixel evaluates only the blocks
-that remain valid for its state. Near a mini-Mandelbrot copy, returns
-close to the critical point can provide useful block boundaries and
-enable long skips.
-
-CPU and GPU rendering both use
-\code{FractalShark::LA::\allowbreak AdvancePixel} for AT initialization
-and LA traversal. The CPU supplies an orbit reader backed by its
-runtime decompressor; the GPU supplies one backed by
-\code{GPUPerturbSingleResults}. The rendering pipeline has three
-operations: optional Approximation Transform (AT), descent through
-the LA hierarchy, and a perturbation tail. The AT and LA operations
-advance an approximate state; the tail performs the rendering bailout
-test. The perturbation-only case is described in \cref{sec:perturb-only}.
-
-\subsubsection{Parameter delta per pixel}
+\subsection{Parameter delta per pixel}
 Each pixel constructs a parameter offset \(\Delta c\) relative to a selected
 reference center (sign conventions may incorporate the image \(Y\)-flip):
 \begin{align}
@@ -229,7 +180,7 @@ reference center (sign conventions may incorporate the image \(Y\)-flip):
 \end{align}
 and packs \(\Delta c=\Delta c_x+i\Delta c_y\) into \code{DeltaSub0}.
 
-\subsubsection{Delta state and reconstruction}
+\subsection{Delta state and reconstruction}
 The renderer maintains a parameter offset \code{DeltaSub0}, a changing
 orbit delta \code{DeltaSubN}, and an accumulated pixel iteration
 count~$n$. Initially $n=0$ and $\Delta z=0$, unless AT advances the
@@ -245,7 +196,7 @@ individual orbit sample. A failed entry translates that index into the
 next finer stage; at stage~0 the translation gives the raw orbit index
 needed by the perturbation tail (\cref{sec:la-stage-hierarchy}).
 
-\subsubsection{Perturbation update}
+\subsection{Perturbation update}
 Given a reference sample \(z^\star=x^\star+iy^\star\) and \(\Delta z=\Delta
 x+i\Delta y\), the perturbation form is:
 \[
@@ -261,7 +212,7 @@ where both right-hand sides use the pre-update values of \(\Delta x\) and
 \(\Delta y\) (the code saves these as \code{DeltaSubNXOrig} and
 \code{DeltaSubNYOrig}).
 
-\subsubsection{Escape test}
+\subsection{Escape test}
 The perturbation tail reconstructs $z$ after each delta update and tests
 its Euclidean squared magnitude. The rendering bailout in these LA~v2
 paths is
@@ -281,7 +232,7 @@ causes descent to a finer stage. AT has a separate transformed-domain
 limit (\cref{sec:attractor-transform}). These approximation checks
 must be distinguished from the perturbation tail's escape test.
 
-\subsubsection{LA coefficient model}
+\subsection{LA coefficient model}
 \label{sec:la-coeff-model}
 
 The LA~v2 algorithm approximates the perturbation delta after multiple
@@ -372,7 +323,7 @@ as iterations are absorbed. The initial \code{MinMag} is a seed for a
 running Chebyshev magnitude, not a squared norm or an escape test.
 Method~2 uses threshold tightening instead and does not need that seed.
 
-\subsubsection{Step-forward recurrence}
+\subsection{Step-forward recurrence}
 \label{sec:la-step-forward}
 
 Each call to \code{LAInfoDeep::Step} absorbs one additional reference-orbit
@@ -458,7 +409,7 @@ The omitted terms show why a validity test is needed even when the
 first update is exact. The example illustrates coefficient algebra;
 it does not prescribe the boundaries chosen by table construction.
 
-\subsubsection{Validity threshold}
+\subsection{Validity threshold}
 \label{sec:la-threshold}
 
 The linearization underlying the step-forward recurrence introduces error
@@ -523,7 +474,7 @@ Threshold scales are constructed from their configured exponents in
 the generation scalar type by \code{LAParametersRuntime}, preserving
 that type's exponent range.
 
-\subsubsection{Composing LA entries}
+\subsection{Composing LA entries}
 \label{sec:la-composite}
 
 Two consecutive LA entries can be merged into a single entry covering their
@@ -614,7 +565,7 @@ In the code, \code{LAInfoDeep::Composite} implements this operation and
 is used by \code{CreateNewLAStage} to build higher-level stages from
 lower-level ones.
 
-\subsubsection{Adaptive stage hierarchy}
+\subsection{Adaptive stage hierarchy}
 \label{sec:la-stage-hierarchy}
 
 The hierarchy uses returns toward the critical point to choose useful
@@ -873,8 +824,25 @@ stops short, that count does not represent completion of the requested
 escape-time evaluation. PO initializes a zero delta and performs every
 update through the perturbation recurrence.
 
-\subsubsection{Approximation Transform (AT)}
+\subsection{Optional Approximation Transform (AT)}
 \label{sec:attractor-transform}
+
+AT remains part of the current implementation. Reference generation
+calls \code{LAReference::\allowbreak CreateATFromLA}, which enables a candidate
+only when its step length and reference-level usability tests pass.
+Both CPU and GPU reference wrappers expose \code{InitializePixel};
+the shared traversal calls that interface, which delegates to
+\code{ATInfo::\allowbreak InitializePixel}. The transformed recurrence lives in
+\code{ATInfo::\allowbreak PerformAT}, outside the main rendering kernel's LA loop.
+The shared interface hides the separate transform loop from those
+callers without removing the transform itself.
+
+When AT is unavailable or a pixel is ineligible, initialization
+returns the zero delta and count, and the same LA stages still run.
+The core advantages over BLA~v1 described in
+\cref{sec:la-v2-motivation} do not depend on AT being selected. The
+existence of this path does not establish how frequently it is used
+in typical renders; that requires measurement for specific views.
 
 When a stage's first block defines a usable quadratic return map, the
 \emph{Approximation Transform} evaluates that map repeatedly without
@@ -1050,7 +1018,7 @@ selected block length and the fraction of the pixel's work performed
 before handoff. The LA-derived map explains the acceleration; the
 usability and per-pixel tests determine where it is attempted.
 
-\subsubsection{Arithmetic types and table conversion}
+\subsection{Arithmetic types and table conversion}
 \label{sec:la-dp-conversion}
 
 The selected rendering algorithm fixes the arithmetic family for its
@@ -1069,7 +1037,7 @@ destination type. Every stage evaluates in the destination arithmetic
 family, and AT uses that family with the construction cap appropriate
 to its target.
 
-\subsubsection{Derivative propagation through LA steps}
+\subsection{Derivative propagation through LA steps}
 \label{sec:la-derivatives}
 
 LA coefficients also support derivative propagation. Feature Finder
@@ -1125,21 +1093,22 @@ where $q'_x = 2\,q_x$ and $q'_y = 2\,q_y$ absorb the factor of~$2$.
 These expressions expand the same chain-rule complex products into
 real and imaginary components.
 
-\subsubsection{Comparison with BLA}
+\subsection{Comparison with BLA~v1}
 \label{sec:la-vs-bla}
 
-BLA (\cref{sec:bilinear-approx}) and LA~v2 both precompute coefficient
+BLA~v1 (\cref{sec:bilinear-approx}) and LA~v2 both precompute coefficient
 maps, but differ in their input model and hierarchy:
 \begin{itemize}
-  \item \textbf{Hierarchy structure.}  BLA builds a generic binary tree
+  \item \textbf{Hierarchy structure.} BLA~v1 builds a generic binary tree
         of composed steps at power-of-two granularity (levels
-        \(1, 2, 4, 8, \ldots\)), agnostic of the orbit's dynamics.
+        \(1, 2, 4, 8, \ldots\)), retaining tables from length~4
+        upward, agnostic of the orbit's dynamics.
         LA~v2 segments the orbit at detected return boundaries or
         synthetic target spans, then composes consecutive entries
         into higher stages. Its spans need not be powers of two or
         fixed multiples of a fundamental period.
 
-  \item \textbf{Period awareness.}  BLA has no notion of periodicity;
+  \item \textbf{Period awareness.} BLA~v1 has no notion of periodicity;
         it treats the reference orbit as an opaque sequence.  LA~v2
         uses magnitude and threshold-drop heuristics to identify
         useful boundaries near returns to the critical point. Those
@@ -1147,24 +1116,27 @@ maps, but differ in their input model and hierarchy:
         segmentation also permits construction without a detected
         return. Pixel validity is still checked independently.
 
-  \item \textbf{Prepare step.}  BLA applies a purely linear map at every
+  \item \textbf{Prepare step.} BLA~v1 applies a purely linear map at every
         step.  LA~v2 applies a nonlinear Prepare step
         (\cref{eq:la-prepare}) that retains the quadratic term at each
         entry's reference point, then linearizes the subsequent
         iterations. Thus its map is linear in the \emph{prepared}
-        delta, whereas BLA is linear in the incoming delta itself.
+        delta, whereas BLA~v1 is linear in the incoming delta itself.
         Both maps still omit nonlinear contributions over their spans.
 
-  \item \textbf{Kernel structure.}  The BLA kernel interleaves single
-        perturbation steps with greedy BLA lookups: do one perturbation
-        step, scan the hierarchy for the longest valid BLA skip, apply
-        it, and repeat. LA~v2 Full rendering first attempts AT, then
-        descends through LA stages, and finally performs perturbation
-        for the remaining work. A failed block transfers its starting
-        position into the finer stage instead of restarting traversal.
+  \item \textbf{Traversal and budget.} BLA~v1 interleaves individual
+        perturbation updates with greedy lookups and can apply several
+        accepted maps consecutively. An endpoint or budget rejection
+        leaves lookup and returns to individual updates; an exact
+        budget fit is rejected. LA~v2 descends through LA stages and
+        then performs perturbation for the remaining work. A failed
+        block transfers its starting position into the finer stage,
+        and an exact budget fit is permitted. Optional AT may advance
+        the initial state before that traversal.
 \end{itemize}
-Long return spans and a usable AT can make LA~v2 effective near a
-mini-Mandelbrot copy. The benefit depends on accepted block lengths,
+Nonlinear preparation and useful return boundaries can make LA~v2
+effective near a mini-Mandelbrot copy without AT. A usable AT can
+provide additional acceleration. The benefit depends on accepted block lengths,
 table-construction cost, memory traffic, and the amount of perturbation
 work remaining for each pixel. Hierarchy design alone does not
 guarantee a particular speedup or accuracy ordering between the methods.

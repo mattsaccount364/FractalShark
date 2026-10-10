@@ -6,9 +6,1070 @@ algorithmic narrative without interrupting its progression.  It covers codebase
 organization, template specialization, validation tools, kernel inventory,
 display output, PNG encoding, orbit interchange, and cross-platform constraints.
 
-\input{FractalShark-B1-CodeOrganization}
-\input{FractalShark-B2-TemplateDesign}
-\input{FractalShark-B3-TestsAndKernels}
-\input{FractalShark-B4-DisplayPipeline}
-\input{FractalShark-B5-ImaginaFormat}
-\input{FractalShark-B6-CrossPlatform}
+\subsection{Codebase Organization}
+\label{sec:code-organization}
+
+The source tree separates operating-system integration, reusable numeric and
+rendering code, application front ends, and validation tools.  The build-target
+boundaries are significant: they keep CUDA compilation isolated, prevent
+platform APIs from leaking into portable interfaces, and allow the Windows GUI,
+Linux GUI, and command-line renderer to share the same rendering implementation.
+
+\subsubsection{Dependency layers}
+
+\Cref{fig:codebase-layers} summarizes the architectural layers.  Arrows point
+toward targets that consume the layer below them; final executables link the
+libraries required by the features they expose.
+
+\begin{figure}[!htbp]
+  \centering
+  \begin{tikzpicture}[
+      component/.style={
+        draw,
+        rounded corners,
+        align=center,
+        minimum height=12mm,
+        text width=0.90\textwidth,
+        inner sep=3mm
+      },
+      flow/.style={-{Latex[length=2.5mm]}, thick}
+    ]
+    \node[component] (foundation) {
+      \textbf{Foundation libraries}\\
+      \code{FractalSharkPlatform}\qquad \code{HpSharkFloatLib}
+    };
+    \node[component, above=8mm of foundation] (rendering) {
+      \textbf{Shared rendering implementation}\\
+      \code{FractalSharkLib}\qquad \code{FractalSharkGpuLib}
+    };
+    \node[component, above=8mm of rendering] (consumers) {
+      \textbf{Applications and developer tools}\\[1mm]
+      \code{FractalShark} + \code{FractalSharkGuiWin32}\quad
+      \code{FractalSharkGuiLinux}\quad \code{FractalSharkCli}\\
+      \code{FractalTray}\quad \code{FractalSaver}\quad
+      \code{FractalSharkTest}\quad \code{HpSharkFloatTest}\\
+      \code{HpSharkFloatTestLib}\quad \code{HpSharkInstantiate}
+    };
+
+    \draw[flow] (foundation) -- (rendering);
+    \draw[flow] (rendering) -- (consumers);
+  \end{tikzpicture}
+  \caption[Codebase dependency layers]{Codebase dependency layers.  Platform and
+    high-precision arithmetic support the shared CPU and CUDA rendering code;
+    applications and validation tools consume those shared layers.}
+  \label{fig:codebase-layers}
+\end{figure}
+
+\subsubsection{Foundation and rendering libraries}
+
+\paragraph{\code{FractalSharkPlatform}.}
+The platform library owns operating-system services used by otherwise portable
+code.  Its common interfaces cover allocation, files, process information,
+timing, diagnostics, crash handling, wait-cursor state, process memory limits,
+and native OpenGL contexts.  Separate Win32 and Linux translation units provide
+the implementations described in \cref{subsec:platform-abstraction}.
+
+\paragraph{\code{HpSharkFloatLib}.}
+The high-precision GPU arithmetic library implements the limb-based
+\code{HpSharkFloat} representation, addition, NTT multiplication,
+normalization, periodicity support, and the GPU reference-orbit machinery.  It
+also contains the parameter families used to specialize those kernels.  The
+numeric representation and execution pipeline are documented in
+\cref{subsec:ref-orbit-gpu,subsec:hpfloat-model,sec:hp-add,sec:ntt-multiply}.
+
+\paragraph{\code{FractalSharkLib}.}
+The core library owns portable fractal state and CPU-side orchestration.  Its
+responsibilities include coordinate conversion, reference-orbit dispatch,
+linear-approximation construction, feature finding, palettes, iteration-buffer
+management, render-thread coordination, persistence, PNG output, shared
+commands, and functional tests.  The principal flows appear in
+\cref{sec:ref-orbit-calc,sec:render-thread-pool,sec:disk_backed_growable_vectors}.
+
+\paragraph{\code{FractalSharkGpuLib}.}
+The rendering CUDA library owns the per-pixel launch surface and kernels for
+direct escape-time rendering, perturbation, BLA and LA~v2 traversal,
+antialiasing, coloring, and reductions.  It consumes numeric and state types
+defined by the core and high-precision libraries; final applications link all
+required libraries together.  Kernel behavior is covered in
+\cref{sec:mandel-base-kernels,sec:perturb-only,sec:la-v2-perturb,sec:kernel-list}.
+
+\subsubsection{Applications and front ends}
+
+\paragraph{\code{FractalShark} and \code{FractalSharkGuiWin32}.}
+The primary Windows application is split across two Visual~Studio projects.
+\code{FractalShark} supplies the executable target, resources, icons, and final
+link, while \code{FractalSharkGuiWin32} implements the Win32 entry point, main
+window, command dispatcher, popup menus, console, saved-location UI, and splash
+window.  Shared command identifiers remain in the core library.  User-visible
+behavior and frame presentation are described in
+\cref{sec:ui-popup-menu,sec:keyboard-shortcuts,subsec:opengl-display}.
+
+\paragraph{\code{FractalSharkGuiLinux}.}
+The native Linux application combines an Xlib event loop and menus, GLX context
+management, Dear~ImGui overlays, clipboard integration, and the shared renderer.
+Its platform boundary and current parity limitations are documented in
+\cref{subsec:linux-gui}.
+
+\paragraph{\code{FractalSharkCli}.}
+The portable command-line executable provides headless rendering from built-in
+views, saved locations, or explicit coordinates. It supports single-shot
+renders and a persistent server that accepts requests from other invocations
+of the executable. The server reuses a \code{Fractal} instance and calls the
+same core and CUDA rendering libraries without a window system. Its command
+contract and request flow are documented in \cref{sec:fractalshark-cli}.
+
+\paragraph{\code{FractalTray}.}
+The Windows tray application batch-renders a sequence of coordinates through
+the shared renderer.  Its input format, configuration, and operating procedure
+are described in \cref{subsec:fractaltray}.
+
+\paragraph{\code{FractalSaver}.}
+The Windows screen-saver project is legacy, unsupported code retained in the
+Visual~Studio solution.  It is not part of the CMake build or release packages
+and should not be treated as an active front end.
+
+\subsubsection{Validation and generation tools}
+
+\paragraph{\code{FractalSharkTest}.}
+The portable unit-test executable covers core numeric types, coordinate
+conversion, linear-approximation data, allocators, serialization, command
+state, render goldens, and related utilities.  The custom test framework and
+representative coverage are summarized in \cref{subsec:fractalsharktest}.
+
+\paragraph{\code{HpSharkFloatTestLib} and \code{HpSharkFloatTest}.}
+The support library contains reference implementations, correctness tests,
+performance drivers, and result tracking for high-precision CUDA arithmetic.
+The executable supplies the CUDA-aware harness that invokes those tests.
+Runtime validation requires physical CUDA hardware, as discussed in
+\cref{subsec:hpsharkfloattest}.
+
+\paragraph{\code{HpSharkInstantiate}.}
+The standalone developer tool generates explicit-instantiation CUDA sources
+for the fixed \code{SharkFloatParams} families.  Generated translation units
+control template compile time and final binary coverage; the underlying
+strategy is documented in \cref{subsec:template-explicit-inst}.
+
+\subsubsection{Build-system coverage}
+
+The Visual~Studio solution contains the Windows application, Windows GUI
+library, tray application, legacy screen saver, shared libraries, tests, and
+generation tool.  CMake builds the portable shared libraries and tools,
+\code{FractalSharkCli}, and \code{FractalSharkGuiLinux}; it intentionally omits
+the Win32-only front ends.  Parallel project-file maintenance, Linux target
+composition, and continuous-integration coverage are described in
+\cref{subsec:dual-build}.
+%% ===================================================================
+\subsection{Template design}%
+\label{sec:template-design}
+%% ===================================================================
+
+\FractalShark{} makes pervasive use of C++ templates to select numeric
+types, iteration widths, and algorithmic variants at compile time rather
+than at run time.  Two considerations motivate this choice.  First,
+the inner loops of both reference-orbit computation and per-pixel
+perturbation execute billions of arithmetic operations; virtual dispatch
+or run-time branch mispredictions on every iteration would impose
+measurable overhead.  Second, encoding precision contracts in the type
+system makes numeric conversions and storage formats explicit at template
+boundaries, which helps review the deliberate projection from high-precision
+recurrence state to reduced perturbation data.
+
+The template parameters fall into four largely orthogonal dimensions,
+described in the following subsections.
+
+
+\subsubsection{Iteration-counter width (\code{IterType})}
+\label{subsec:template-itertype}
+
+Every orbit and perturbation result is indexed by an iteration counter
+whose type is either \code{uint32\_t} or \code{uint64\_t}.  A 32-bit
+counter suffices for the vast majority of renders, supporting up to
+$2^{32}-1 \approx 4.3\times10^{9}$ iterations.  Certain ultra-deep
+locations, however, require iteration limits that exceed this range.
+Switching to a 64-bit counter doubles the per-element storage cost for
+every orbit and iteration buffer, so \FractalShark{} treats the counter
+width as a compile-time choice rather than unconditionally paying the
+wider cost.  The \code{IterType} parameter threads through
+\code{PerturbationResults}, \code{LAReference}, and the rendering
+kernels, ensuring that all components agree on the iteration index
+representation.
+
+
+\subsubsection{Reference-orbit type (\code{T})}
+\label{subsec:template-t}
+
+The parameter~\code{T} selects the numeric type used to store the emitted
+reference orbit $\{z_n^\star\}$ and the representation consumed by downstream
+perturbation code.  It does not select the recurrence arithmetic: CPU reference
+backends use MPIR internally, while the CUDA reference engine uses a
+precision-specialized \code{HpSharkFloat} internally and convert emitted samples
+to~\code{T}.
+The principal choices are:
+
+\begin{itemize}
+  \item \code{float} and \code{double}---IEEE~754 single and double
+        precision, used at shallow zoom depths where the full mantissa
+        suffices to represent the orbit accurately.
+  \item \code{CudaDblflt<MattDblflt>}---a double-single representation
+        that pairs two 32-bit floats to obtain roughly double the
+        mantissa bits of \code{float} alone, with natively vectorisable
+        GPU arithmetic (\cref{sec:extended-precision-types}).
+  \item \code{HDRFloat<double>} and \code{HDRFloat<float>}---a
+        high-dynamic-range wrapper that adds an explicit exponent to the
+        mantissa, preventing underflow in the deep-zoom regime where
+        orbit values span hundreds of orders of magnitude
+        (\cref{sec:hdr-float}).
+  \item \code{HDRFloat<CudaDblflt<MattDblflt>>}---the composition of
+        the HDR exponent with the double-single mantissa, providing
+        both extended range and extended precision.
+\end{itemize}
+
+\noindent
+The type~\code{T} appears as the second template parameter of
+\code{PerturbationResults<IterType,\allowbreak T,\allowbreak PExtras>}
+and as the orbit-storage type inside \code{RefOrbitCalc}.
+
+
+\subsubsection{Perturbation subtype (\code{SubType})}
+\label{subsec:template-subtype}
+
+While~\code{T} governs the stored precision of the shared reference orbit,
+per-pixel perturbation operates at a lower precision because each
+pixel evolves only a small delta $\Delta z_n$ relative to $z_n^\star$.
+The \code{SubType} parameter selects this lower-precision type.  It
+is typically \code{float}, \code{double}, or
+\code{CudaDblflt<MattDblflt>}, and for HDR-wrapped references the
+corresponding \code{HDRFloat} variant.  The mapping from \code{T} to
+\code{SubType} is encoded by the \code{SubTypeChooser} trait: when
+\code{T} is a plain scalar the sub-type is the same scalar; when
+\code{T} is an \code{HDRFloat<S>} the sub-type extracts the
+underlying~\code{S}.
+
+\code{SubType} appears as an explicit template parameter on
+\code{LAReference<IterType,\allowbreak T,\allowbreak SubType,\allowbreak
+PExtras>} and is threaded into the perturbation kernels, where it
+controls the precision of the per-pixel inner loop.
+
+
+\subsubsection{Perturbation extras (\code{PExtras})}
+\label{subsec:template-pextras}
+
+The \code{Perturb\-Extras} enumeration is a compile-time flag attached to
+every \code{Perturbation\-Results} instantiation.  It controls whether
+the orbit stores auxiliary data beyond the orbit values themselves:
+
+\begin{itemize}
+  \item \code{Disable}---store only the orbit; no extra bookkeeping.
+  \item \code{Bad}---record \emph{glitch} information (iterations where
+        the perturbation approximation loses accuracy) alongside the
+        orbit, enabling downstream glitch-correction passes.
+  \item \code{SimpleCompression} and \code{MaxCompression}---store the
+        metadata required for reference-orbit compression
+        (\cref{sec:ref-compression-zhuoran}).
+\end{itemize}
+
+\noindent
+Making this a template parameter rather than a run-time flag eliminates
+the storage overhead of the auxiliary arrays in the common case where
+they are not needed, and allows the compiler to elide the associated
+bookkeeping code entirely.
+
+
+\subsubsection{Instantiation combinatorics}
+\label{subsec:template-combinatorics}
+
+The Cartesian product of the four dimensions yields a large number of
+potential type combinations.  With two \code{IterType} widths, six
+representative \code{T} values, and three commonly used
+\code{PExtras} settings (\code{Disable}, \code{Bad},
+\code{Simple\-Compression}), the \code{PerturbationResults} class
+alone accounts for $2\times 6\times 3 = 36$ concrete instantiations.
+This count is visible in the \code{AwesomeVariant} type alias defined
+in \code{RefOrbitCalc.h}, which enumerates all 36~alternatives as a
+\code{std::variant} so that perturbation results of any type
+combination can be stored and dispatched uniformly at run time.
+
+Additional template parameters (\code{SubType}, benchmark modes, reuse
+modes) on related classes further multiply the instantiation count.  The
+full set of explicit instantiations is available in
+\code{RefOrbitCalcTemplates.h}.
+
+
+\subsubsection{Explicit instantiation strategy}
+\label{subsec:template-explicit-inst}
+
+Because every translation unit that includes a template header would
+otherwise independently instantiate each specialization it references,
+\FractalShark{} relies on \emph{explicit template instantiation} to
+centralize code generation and control compile times.
+
+For the perturbation pipeline, the header
+\code{RefOrbitCalcTemplates.h} defines a family of preprocessor macros
+(\code{InstantiateIsPerturbation\-Result\-UsefulHere},
+\code{InstantiateAddPerturbation\-Reference\-Point}, and others) that
+expand to explicit instantiation declarations for every supported
+\code{(IterType, T, SubType, PExtras)} combination.  Each macro accepts
+the type arguments, expands to the required \code{template} declaration,
+and is invoked once per combination immediately below its definition.
+This pattern confines the instantiation cost to a single translation
+unit while allowing other files to use only the declarations.
+
+For the GPU arithmetic subsystem, a separate code-generation tool
+(\code{HpShark\-Instantiate}) produces \code{.cu} files containing
+explicit instantiations of \code{HpSharkFloat}, the NTT multiply
+kernels, the reference-orbit GPU loop, and associated helper templates.
+The generator partitions the output into paired
+files---one for production parameter sets
+(\code{SharkParams1}\,--\,\code{12}),
+one for non-periodicity variants
+(\code{SharkParamsNP1}\,--\,\code{NP12})---and groups
+instantiations into named \emph{batches} (e.g.\
+\code{HpSharkFloat\_Conversions}, \code{HpSharkReference},
+\code{ReferenceGpuLoop}, and \code{SharkNTT\_Primitives}) so that each batch compiles as an
+independent translation unit.  This decomposition enables parallel
+compilation and limits the peak memory consumption of the CUDA
+compiler.
+
+
+\subsubsection{The \code{SharkFloatParams} pattern}
+\label{subsec:template-sharkparams}
+
+The GPU high-precision arithmetic library takes the compile-time
+parameterization one step further by encoding not only type choices but
+also \emph{algorithmic configuration} in a template parameter.
+The struct
+\code{GenericSharkFloatParams<pNumDigits,\allowbreak Periodicity,\allowbreak
+NewtonRaphson,\allowbreak SubTypeT>}
+bundles several \code{static constexpr} members that the CUDA compiler
+can fold into kernel code:
+
+\begin{itemize}
+  \item \code{GlobalNumUint32}---the number of 32-bit limbs in each
+        high-precision operand.  Despite its name, \code{pNumDigits} is this
+        limb count, not a bit or decimal-digit count.  Because
+        the compiler knows this value at template instantiation time,
+        loop trip counts in the NTT multiply and carry-propagation
+        kernels are compile-time constants, enabling aggressive
+        unrolling and register allocation.
+  \item \code{EnablePeriodicity}---controls whether the reference-orbit
+        kernel checks for period detection at each iteration.  Disabling
+        it in the non-periodicity (\code{SharkParamsNP*}) and
+        Newton--Raphson (\code{SharkParamsNR*}) variants eliminates
+        the associated branch and storage overhead.
+  \item \code{EnableNewtonRaphson}---when set, the kernel additionally
+        tracks the derivative $d_n = \partial z_n/\partial c$ alongside
+        the orbit, allocating extra GPU scratch memory and executing the
+        derivative recurrence at each iteration.  This derivative is required by
+        the Feature Finder's Newton's method solver
+        (\cref{sec:feature-finder}).
+  \item \code{SharkNTT::Plan}---the compile-time base plan constructed from
+        \code{GlobalNumUint32} by \code{SharkNTT::BuildPlan}.  Setup may allocate
+        and cache a larger active plan so exponent-shifted polynomial support
+        can select a transform length at run time.
+\end{itemize}
+
+\noindent
+Concrete aliases such as
+\code{SharkParams1}\,--\,\code{SharkParams12} fix
+\code{pNumDigits} to powers of two from $256$ through $524{,}288$
+32-bit limbs.  The production range is therefore 8,192 through 16,777,216
+bits, or approximately 2,466 through 5,050,445 decimal digits, with
+periodicity enabled and Newton--Raphson disabled.
+Additional alias families---\code{SharkParamsNP*} (no periodicity),
+\code{SharkParamsNR*} (Newton--Raphson enabled),
+\code{SharkParamsDbl*} (\code{double} sub-type), and
+\code{SharkParamsDbf*} (\code{CudaDblflt} sub-type)---provide the
+remaining feature-flag and sub-type permutations.  Non-production and test
+families also include smaller 64- and 128-limb cases, so their alias sets should
+not be inferred from the twelve production buckets.  The code generator in
+\cref{subsec:template-explicit-inst} emits only the combinations requested by
+each kernel batch.
+
+The remaining sections collect operational engineering references for tests,
+kernels, display output, orbit interchange, and portability.
+% -----------------------------------------------------------------
+\subsection{Functional Test Suite}
+\label{subsec:crummy-test}
+
+\code{CrummyTest} is a self-contained functional test suite invoked
+from the application's right-click context menu
+(\code{IDM\_BASICTEST}, labeled ``Run Basic Test'').  The suite
+exercises the direct rendering path
+(\cref{subsec:two-render-paths}): each test calls \code{Drain()}
+first to ensure no pool workers remain active, then invokes
+\code{CalcFractal(true)}, which writes results to \code{m\_CurIters}.
+
+The top-level \code{TestAll()} method runs the full suite in sequence:
+\begin{itemize}
+  \item \code{TestWindowResize}---resizes the application window and
+        verifies that a re-render completes correctly.
+  \item \code{TestBasic}---iterates through every
+        \code{RenderAlgorithm} entry, rendering the default view,
+        View~5, and View~11 with both 32-bit and 64-bit iteration
+        types.
+  \item \code{TestReferenceSave}---saves and reloads reference orbits,
+        verifying round-trip correctness.
+  \item \code{TestVariedCompression}---tests reference-orbit
+        compression at varying error thresholds.
+  \item \code{TestImaginaLoad}---loads orbits stored in the Imagina
+        format (\cref{subsec:imagina-format}).
+  \item \code{TestStringConversion}---validates string-to-precision
+        and precision-to-string conversion utilities.
+  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
+        chains for numerical correctness.
+  \item \code{TestGrowableVector}---validates the
+        \code{GrowableVector} data structure
+        (\cref{sec:disk_backed_growable_vectors}).
+\end{itemize}
+A separate \code{TestReallyHardView27} (not included in
+\code{TestAll}) renders View~\#27, a period ${\sim}28$~billion point
+requiring hours of computation; the test serves as an overnight
+stress benchmark rather than a routine regression check.
+
+% -----------------------------------------------------------------
+\subsection{PNG Encoder and Save-Path Validation}
+\label{subsec:png-validation}
+
+The PNG encoder described in \cref{subsec:png-output} has a focused
+hardware suite in \code{FractalSharkCudaTest}. The \code{CudaPng\_*}
+cases encode identical input through the GPU encoder and the CPU's
+current PNG save settings. LodePNG decodes
+both outputs to RGBA16 for exact comparison with independently
+serialized expected pixels. Coverage includes low channel bits,
+transparency, padded strides, row and region boundaries, deterministic
+output, noisy input, multiple IDAT chunks, workspace reuse, concurrent
+streams, and invalid inputs.
+
+Internal filtering tests reconstruct scanlines independently. Raw zlib
+tests cover length/distance coding, overlapping copies, stored blocks,
+checksums, and final-block termination. Huffman tests compare code
+lengths and weighted cost with the bundled CPU implementation, including
+degenerate alphabets, stable ties, and skewed frequencies requiring
+length limiting. Header tests independently expand repetition codes.
+Corruption tests separate PNG CRC failures from Adler-32 failures by
+repairing the enclosing chunk CRC. Internal test interfaces in
+\code{PngCompressionKernels.cuh} use production device routines and
+also expose the fixed/stored baseline for size comparisons.
+
+The \code{CudaPngSave\_*} cases exercise the production dispatch path:
+both iteration widths, AA factors~1--4, odd dimensions, repeated saves
+and resizing, copied/moved snapshots, render-pool frame publication,
+synchronous Background completion, Unicode filenames, existing-file
+skips, write failures, and switching back to queued CPU saves. Rotated
+Default and custom palettes are compared exactly with the CPU saver for
+both iteration widths and AA factors~1--4. Save snapshots are constructed
+before subsequent rotation and auxiliary-depth mutations to verify that
+captured settings survive renderer reuse.
+
+The \code{CudaRecolor\_*} cases compare host-buffer GPU recoloring and
+normal GPU frame extraction against independent expected colors. Coverage
+includes padded input rows, odd dimensions, both iteration widths, AA
+factors~1--4, interior samples, rotation saturation and overflow boundaries,
+Default and custom palette tables, Basic grayscale, scalar-setting reuse,
+output-capacity checks, and recovery after invalid requests. Queued tests
+exercise repeated rotation, reset, resizing, paced cancellation, disabled
+repainting, later rendering, and unchanged iteration counts.
+\code{FractalSharkLib\_RecolorCpuWithoutCuda} exercises the same queued
+lifecycle with CUDA disabled. The existing CPU save-pool and PNG tests
+also remain runnable without CUDA hardware.
+
+Run the following PowerShell commands from the repository root after
+building both Windows configurations:
+
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[language={},upquote=true]
+foreach ($configuration in 'Debug', 'Release') {
+    & ".\$configuration\FractalSharkCudaTest.exe" --use-gpu `
+        --filter=CudaPng_* --filter=CudaPngSave_* --filter=CudaRecolor_*
+    & ".\$configuration\FractalSharkTest.exe" `
+        --filter=FractalSharkLib_SavePool* `
+        --filter=FractalSharkLib_PngEncoding* `
+        --filter=FractalSharkLib_RecolorCpuWithoutCuda
+}
+\end{lstlisting}
+\end{minipage}
+
+\paragraph{Existing render goldens.}
+Two existing View0 cases exercise CPU64 and GPU1x32 PNG saves through
+\code{SaveCurrentFractal}. Their fixtures drain the render pool, call
+\code{CalcFractal(true)}, save the current frame, and wait for completion.
+The eight existing GPU color goldens additionally cover both iteration widths
+and AA factors~1--4. Only these ten cases are selected by the following commands:
+
+\noindent\begin{minipage}{\linewidth}
+\begin{lstlisting}[language={},upquote=true]
+foreach ($configuration in 'Debug', 'Release') {
+    & ".\$configuration\FractalSharkTest.exe" --use-gpu `
+        --filter "RenderGolden_Basic_Cpu64_View0_Bits32_Store0_*" `
+        --filter "RenderGolden_Basic_Gpu1x32_View0_Bits32_Store0_*" `
+        --filter "RenderGolden_GpuColors_*"
+}
+\end{lstlisting}
+\end{minipage}
+
+Render goldens compare decoded RGBA16 pixels, so different compression
+bytes alone require no golden update. Intentional pixel changes use the
+selected-case update procedure in \cref{subsec:render-regression-goldens};
+unaffected cases need not be regenerated or rerun.
+
+\paragraph{Benchmark procedure.}
+The standalone benchmark uses opaque uniform, gradient, seeded-noise,
+and GPU-rendered Mandelbrot images at 3840~by~2160 resolution:
+
+\begin{lstlisting}[language={},upquote=true]
+.\Release\FractalSharkCudaTest.exe --use-gpu --filter=CudaPngBenchmark_4K
+\end{lstlisting}
+
+Run it after other builds and tests complete. Every output is decoded
+and checked exactly. Compression size must not exceed the fixed/stored
+baseline, and uniform, gradient, and Mandelbrot fixtures must improve
+on that baseline. Timings are diagnostic rather than assertions;
+\cref{subsec:png-benchmarks} defines the measurement boundaries and
+reports the recorded results.
+
+\paragraph{Compute Sanitizer on Windows.}
+Select named-pipe transport before launching memcheck:
+
+\begin{lstlisting}[language={},upquote=true]
+$env:NV_COMPUTE_SANITIZER_LOCAL_CONNECTION_OVERRIDE = 'named-pipes'
+& "$env:CUDA_PATH/compute-sanitizer/compute-sanitizer.exe" `
+    --tool memcheck --error-exitcode 99 `
+    .\Debug\FractalSharkCudaTest.exe --use-gpu `
+    --filter=CudaPng_* --filter=CudaPngSave_* --filter=CudaRecolor_*
+\end{lstlisting}
+
+The sanitizer communicates with its instrumented process. Named pipes
+keep that Windows communication local without a TCP listener; TCP
+transport can otherwise produce a firewall prompt attributed to the
+test executable. Ordinary encoder tests start no network service.
+The transport override is documented in NVIDIA's
+\href{https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html\#environment-variables}
+{Compute Sanitizer environment-variable reference}.
+
+% -----------------------------------------------------------------
+\subsection{Selected Kernel Entry Points}
+\label{sec:kernel-list}
+
+This section lists representative CUDA entry points.  It is intentionally not
+exhaustive: templated helpers, wrapper launch functions, generated
+specializations, and internal kernels change more frequently than this appendix.
+
+\begin{itemize}
+
+\item \textbf{Mandelbrot base kernels} (\cref{sec:mandel-base-kernels})
+  \begin{itemize}
+    \item \code{mandel\_1x\_float}
+    \item \code{mandel\_1x\_double}
+    \item \code{mandel\_2x\_float}
+    \item \code{mandel\_2x\_double}
+    \item \code{mandel\_4x\_float}
+    \item \code{mandel\_4x\_double}
+    \item \code{mandel\_hdr\_float}
+  \end{itemize}
+
+\item \textbf{Mandelbrot perturbation kernels}
+  \begin{itemize}
+    \item \code{mandel\_1x\_double\_perturb\_bla}
+    \item \code{mandel\_1xHDR\_float\_perturb\_bla} (\cref{sec:bilinear-approx})
+    \item \code{mandel\_1xHDR\_float\_perturb\_lav2} (\cref{sec:la-v2-perturb,sec:perturb-only})
+  \end{itemize}
+
+\item \textbf{High-precision GPU reference kernels}
+  (\cref{subsec:ref-orbit-gpu,subsec:fused-ntt-reference-step})
+  \begin{itemize}
+    \item \code{HpSharkReferenceSetupKernel}
+    \item \code{HpSharkReferenceGpuLoop}
+  \end{itemize}
+
+\item \textbf{Utility kernels}
+  \begin{itemize}
+    \item \code{antialiasing\_kernel}
+    \item \code{max\_reduce}
+    \item \code{max\_kernel}
+  \end{itemize}
+
+\item \textbf{PNG encoding kernels} (\cref{subsec:png-output})
+  \begin{itemize}
+    \item Serialization and scanline filter selection
+    \item Regional LZ77 encoding and dynamic Huffman construction
+    \item Compaction, Adler-32, and PNG chunk assembly/CRC
+  \end{itemize}
+
+\item \textbf{Reference NTT primitives} (\cref{sec:ntt-multiply})
+  \begin{itemize}
+    \item \code{SharkNTT\_Primitives}
+  \end{itemize}
+
+\item \textbf{Disabled kernels}
+  \begin{itemize}
+    \item \code{mandel\_2x\_float\_perturb\_setup}
+    \item \code{mandel\_2x\_float\_perturb}
+  \end{itemize}
+
+\end{itemize}
+
+\subsubsection{Commentary}
+
+\begin{itemize}
+
+\item All the per-pixel CUDA kernels are in \code{gpu\_render.cu}. The two
+most interesting are probably \code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_bla} and
+\code{mandel\_\allowbreak 1xHDR\_\allowbreak float\_\allowbreak perturb\_lav2}, which are the ones I've spent the
+most time on lately. For better performance at low zoom levels, consider
+\code{mandel\_1x\_float\_perturb}, which leaves out linear approximation
+and just does straight perturbation up to $\sim 10^{30}$, which corresponds
+with the 32-bit float exponent range.
+
+\item The \code{mandel\_1x\_float} (\cref{sec:mandel-1x-float}) is the classic 32-bit float Mandelbrot and
+is screaming fast on a GPU. This one is optimized with fused multiply-add for
+fun even though it is of limited practical use because one can barely zoom in before
+pixellation sets in.
+
+\end{itemize}
+\subsection{OpenGL Display Pipeline}
+\label{subsec:opengl-display}
+
+The GL consumer thread inside \code{RenderThreadPool} dequeues completed
+frames from a \code{FrameCompletionQueue} and uploads each frame as an
+OpenGL texture.  Before any GL call is issued, the thread makes the
+shared context current on itself.
+
+Two rendering paths are supported.  The \emph{software path} targets
+GL~1.1--compatible drivers (including the GDI Generic fallback) by tiling
+the frame into power-of-two chunks that respect the
+\code{GL\_MAX\_TEXTURE\_SIZE} limit---typically 1024 on GDI Generic---and
+converting \code{Color16} pixels to RGBA8 before upload.  The
+\emph{hardware path} uploads the entire frame as a single
+non-power-of-two texture in RGBA16 format via \code{glTexImage2D},
+avoiding the tiling overhead entirely.
+
+Both paths flip the Y~axis during texture-coordinate generation to
+account for the mismatch between the top-left origin used by the
+frame buffer and the bottom-left origin expected by OpenGL.
+
+% -----------------------------------------------------------------
+\subsection{PNG Output and GPU Compression}
+\label{subsec:png-output}
+
+\FractalShark{} writes lossless 16-bit PNG images through the backend
+selected by the resolved render algorithm. CPU algorithms retain
+\code{WPngImage} encoding and the background save thread pool. GPU
+algorithms use the CUDA encoder and finish encoding and writing on the
+thread that initiated the save. AUTO follows the resolved algorithm's
+\code{UseLocalColor} setting. Both paths share filename resolution,
+extension handling, and the behavior of skipping an existing output file.
+
+\subsubsection{Save dispatch and snapshot ownership}
+
+\code{SaveCurrentFractal} captures the encoder backend, dimensions,
+antialiasing factor, iteration type and limit, palette, and iteration
+buffer in \code{PngParallelSave}. A copied snapshot owns an independent
+iteration buffer. A moved snapshot installs a replacement current buffer
+and returns its original storage to the spare-buffer pool after saving.
+Queued CPU saves consequently remain valid across later renders or
+resizes. Iteration-text saves also retain the background worker path.
+
+Callers drain the render pool before reading the authoritative
+\code{m\_CurIters} snapshot (\cref{subsec:two-render-paths}). The GPU save
+path initializes renderer~0 from that snapshot and uploads its logical
+iteration rows using the padded host row stride. The upload avoids any
+dependency on which renderer produced the published frame. Existing
+GPU coloring and antialiasing kernels then produce the final packed,
+row-major \code{Color16} image on the compute stream. The device image
+passes directly to a lazily allocated, reusable PNG encoder; no
+uncompressed color image is downloaded for encoding.
+
+GPU saves apply the same palette rotation, saturation, auxiliary-depth shift,
+and palette lookup as CPU saves, using the snapshot's captured settings
+(\cref{subsec:coloring}).
+Encoding is lossless with respect to those final colors. GPU encoding
+and file-write failures return directly to the caller, whereas CPU
+background failures use the existing worker diagnostics. The GPU bridge
+waits for pending stream work before releasing the save snapshot and
+does not retain its palette address as a host cache key.
+
+\code{PngCompletionMode::Background} permits background completion only
+for CPU saves. GPU saves are complete when the save call returns.
+The corresponding CLI response and timing behavior is documented in
+\cref{sec:fractalshark-cli}.
+
+\subsubsection{Encoder interface and lifetime}
+
+The CUDA-facing interface is declared in
+\code{FractalSharkGpuLib/PngEncoder.cuh}:
+
+\begin{lstlisting}
+Png::GpuPngEncoder encoder;
+std::vector<unsigned char> pngBytes;
+const cudaError_t error = encoder.Encode(
+    devicePixels, width, height, rowStrideBytes, stream, pngBytes);
+\end{lstlisting}
+
+The input is a caller-owned device allocation of native-endian 16-bit
+RGBA samples with an explicit byte stride. Row padding is ignored;
+the allocation must cover the requested image and remain valid until
+the call returns. Alpha is straight, matching \code{WPngImage}.
+Opaque images use RGB16, PNG color type~2; any non-opaque sample selects
+RGBA16, color type~6. Low channel bits and transparent pixels' RGB
+values are preserved. Output is non-interlaced and contains the PNG
+signature followed by IHDR, IDAT, and IEND chunks
+\cite{PNGThirdEdition2025}.
+
+\code{Encode} returns \code{cudaSuccess} with completed host bytes,
+or a CUDA error with an empty output vector. Host allocation exceptions
+propagate. Dimension, stride, alignment, and size-overflow checks precede
+kernel execution; accessible device storage remains a caller requirement.
+Each encoder context binds to the device used for its first valid call.
+Calls on one context must be serialized, while separate contexts and
+streams may execute concurrently.
+
+\code{GetWorkspaceBytes()} reports retained device allocation capacity,
+excluding the input buffer and host output. Workspace grows as needed
+and is reused for smaller images. Destruction releases the
+workspace on its owning device. Encoding waits for its supplied stream
+to obtain alpha information, compressed sizes, and completed bytes;
+it does not call \code{cudaDevice\allowbreak Synchronize}. Workspace allocation
+uses \code{cudaMalloc}/\code{cudaFree}, which can impose additional
+allocation synchronization.
+
+\subsubsection{Serialization and scanline filtering}
+
+\Cref{fig:png-encoder-pipeline} summarizes the GPU save path.
+\code{PngEncoder.cu} serializes samples in big-endian byte order.
+Each scanline evaluates the PNG None, Sub, Up, Average, and Paeth
+filters using six bytes per RGB16 pixel or eight per RGBA16 pixel
+\cite{PNGThirdEdition2025}. The minimum-sum scoring matches the bundled
+LodePNG heuristic, including its unsigned None score and
+\code{255 - value} convention for negative differences. Equal scores
+select the lowest filter number. Only the chosen filtered row is
+materialized in the compression input.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+  stage/.style={draw, rounded corners, align=center, font=\small,
+                text width=3.7cm, minimum height=1.1cm},
+  flow/.style={-{Latex[length=2mm]}, thick},
+  node distance=0.55cm and 0.6cm]
+  \node[stage] (color) {Upload snapshot\\GPU coloring and AA};
+  \node[stage, right=of color] (filter) {Serialize samples\\Select row filters};
+  \node[stage, right=of filter] (deflate) {Regional DEFLATE\\encoding};
+  \node[stage, below=of deflate] (frame) {GPU checksums\\and PNG assembly};
+  \node[stage, left=of frame] (transfer) {Transfer PNG bytes\\to host};
+  \node[stage, left=of transfer] (write) {Write output file\\Return save status};
+  \draw[flow] (color) -- (filter);
+  \draw[flow] (filter) -- (deflate);
+  \draw[flow] (deflate) -- (frame);
+  \draw[flow] (frame) -- (transfer);
+  \draw[flow] (transfer) -- (write);
+\end{tikzpicture}
+\caption[GPU PNG save pipeline]{GPU PNG save pipeline. Coloring,
+filtering, compression, checksums, and PNG assembly use device data.
+Only small result metadata and completed PNG bytes return to the host;
+the initiating thread waits for completion and writes the file.}
+\label{fig:png-encoder-pipeline}
+\end{figure}
+
+\subsubsection{Regional DEFLATE and dynamic Huffman coding}
+
+Filtered bytes are divided into independent regions of at most
+32~KiB. A warp processes each region with a 4,096-entry hash table,
+a greedy LZ77 parser, and warp-assisted match comparisons. Matches
+reference only earlier positions within their own region, may overlap,
+and have a maximum length of 258~bytes. Ordered position values and
+\code{atomicMax} make hash insertion deterministic when positions
+consumed by one match collide. Hash tables and intermediate buffers
+reside in allocated device workspace.
+
+Each region first emits a non-final fixed-Huffman block followed by an
+empty stored block that restores byte alignment. If that representation
+is at least as large as a stored block, a non-final stored block replaces
+it. A second kernel constructs dynamic Huffman tables and replaces the
+candidate only when the complete dynamic representation is strictly
+smaller. Equal sizes retain the existing candidate. Block syntax and
+length/distance coding follow DEFLATE \cite{RFC1951}.
+
+\code{PngHuffman.cuh} implements iterative boundary package merge for
+length-limited Huffman trees: 15~bits for literal/length and distance
+codes, and 7~bits for the header alphabet. Stable frequency/symbol
+ordering resolves ties deterministically. Empty and single-symbol
+alphabets use two one-bit codes for decoder compatibility; the
+end-of-block symbol always receives a frequency of one. Canonical
+codes are reversed for DEFLATE bit emission.
+
+The dynamic header trims trailing unused symbols and run-length encodes
+the combined code lengths with symbols~16, 17, and~18. Candidate size
+includes all header and payload bits, the end-of-block symbol, and the
+following empty stored block's alignment and length fields. A lower
+bound skips header construction when even a minimum header cannot
+improve the candidate. Only winning regions replay the deterministic
+parser; no per-byte token buffer is retained. Tree nodes, sorting
+buffers, traversal stacks, tables, and header runs occupy reusable
+device workspace.
+
+For \code{inputBytes} filtered bytes in \code{regionCount} regions,
+stored-block fallback bounds the complete zlib output by
+\code{inputBytes + 5 * regionCount + 11} bytes. A CUB device prefix
+scan computes output offsets, and a compaction kernel assembles the
+regions in their original order.
+
+\subsubsection{Checksums and PNG framing}
+
+The image uses one zlib header, one final empty stored block, and one
+Adler-32 trailer \cite{RFC1950}. IDAT boundaries do not start new
+compression streams. Each IDAT payload is at most 64~KiB. The GPU
+generates PNG chunk headers and CRCs, combining ordered warp segments
+through scalar arithmetic over the reflected CRC polynomial. The host
+receives small result metadata and the final PNG byte vector.
+
+Compression selection is automatic and requires no public mode
+argument. Stronger match searching and dictionaries spanning region
+boundaries remain possible future improvements. The current independent
+regions favor parallelism and bounded workspace at the cost of some
+compression ratio.
+
+\subsubsection{Measured encoding cost and output size}
+\label{subsec:png-benchmarks}
+
+\Cref{tab:png-current-benchmark,tab:png-compression-sizes} report
+3840~by~2160 opaque images measured on October~4, 2026 with an NVIDIA
+GeForce RTX~5090 (\code{sm\_120}), CUDA Toolkit/runtime~13.2, and
+Visual Studio~2026 in Windows Release. The measurements were collected
+after builds and correctness tests completed, with no concurrent build
+or test workload. The benchmark procedure is given in
+\cref{subsec:png-validation}.
+
+GPU timing includes serialization, filtering, compression, checksums,
+PNG assembly, stream waits, and transfer of completed bytes. Input
+upload and construction of the CPU \code{WPngImage} occur outside the
+measured interval. Warm GPU and CPU times are medians of three calls;
+first-call timing separately includes initial workspace allocation.
+Fractal rendering, palette conversion, iteration upload, and disk
+writing are excluded. The CPU baseline uses
+\code{PngEncodingOptions\{false, false, 32\}}. These measurements
+characterize the fixtures and hardware rather than end-to-end save
+latency or a timing guarantee.
+
+\begin{table}[!htbp]
+\centering
+\small
+\setlength{\tabcolsep}{4pt}
+\caption[4K PNG encoding measurements]{4K PNG encoding measurements
+after production save integration. Times are warm medians in
+milliseconds; workspace is retained encoder allocation capacity in MiB.}
+\label{tab:png-current-benchmark}
+\begin{tabularx}{\textwidth}{Xrrrrr}
+\hline
+Image & GPU ms & CPU ms & GPU bytes & CPU bytes & MiB \\
+\hline
+Uniform      & 2.42  & 502.36  & 76,027     & 51,113     & 264.3 \\
+Gradient     & 5.31  & 671.04  & 3,477,715  & 1,147,577  & 267.5 \\
+Seeded noise & 42.79 & 1883.63 & 49,785,331 & 49,794,895 & 311.7 \\
+Mandelbrot   & 13.12 & 598.19  & 857,686    & 692,127    & 265.0 \\
+\hline
+\end{tabularx}
+\end{table}
+
+The Mandelbrot fixture encodes in approximately 13.12~ms on the GPU
+versus 598.19~ms on the CPU, while its GPU file is approximately
+1.24~times the CPU size. The gradient fixture retains a larger size
+penalty because the greedy parser and independent dictionaries limit
+match discovery. Noise selects stored blocks and has nearly the same
+output size as the CPU encoder. Retained workspace excludes the
+63.3~MiB input image and all host allocations.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption[PNG compression size comparison]{PNG compression size comparison
+on identical filtered 4K inputs. Dynamic coding replaces the fixed/stored
+candidate only when smaller; equal sizes retain that candidate.}
+\label{tab:png-compression-sizes}
+\begin{tabularx}{\textwidth}{Xrrr}
+\hline
+Image & Fixed/stored bytes & Dynamic bytes & Reduction \\
+\hline
+Uniform      & 325,145    & 76,027     & 76.6\% \\
+Gradient     & 5,082,472  & 3,477,715  & 31.6\% \\
+Seeded noise & 49,785,331 & 49,785,331 & 0\% \\
+Mandelbrot   & 1,180,922  & 857,686    & 27.4\% \\
+\hline
+\end{tabularx}
+\end{table}
+
+Dynamic code construction and parser replay trade encoding work for
+smaller files and add approximately 45~MiB to retained 4K workspace
+relative to the initial fixed/stored implementation. Timing is
+diagnostic; exact decoded pixels and compression-size bounds are the
+benchmark's assertions.
+\subsection{Imagina-Compatible Orbit Format}
+\label{subsec:imagina-format}
+
+\FractalShark{} can import and export reference orbits in a binary format
+compatible with the Imagina fractal viewer, enabling cross-tool validation of
+orbit computations.  The file layout is header-driven: a 32-byte file header
+contains a magic number (identifying either Imagina or \FractalShark{} origin), a
+reserved field, and byte offsets to the location and reference-orbit sections.
+The location section stores the reference-point coordinates and zoom metadata at
+arbitrary precision; the reference-orbit section stores orbit data together with
+precision radii (absolute and relative) and a validity radius.
+
+For orbits that include linear-approximation (LA) data, additional metadata
+accompanies the orbit payload: the reference point in single precision,
+iteration counts, periodicity status, and a flag indicating whether Approximation
+Transform (AT) acceleration is enabled.  AT parameters comprise the step
+length, escape radius, and LA coefficients (\code{ZCoeff}, \code{CCoeff},
+\code{InvZCoeff}), as well as the number of LA stages, allowing the importing
+application to reconstruct the full approximation hierarchy described in
+\cref{sec:la-stage-hierarchy}.  The format therefore supports both basic
+reference orbits (perturbation data only) and full LA-equipped orbits.
+
+\FractalShark{} exposes four save modes: uncompressed text, simple compressed,
+max compressed, and Imagina-compatible max compressed.  The Imagina-compatible
+variant writes the orbit in Imagina's native binary layout so that the file can
+be imported directly.  Loading supports two modes: \emph{Match}, which validates
+that the loaded orbit's coordinates and precision match the current view, and
+\emph{Use Saved}, which loads unconditionally and adopts the file's parameters.
+\subsection{Cross-Platform Considerations}
+\label{sec:cross-platform}
+
+\FractalShark{} supports Windows and Linux as peer platforms. Windows builds use
+Visual~Studio~2026 and MSBuild; Linux builds use CMake and Clang, with release
+binaries targeted at Ubuntu. Version~0.53 introduced the native Linux target.
+The Linux build includes the CPU numeric core, CUDA rendering kernels, GPU
+high-precision arithmetic, the command-line renderer, the portable unit tests,
+and the \code{FractalSharkGuiLinux} graphical application. The native Linux and
+Win32 graphical applications are maintained at feature parity over the same
+renderer and portable command contracts.
+
+\subsubsection{Dual build system}
+\label{subsec:dual-build}
+
+The Windows working tree and Visual~Studio solution are authoritative. Shared
+projects maintain parallel \code{.vcxproj} and \code{CMakeLists.txt} source
+lists and settings. Projects that remain Windows-only do not have CMake targets;
+the Win32 GUI and native Linux GUI are intentionally separate applications over
+the same renderer and portable command contracts. Adding or removing a source
+file from a shared project therefore requires updating both build descriptions.
+
+The Linux target set comprises \code{FractalSharkPlatform},
+\code{FractalSharkLib}, \code{FractalSharkGpuLib},
+\code{HpSharkFloatLib}, the explicit-instantiation generator, the GPU test
+harness and its support library, \code{FractalSharkTest},
+\code{FractalSharkCli}, and \code{FractalSharkGuiLinux}. The GUI additionally
+requires Xlib, GLX, and OpenGL. Dear~ImGui is fetched at a pinned version during
+CMake configuration. Splash images and Imagina test fixtures are embedded into
+ELF objects during the build, so the packaged executables do not depend on
+loose copies of those assets. The splash-image embedding step currently limits
+the GUI target to x86-64 ELF systems.
+
+Continuous integration configures and builds both Debug and Release on Linux,
+runs \code{FractalSharkTest}, and smoke-tests a release CLI render. It verifies
+that the CLI and GUI binaries have no unresolved shared-library dependencies
+and packages both release executables in the Linux archive. The GUI is built
+but is not launched on the headless runner. Separate workflow jobs build and
+test Windows and compile this document; release publication depends on all
+three jobs.
+
+\subsubsection{Building on Linux}
+\label{subsec:building-linux}
+
+For normal local Linux development, run \code{./build\_linux.sh}. The script
+configures and builds the persistent \code{build-debug/} and
+\code{build-release/} directories, which should remain in place for repeated
+manual testing and incremental rebuilds. After configuration, a Debug
+incremental build may use \code{cmake -{}-build build-debug -{}-parallel};
+the release equivalent uses \code{build-release}. Debug validation runs
+\code{./build-debug/FractalSharkTest/FractalSharkTest}.
+
+\code{HpSharkFloatTest} requires physical CUDA hardware for its runtime
+checks, so it is not expected to run on ordinary hosted CI. The GitHub Actions
+workflow at \code{.github/workflows/build.yml} remains the authoritative Linux
+environment setup reference. It records the exact package versions, CUDA and
+compiler selection, CMake flags, LFS materialization checks, dependency audits,
+release packaging behavior, and other details that should not be duplicated in
+prose.
+
+\subsubsection{Platform abstraction layer}
+\label{subsec:platform-abstraction}
+
+The \code{FractalSharkPlatform} library concentrates operating-system behavior
+behind portable interfaces. The \code{Environment} namespace covers aligned
+and system-heap allocation, file and directory operations, process and memory
+information, timing, thread naming and affinity, console access, input polling,
+temporary paths, embedded resources, diagnostics, and small user-interface
+helpers. Portable geometry and opaque-handle types prevent Win32 types from
+leaking into shared library interfaces.
+
+Dedicated abstractions cover crash handling, process memory limits, wait-cursor
+state, local IPC transport, and native OpenGL contexts. Each abstraction has
+separate Win32 and Linux translation units. The CLI server uses the local IPC
+interface with named pipes on Windows and Unix-domain sockets on Linux. The
+OpenGL wrapper uses WGL on Windows and GLX on Linux while presenting the same
+client-rectangle, context, buffer-swap, renderer-detection, and texture-limit
+interface to the rendering code. On Windows, the crash handler writes a
+\code{.dmp} minidump for post-mortem analysis.
+
+This separation avoids distributing platform conditionals throughout the
+numeric and rendering libraries. Platform-specific graphical behavior remains
+in \code{FractalShark::Win32} or \code{FractalShark::Linux}; portable commands
+and menu contracts remain directly in \code{FractalShark}. Operating-system
+entry points and third-party callback interfaces remain in the global namespace
+when required by their APIs.
+
+\subsubsection{Native Linux graphical application}
+\label{subsec:linux-gui}
+
+\code{FractalSharkGuiLinux} uses Xlib for its top-level window and event loop,
+GLX for the native OpenGL context, and the shared OpenGL display pipeline for
+presenting completed frames. The GUI thread owns the window, GLX context, and
+all Dear~ImGui state. It forwards input to an in-project ImGui Xlib backend,
+presents the latest renderer output, draws overlays, and swaps buffers from the
+same event loop. The backend handles mouse buttons and wheels, keyboard input,
+focus changes, window resizing, and clipboard integration.
+
+The right-click menu is a native X11 popup hierarchy rather than an ImGui
+window. It is generated from the shared \code{MenuTree} catalog and dispatches
+through the same portable command identifiers as the Win32 GUI. A shared
+\code{MenuState} implementation supplies enablement, check marks, and radio
+selections to both native menu builders. Linux-specific command handlers
+translate commands that require X11 operations. This arrangement keeps algorithm selection,
+navigation, built-in views, iteration controls, perturbation modes, palettes,
+tests, benchmarks, and linear-approximation settings synchronized with the
+portable command catalog while leaving window-system operations in the Linux
+front end. Palette rotation is handled by the portable command layer and uses
+the shared render-pool presentation path to recolor the current iteration
+buffer.
+
+Dear~ImGui supplies the overlay surfaces that do not need separate native
+windows: help and rendering-information messages, file selection, saved-view
+selection, manual location entry, and the drag-zoom rectangle. The X11 front
+end also implements resize-driven recalculation, mouse-wheel zoom, captured
+drag zoom, fullscreen and square-fullscreen transitions, minimization, feature
+finding and automatic zoom, save and load commands, and an X11 clipboard owner
+for UTF-8 text. A separate Xlib splash window displays a randomly selected
+embedded image while initialization proceeds.
+
+The Linux GUI is functional, and its feature set should continue to converge on
+the Win32 GUI. Current limitations should be stated explicitly as implementation
+gaps rather than hidden behind a premature claim of completed parity.
+
+\subsubsection{Arbitrary-precision serialization}
+\label{subsec:mpir-portability}
+
+\FractalShark{} relies on MPIR for arbitrary-precision integer arithmetic on
+Windows and on GMP for the same role on Linux. The two libraries are
+source-compatible at the API level but differ in some internal representation
+details, which matters because reference-orbit files and saved views contain
+serialized arbitrary-precision integers that must round-trip across platforms.
+
+To guarantee byte-identical files, \FractalShark{} defines a single canonical
+wire format that matches MPIR's native \code{\_\_mpz\_struct} layout. On
+Windows this format is produced by direct field access into the underlying
+MPIR object. On Linux the same byte sequence is reconstructed atop GMP using
+\code{mpz\_export} and \code{mpz\_import}, which expose limb data through a
+portable interface. The two implementations are validated against a checked-in
+golden file (\code{golden\_mpir.bin}) by the \code{TestMpirSerialization}
+unit test, which runs on both platforms in CI. Any divergence in the wire
+format fails the test on whichever platform regressed, preventing silent
+incompatibility between Windows-written and Linux-written orbit files.

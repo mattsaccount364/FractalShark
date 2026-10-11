@@ -28,6 +28,7 @@ target_sources(FractalSharkLib PRIVATE
     SaveFileTransaction.cpp
     RecommendedSettings.cpp
     RefOrbitCalc.cpp
+    RefOrbitKaratsuba.cpp
     RenderAlgorithm.cpp
     RenderThreadPool.cpp
     RenderToPng.cpp

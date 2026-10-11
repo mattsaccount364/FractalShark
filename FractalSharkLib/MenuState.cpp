@@ -142,6 +142,8 @@ MenuState::GetRadioSelection(RadioGroup group) const
                     return IDM_PERTURBATION_SINGLETHREAD_PERIODICITY;
                 case RefOrbitCalc::PerturbationAlg::MTPeriodicity3:
                     return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY;
+                case RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba:
+                    return IDM_PERTURBATION_MULTITHREAD9_KARATSUBA_PERIODICITY;
                 case RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed:
                     return IDM_PERTURBATION_MULTITHREAD2_PERIODICITY_PERTURB_MTHIGH_STMED;
                 case RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1:

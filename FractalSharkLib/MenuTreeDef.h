@@ -523,6 +523,10 @@ static const ::FractalShark::Node menu[] = {
                                    ::FractalShark::FractalCommand::PerturbationMultithread2Periodicity,
                                    ::FractalShark::RadioGroup::PerturbationMode),
              ::FractalShark::Radio(
+                 L"MT9 + Periodicity + Karatsuba",
+                 ::FractalShark::FractalCommand::PerturbationMultithread9KaratsubaPeriodicity,
+                 ::FractalShark::RadioGroup::PerturbationMode),
+             ::FractalShark::Radio(
                  L"MT2 + Periodicity + Perturb ST",
                  ::FractalShark::FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighStmed,
                  ::FractalShark::RadioGroup::PerturbationMode),

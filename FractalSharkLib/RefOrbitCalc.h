@@ -150,7 +150,8 @@ public:
         MTPeriodicity3PerturbMTHighMTMed4,
         MTPeriodicity5,
         GPU,
-        Auto
+        Auto,
+        MTPeriodicity9Karatsuba
     };
 
     enum class PerturbationResultType { None, LAOnly, MediumRes, HighRes, All };
@@ -313,6 +314,15 @@ private:
     void AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                                           HighPrecision initX,
                                           HighPrecision initY);
+
+    template <typename IterType,
+              class T,
+              class SubType,
+              BenchmarkMode BenchmarkState,
+              PerturbExtras PExtras>
+    void AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConverter &ptz,
+                                                   HighPrecision initX,
+                                                   HighPrecision initY);
 
     template <typename IterType,
               class T,

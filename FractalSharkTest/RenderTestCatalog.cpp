@@ -23,7 +23,10 @@ const AlgorithmViews OriginalViews[] = {
 std::string
 CaseName(const RenderCase &test, std::string_view family)
 {
-    return "RenderGolden_" + std::string{family} + "_" + test.Algorithm.AlgorithmStr + "_View" +
+    const std::string prefix = test.Reference == RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba
+                                   ? "RefOrbitKaratsuba_"
+                                   : "RenderGolden_";
+    return prefix + std::string{family} + "_" + test.Algorithm.AlgorithmStr + "_View" +
            std::to_string(test.View) + "_Bits" + (test.Bits == IterTypeEnum::Bits32 ? "32" : "64") +
            "_Store" + std::to_string(static_cast<int>(test.Storage)) + "_Ref" +
            std::to_string(static_cast<int>(test.Reference)) + "_AA" + std::to_string(test.Antialiasing) +
@@ -168,7 +171,9 @@ BuildCases()
             Append(cases, test, "Antialiasing");
         }
     }
-    for (int backend = 0; backend <= static_cast<int>(RefOrbitCalc::PerturbationAlg::Auto); ++backend) {
+    for (int backend = 0;
+         backend <= static_cast<int>(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+         ++backend) {
         for (const auto bits : {IterTypeEnum::Bits32, IterTypeEnum::Bits64}) {
             RenderCase test;
             test.Kind = Scenario::ReferenceBackend;
@@ -286,7 +291,9 @@ TEST(RenderCoverage_Inventory)
             }
         }
     }
-    for (int backend = 0; backend <= static_cast<int>(RefOrbitCalc::PerturbationAlg::Auto); ++backend) {
+    for (int backend = 0;
+         backend <= static_cast<int>(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+         ++backend) {
         for (const auto bits : {IterTypeEnum::Bits32, IterTypeEnum::Bits64}) {
             requireCase([&](const auto &test) {
                 return test.Kind == RenderTests::Scenario::ReferenceBackend && test.Bits == bits &&

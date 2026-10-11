@@ -71,6 +71,7 @@
     <ClCompile Include="TestLAParameters.cpp" />
     <ClCompile Include="MenuStateTest.cpp" />
     <ClCompile Include="TestMpirOrbitEval.cpp" />
+    <ClCompile Include="TestRefOrbitKaratsuba.cpp" />
     <ClCompile Include="TestMpirSerialization.cpp" />
     <ClCompile Include="TestPointZoomBBConverter.cpp" />
     <ClCompile Include="TestPrecisionCalculator.cpp" />

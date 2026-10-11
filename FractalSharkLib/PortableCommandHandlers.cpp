@@ -292,6 +292,9 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
         case FractalCommand::PerturbationMultithread2Periodicity:
             OnPerturbationMultithread2Periodicity();
             return;
+        case FractalCommand::PerturbationMultithread9KaratsubaPeriodicity:
+            OnPerturbationMultithread9KaratsubaPeriodicity();
+            return;
         case FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighStmed:
             OnPerturbationMt2PerturbMthighStmed();
             return;
@@ -990,6 +993,14 @@ PortableCommandHandlers::OnPerturbationSinglethreadPeriodicity()
 {
     GetFractal().EnqueueMutation("set perturbation algorithm ST periodicity", [](Fractal &f) {
         f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+    });
+}
+
+void
+PortableCommandHandlers::OnPerturbationMultithread9KaratsubaPeriodicity()
+{
+    GetFractal().EnqueueMutation("set perturbation algorithm MT9 Karatsuba periodicity", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
     });
 }
 

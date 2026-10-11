@@ -6,6 +6,7 @@
 #include "Fractal.h"
 #include "PerturbationResults.h"
 #include "RefOrbitCalc.h"
+#include "RefOrbitKaratsuba.h"
 
 #include "Exceptions.h"
 #include "ImaginaOrbit.h"
@@ -264,6 +265,9 @@ RefOrbitCalc::AddPerturbationReferencePoint(const PointZoomBBConverter &ptz)
                                          BenchmarkState,
                                          PExtras,
                                          ReuseMode::DontSaveForReuse>(
+            ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
+    } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity9Karatsuba) {
+        AddPerturbationReferencePointMT9Karatsuba<IterType, T, SubType, BenchmarkState, PExtras>(
             ptz, m_PerturbationGuessCalcX, m_PerturbationGuessCalcY);
     } else if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed) {
         // TODO: we're hardcoding SaveForReuse3 here.  This is the single-threaded case.
@@ -2122,6 +2126,152 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
     ShutdownAllocatorsIfNeeded<Reuse>(boundedAllocator, bumpAllocator);
 }
 
+// Full-mantissa Karatsuba products preserve configured precision. Samples intentionally
+// follow MT3's delayed pipeline: iteration i>0 publishes the preceding sampled state,
+// starting with Z1=c. The derivative remains a periodicity estimate, not a precision schedule.
+template <typename IterType,
+          class T,
+          class SubType,
+          RefOrbitCalc::BenchmarkMode BenchmarkState,
+          PerturbExtras PExtras>
+void
+RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConverter &ptz,
+                                                        HighPrecision cx,
+                                                        HighPrecision cy)
+{
+    auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
+        m_RefOrbitOptions, GetNextGenerationNumber());
+    PushbackResults(std::move(newArray));
+    auto *results = GetLast<IterType, T, PExtras>();
+    InitResults<IterType, T, decltype(*results), PExtras, ReuseMode::DontSaveForReuse>(
+        *results, ptz, cx, cy);
+
+    MPIRBoundedAllocator boundedAllocator;
+    boundedAllocator.InitScopedAllocators();
+    struct CallerTls {
+        CallerTls() { MPIRBoundedAllocator::InitTls(); }
+        ~CallerTls() { MPIRBoundedAllocator::ShutdownTls(); }
+    } callerTls;
+    // Reverse destruction order guarantees that products, compressors, and all MPIR
+    // values disappear before callerTls, including on cancellation or exceptions.
+    HighPrecision cxMpf;
+    HighPrecision cyMpf;
+    HighPrecision zx;
+    HighPrecision zy;
+    HighPrecision zxSquared;
+    HighPrecision zySquared;
+    HighPrecision cross;
+    HighPrecision temporary;
+    mpf_set(cxMpf.backend(), cx.backend());
+    mpf_set(cyMpf.backend(), cy.backend());
+    mpf_set(zx.backend(), cxMpf.backend());
+    mpf_set(zy.backend(), cyMpf.backend());
+    FractalShark::RefOrbitKaratsubaProducts products(mpf_get_prec(zx.backend()));
+
+    const auto toLow = [](mpf_srcptr value) -> T {
+        if constexpr (std::is_same_v<T, double> || std::is_same_v<T, float>) {
+            return static_cast<T>(mpf_get_d(value));
+        } else {
+            double mantissa;
+            const auto exponent = static_cast<int32_t>(mpf_get_2exp_d(&mantissa, value));
+            return T{exponent, static_cast<SubType>(mantissa)};
+        }
+    };
+    const T cxCast = toLow(cxMpf.backend());
+    const T cyCast = toLow(cyMpf.backend());
+    const T highOne{1.0};
+    const T highTwo{2.0};
+    // Match MT3: escape is tested against radius 16, and Bad uses float-normal range.
+    const SubType escapeNormSquared = static_cast<SubType>(256);
+    const T smallFloat{static_cast<SubType>(1.1754944e-38)};
+    const SubType glitch = static_cast<SubType>(0.0000001);
+    T dzdcX{1.0};
+    T dzdcY{0.0};
+    T doubleZxLast{0.0};
+    T doubleZyLast{0.0};
+    RefOrbitCompressor<IterType, T, PExtras> compressor{
+        *results, m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low)};
+
+    for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); ++i) {
+        if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
+            AbortMonitor::GetStopCalculatingGlobal()) {
+            break;
+        }
+        const T currentX = toLow(zx.backend());
+        const T currentY = toLow(zy.backend());
+        T doubleZx = doubleZxLast;
+        T doubleZy = doubleZyLast;
+        SubType znSize = 0;
+        bool periodicityShouldBreak = false;
+        if (i > 0) {
+            if constexpr (PExtras == PerturbExtras::Disable) {
+                results->AddUncompressedIteration({doubleZx, doubleZy});
+            } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
+                compressor.MaybeAddCompressedIteration({doubleZx, doubleZy, i});
+            } else if constexpr (PExtras == PerturbExtras::Bad) {
+                results->AddUncompressedIteration({doubleZx, doubleZy, false});
+                const T norm = HdrReduce((doubleZx * doubleZx + doubleZy * doubleZy) * glitch);
+                const auto zxReduced = HdrReduce(HdrAbs(doubleZx));
+                const auto zyReduced = HdrReduce(HdrAbs(doubleZy));
+                results->SetBad(HdrCompareToBothPositiveReducedLE(zxReduced, smallFloat) ||
+                                HdrCompareToBothPositiveReducedLE(zyReduced, smallFloat) ||
+                                HdrCompareToBothPositiveReducedLE(norm, smallFloat));
+            }
+            const SubType tempZX = static_cast<SubType>(doubleZx) + static_cast<SubType>(cxCast);
+            const SubType tempZY = static_cast<SubType>(doubleZy) + static_cast<SubType>(cyCast);
+            znSize = tempZX * tempZX + tempZY * tempZY;
+
+            HdrReduce(dzdcX);
+            HdrReduce(dzdcY);
+            HdrReduce(doubleZx);
+            HdrReduce(doubleZy);
+            const T orbitNorm = HdrMaxPositiveReduced(HdrAbs(doubleZx), HdrAbs(doubleZy));
+            const T derivativeNorm = HdrMaxPositiveReduced(HdrAbs(dzdcX), HdrAbs(dzdcY));
+            auto periodicityRadius = results->GetMaxRadius() * derivativeNorm * highTwo;
+            HdrReduce(periodicityRadius);
+            if (HdrCompareToBothPositiveReducedLT(orbitNorm, periodicityRadius)) {
+                if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                    periodicityShouldBreak = true;
+                }
+            } else {
+                const T dzdcXOrig = dzdcX;
+                dzdcX = highTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + highOne;
+                dzdcY = highTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
+            }
+        }
+
+        // The split backend requires at least two stored limbs per operand. Zero and
+        // short values arise at initialization and cancellation; handle them here so
+        // the product helper can rely on its fixed-precision construction contract.
+        if (std::abs(zx.backend()->_mp_size) >= 2 && std::abs(zy.backend()->_mp_size) >= 2) {
+            products.Compute(
+                zxSquared.backend(), zySquared.backend(), cross.backend(), zx.backend(), zy.backend());
+        } else {
+            mpf_mul(zxSquared.backend(), zx.backend(), zx.backend());
+            mpf_mul(zySquared.backend(), zy.backend(), zy.backend());
+            mpf_mul(cross.backend(), zx.backend(), zy.backend());
+        }
+        // Preserve MT3's sequence of full-width operations after the three products.
+        mpf_mul_ui(cross.backend(), cross.backend(), 2);
+        mpf_add(zy.backend(), cross.backend(), cyMpf.backend());
+        mpf_sub(temporary.backend(), zxSquared.backend(), zySquared.backend());
+        mpf_add(zx.backend(), temporary.backend(), cxMpf.backend());
+        doubleZxLast = currentX;
+        doubleZyLast = currentY;
+        if (periodicityShouldBreak) {
+            results->SetPeriodMaybeZero(static_cast<IterType>(results->GetCountOrbitEntries()));
+        }
+        if (periodicityShouldBreak || znSize > escapeNormSquared) {
+            break;
+        }
+    }
+    if constexpr (PExtras == PerturbExtras::Bad) {
+        results->SetBad(false);
+    }
+    results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
+    m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
+}
+
 template <typename IterType,
           class T,
           class SubType,
@@ -2783,6 +2933,13 @@ RefOrbitCalc::PerturbationAlg
 RefOrbitCalc::GetPerturbationAlg() const
 {
     if (m_PerturbationAlg == PerturbationAlg::Auto) {
+        // GetPrecision() asks RequiresReuse(), which resolves Auto again. Estimate
+        // directly from the view without reuse padding to avoid recursion and an
+        // eligibility threshold that changes with the selected backend.
+        const uint64_t precisionBits = Fractal::GetPrecision(m_Fractal.GetPtz(), false);
+        if (precisionBits >= FractalShark::RefOrbitKaratsubaAutoPrecisionBits) {
+            return PerturbationAlg::MTPeriodicity9Karatsuba;
+        }
         HighPrecision zoomFactor = m_Fractal.GetZoomFactor();
 
         if (zoomFactor < HighPrecision{10}.power(150)) {
@@ -2824,6 +2981,8 @@ RefOrbitCalc::GetPerturbationAlgStr() const
             return "MTPeriodicity2PerturbMTHighMTMed4";
         case PerturbationAlg::MTPeriodicity5:
             return "MTPeriodicity5";
+        case PerturbationAlg::MTPeriodicity9Karatsuba:
+            return "MTPeriodicity9Karatsuba";
         case PerturbationAlg::GPU:
             return "GPU";
         default:

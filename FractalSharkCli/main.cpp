@@ -73,6 +73,8 @@ constexpr auto PerturbationAlgorithms = std::array{
     PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed4",
                                 RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4},
     PerturbationAlgorithmOption{"MTPeriodicity5", RefOrbitCalc::PerturbationAlg::MTPeriodicity5},
+    PerturbationAlgorithmOption{"MTPeriodicity9Karatsuba",
+                                RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
     PerturbationAlgorithmOption{"GPU", RefOrbitCalc::PerturbationAlg::GPU}};
 
 struct CliArgs {
@@ -215,7 +217,10 @@ PrintUsage()
         std::cout << "                      " << algorithm.Name << "\n";
     }
     std::cout
-        << "                    Auto chooses reference generation automatically\n"
+        << "                    Auto selects MTPeriodicity9Karatsuba at 16384 required precision bits\n"
+           "                    Below that threshold Auto keeps its existing reference choices\n"
+           "                    MTPeriodicity9Karatsuba uses eight workers plus the caller\n"
+           "                    Explicit MTPeriodicity9Karatsuba selection works at any depth\n"
            "                    GPU uses CUDA with an HDR perturbation render algorithm\n"
            "  --clear-reference-orbits\n"
            "                    Clear all cached reference orbits before each render\n"

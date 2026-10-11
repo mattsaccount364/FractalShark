@@ -23,6 +23,7 @@ target_sources(FractalSharkTest PRIVATE
     TestLAParameters.cpp
     MenuStateTest.cpp
     TestMpirOrbitEval.cpp
+    TestRefOrbitKaratsuba.cpp
     TestPointZoomBBConverter.cpp
     TestPrecisionCalculator.cpp
     TestGrowableVector.cpp

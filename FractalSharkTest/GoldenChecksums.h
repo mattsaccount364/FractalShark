@@ -10,7 +10,7 @@ struct GoldenChecksum {
 };
 
 // Shared Windows Release baseline: CRC-64 of decoded RGBA16 PNG bytes or canonical reference text.
-inline constexpr std::array<GoldenChecksum, 2485> GoldenChecksums{{
+inline constexpr std::array<GoldenChecksum, 2487> GoldenChecksums{{
     {"RenderGolden_Antialiasing_Gpu1x32_View0_Bits32_Store0_Ref2_AA1_Step1_Comp20_LA0_Threads1_Load0",
      "ad1e24a1ba6ae5e8"},
     {"RenderGolden_Antialiasing_Gpu1x32_View0_Bits32_Store0_Ref2_AA2_Step1_Comp20_LA0_Threads1_Load0",
@@ -5158,6 +5158,12 @@ inline constexpr std::array<GoldenChecksum, 2485> GoldenChecksums{{
     {"RenderGolden_ResizeGpu_Frame98", "12bb7aa317bd3b13"},
     {"RenderGolden_ResizeGpu_Frame99", "af21a6cb773e5dce"},
     {"RenderRegression_VectorBillion", "INCOMPLETE"},
+    {"RefOrbitKaratsuba_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits32_Store0_Ref12_AA1_Step1_"
+     "Comp20_LA0_Threads1_Load0",
+     "88184a0787aa341c"},
+    {"RefOrbitKaratsuba_ReferenceBackend_Cpu64PerturbedBLAV2HDR_View5_Bits64_Store0_Ref12_AA1_Step1_"
+     "Comp20_LA0_Threads1_Load0",
+     "88184a0787aa341c"},
 }};
 inline constexpr std::string_view IncompleteCrc = "INCOMPLETE";
 } // namespace RenderTests

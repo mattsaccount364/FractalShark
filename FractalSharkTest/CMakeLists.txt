@@ -31,6 +31,8 @@ target_sources(FractalSharkTest PRIVATE
     TestGuiShared.cpp
     TestFractalSharkLib.cpp
     TestSaveTransactions.cpp
+    TestBatchCompletion.cpp
+    ${CMAKE_SOURCE_DIR}/FractalSharkCli/BatchCompletion.cpp
 )
 
 # TestMpirSerialization exercises raw stream I/O that is byte-compatible

@@ -34,6 +34,7 @@
 
 #include <deque>
 #include <filesystem>
+#include <future>
 #include <string>
 
 template <typename IterType, class T, class SubType, PerturbExtras PExtras> class LAReference;
@@ -223,6 +224,11 @@ public:
     // Queue saves and return 0 after submission. Workers log encoding and file errors;
     // CleanupThreads(true) waits for all queued saves and buffer recycling to finish.
     int SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters, SaveOverwritePolicy overwrite);
+    // Return this job's encoding/publication result without waiting. A retained future must
+    // not retain the image snapshot; CleanupThreads(true) still guarantees buffer recycling.
+    std::future<SaveResult> SaveCurrentFractalWithResult(std::wstring filenameBase,
+                                                         bool copyTheIters,
+                                                         SaveOverwritePolicy overwrite);
     int SaveHiResFractal(std::wstring filenameBase, SaveOverwritePolicy overwrite);
     int SaveItersAsText(std::wstring filenameBase, SaveOverwritePolicy overwrite);
     void SaveRefOrbit(CompressToDisk compression, std::wstring filename) const;

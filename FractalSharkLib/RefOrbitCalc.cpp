@@ -186,6 +186,13 @@ RefOrbitCalc::GetLastConst() const
     return GetEltConst<IterType, T, PExtras>(m_C.size() - 1);
 }
 
+// External orbit-inspection callers need emitted definitions in optimized builds;
+// internal uses alone can be entirely inlined and leave these specializations unexported.
+template PerturbationResults<uint64_t, double, PerturbExtras::Disable> *RefOrbitCalc::
+    GetLast<uint64_t, double, PerturbExtras::Disable>();
+template PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *RefOrbitCalc::
+    GetLast<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
+
 template <typename IterType, class T, PerturbExtras PExtras>
 PerturbationResults<IterType, T, PExtras> *
 RefOrbitCalc::GetElt(size_t i)

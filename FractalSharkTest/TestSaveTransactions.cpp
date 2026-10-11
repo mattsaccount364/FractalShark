@@ -1,7 +1,9 @@
 #include "Environment.h"
+#include "Fractal.h"
 #include "FractalSaveThreadPool.h"
 #include "PngParallelSave.h"
 #include "PngSaveLayout.h"
+#include "RenderToPng.h"
 #include "SaveFileTransaction.h"
 #include "TestFramework.h"
 #include "WPngImage/WPngImage.hh"
@@ -12,8 +14,10 @@
 #include <barrier>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <limits>
+#include <sstream>
 #include <thread>
 
 namespace {
@@ -49,6 +53,113 @@ WriteText(const std::filesystem::path &path, SaveOverwritePolicy overwrite, cons
         Environment::FromFsPath(path), overwrite, [&](std::ostream &out) { out << text; });
 }
 } // namespace
+
+TEST(PngSave_AsyncResultsReportFailureAndRecovery)
+{
+    SaveDirectory directory;
+    const auto invalid = directory.Path / "missing" / "failed.png";
+    const auto valid = directory.Path / "valid.png";
+    Fractal fractal{16, 16, nullptr, false, UINT64_MAX, true, GpuMode::Disabled};
+    fractal.GetRenderPool()->Drain();
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
+    fractal.SetNumIterations<uint32_t>(64);
+    fractal.CalcFractal(true);
+    auto failed =
+        fractal.SaveCurrentFractalWithResult(invalid.wstring(), true, SaveOverwritePolicy::SkipExisting);
+    auto succeeded =
+        fractal.SaveCurrentFractalWithResult(valid.wstring(), true, SaveOverwritePolicy::SkipExisting);
+    // Drain with both futures still retained: result ownership must not retain snapshots.
+    ASSERT_TRUE(fractal.CleanupThreads(true));
+    const auto failure = failed.get();
+    ASSERT_TRUE(failure.Outcome == SaveOutcome::Failed);
+    ASSERT_TRUE(failure.OutputPath == invalid.wstring());
+    ASSERT_NE(failure.ErrorCode, 0);
+    ASSERT_FALSE(failure.Diagnostic.empty());
+    ASSERT_FALSE(std::filesystem::exists(invalid));
+    ASSERT_TRUE(succeeded.get().Outcome == SaveOutcome::Written);
+    WPngImage image;
+    ASSERT_TRUE(image.loadImage(valid.string()) == WPngImage::kIOStatus_Ok);
+    ASSERT_EQ(image.width(), 16);
+    ASSERT_EQ(image.height(), 16);
+    const auto original = ReadBytes(valid);
+    auto skipped =
+        fractal.SaveCurrentFractalWithResult(valid.wstring(), true, SaveOverwritePolicy::SkipExisting);
+    fractal.CleanupThreads(true);
+    ASSERT_TRUE(skipped.get().Outcome == SaveOutcome::SkippedExisting);
+    ASSERT_TRUE(ReadBytes(valid) == original);
+}
+
+TEST(PngSave_CompletionResultOutlivesFractal)
+{
+    SaveDirectory directory;
+    const auto output = directory.Path / "moved.png";
+    std::future<SaveResult> completion;
+    {
+        Fractal fractal{16, 16, nullptr, false, UINT64_MAX, true, GpuMode::Disabled};
+        fractal.GetRenderPool()->Drain();
+        ASSERT_TRUE(
+            fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
+        fractal.SetNumIterations<uint32_t>(64);
+        fractal.CalcFractal(true);
+        completion = fractal.SaveCurrentFractalWithResult(
+            output.wstring(), false, SaveOverwritePolicy::SkipExisting);
+        // Shutdown must destroy the moved-buffer recycler before the Fractal owner dies,
+        // even when nobody has consumed the completion future yet.
+    }
+    ASSERT_TRUE(std::filesystem::is_regular_file(output));
+    ASSERT_TRUE(completion.get().Outcome == SaveOutcome::Written);
+}
+
+TEST(PngSave_RenderToPngChecksWaitAndExposesBackgroundResults)
+{
+    SaveDirectory directory;
+    Fractal fractal{16, 16, nullptr, false, UINT64_MAX, true, GpuMode::Disabled};
+    RenderRequest request;
+    request.Width = 16;
+    request.Height = 16;
+    request.ViewSource = RenderRequest::ViewSourceKind::Builtin;
+    request.BuiltinView = 0;
+    request.Iterations = 64;
+    request.Antialiasing = 1;
+    request.Algorithm = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
+    const auto invalid = directory.Path / "missing" / "failed.png";
+    request.OutPngBasename = invalid.wstring();
+    std::string error;
+    ASSERT_EQ(RenderToPng(request, fractal, &error), 1);
+    ASSERT_TRUE(error.find(invalid.string()) != std::string::npos);
+    ASSERT_TRUE(error.find("could not write PNG file") != std::string::npos);
+    ASSERT_FALSE(fractal.CleanupThreads(true));
+
+    request.PngCompletion = PngCompletionMode::Background;
+    std::future<SaveResult> completion;
+    std::ostringstream output;
+    error.clear();
+    ASSERT_EQ(RenderToPng(request, fractal, &error, output, &completion), 0);
+    ASSERT_TRUE(error.empty());
+    ASSERT_TRUE(completion.valid());
+    fractal.CleanupThreads(true);
+    ASSERT_TRUE(completion.get().Outcome == SaveOutcome::Failed);
+
+    const auto valid = directory.Path / "recovered.png";
+    request.OutPngBasename = valid.wstring();
+    request.PngCompletion = PngCompletionMode::Wait;
+    ASSERT_EQ(RenderToPng(request, fractal, &error, output, &completion), 0);
+    ASSERT_FALSE(completion.valid());
+    ASSERT_TRUE(std::filesystem::is_regular_file(valid));
+    const auto original = ReadBytes(valid);
+    ASSERT_EQ(RenderToPng(request, fractal, &error), 0);
+    ASSERT_TRUE(ReadBytes(valid) == original);
+
+    request.PngCompletion = PngCompletionMode::Background;
+    ASSERT_EQ(RenderToPng(request, fractal, &error, output, &completion), 0);
+    fractal.CleanupThreads(true);
+    ASSERT_TRUE(completion.valid());
+    // An empty-output render resets a previously valid handle rather than exposing
+    // the preceding image's outcome as this render's save completion.
+    request.OutPngBasename.clear();
+    ASSERT_EQ(RenderToPng(request, fractal, &error, output, &completion), 0);
+    ASSERT_FALSE(completion.valid());
+}
 
 TEST(PngSave_AtomicPublicationAcrossPools)
 {

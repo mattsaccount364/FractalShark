@@ -12,6 +12,7 @@
 #include <fstream>
 #include <future>
 #include <iterator>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -258,10 +259,20 @@ CheckBackgroundAndWriteErrors()
     ASSERT_TRUE(fractal.CleanupThreads(true));
     ASSERT_FALSE(std::filesystem::exists(std::filesystem::path(request.OutPngBasename)));
 
-    request.PngCompletion = PngCompletionMode::Wait;
-    // Wait drains saves; write failures are logged by the worker in either mode.
-    ASSERT_EQ(RenderToPng(request, fractal, &error), 0);
+    // Batch mode keeps the GPU save asynchronous but receives this image's failure.
+    std::future<SaveResult> completion;
+    std::ostringstream outputLog;
+    ASSERT_EQ(RenderToPng(request, fractal, &error, outputLog, &completion), 0);
     ASSERT_TRUE(error.empty());
+    ASSERT_TRUE(completion.valid());
+    fractal.CleanupThreads(true);
+    ASSERT_TRUE(completion.get().Outcome == SaveOutcome::Failed);
+
+    request.PngCompletion = PngCompletionMode::Wait;
+    // Wait drains saves and reports the worker's failure to the requesting caller.
+    ASSERT_EQ(RenderToPng(request, fractal, &error), 1);
+    ASSERT_TRUE(error.find("could not write PNG file") != std::string::npos);
+    ASSERT_TRUE(error.find("missing-parent") != std::string::npos);
     ASSERT_FALSE(std::filesystem::exists(std::filesystem::path(request.OutPngBasename)));
     ASSERT_FALSE(fractal.CleanupThreads(true));
 
@@ -297,8 +308,9 @@ CheckAsyncSubmissionAndRenderOverlap()
     const auto original = SaveCpuOracle(fractal, directory.File(L"original.png"));
     const auto copied = directory.File(L"queued-copy.png");
 
-    std::packaged_task<int()> submit([&] {
-        return fractal.SaveCurrentFractal(copied.wstring(), true, SaveOverwritePolicy::SkipExisting);
+    std::packaged_task<std::future<SaveResult>()> submit([&] {
+        return fractal.SaveCurrentFractalWithResult(
+            copied.wstring(), true, SaveOverwritePolicy::SkipExisting);
     });
     auto submitted = submit.get_future();
     std::jthread submitter;
@@ -322,8 +334,9 @@ CheckAsyncSubmissionAndRenderOverlap()
     }
     // Always release the gate and join before asserting, including a synchronous regression.
     submitter.join();
-    ASSERT_EQ(submitted.get(), 0);
+    auto completion = submitted.get();
     ASSERT_TRUE(fractal.CleanupThreads(true));
+    ASSERT_TRUE(completion.get().Outcome == SaveOutcome::Written);
     ASSERT_TRUE(returnedWhileBlocked);
     ASSERT_TRUE(pendingWhileBlocked);
     ASSERT_TRUE(DecodeSavedPng(copied, 31, 19) == original);

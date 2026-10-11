@@ -80,6 +80,8 @@
     <ClCompile Include="TestGrowableVector.cpp" />
     <ClCompile Include="TestFractalSharkLib.cpp" />
     <ClCompile Include="TestSaveTransactions.cpp" />
+    <ClCompile Include="TestBatchCompletion.cpp" />
+    <ClCompile Include="..\FractalSharkCli\BatchCompletion.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="GpuTestRuntime.h" />

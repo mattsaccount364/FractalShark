@@ -6,6 +6,7 @@
 
 #include "stdafx.h"
 
+#include "BatchCompletion.h"
 #include "BatchFile.h"
 #include "CrashHandler.h"
 #include "Environment.h"
@@ -888,7 +889,8 @@ ExecuteRenderRequest(const CliArgs &args,
                      const RenderRequest &req,
                      Fractal &fractal,
                      std::ostream &out,
-                     std::ostream &errorOut)
+                     std::ostream &errorOut,
+                     std::future<SaveResult> *pngCompletion)
 {
     // Single-shot construction of Fractal initializes its default view after
     // parsing the request, which also lowers the MPIR default precision.
@@ -902,7 +904,7 @@ ExecuteRenderRequest(const CliArgs &args,
     }
 
     std::string error;
-    int rc = RenderToPng(req, fractal, &error, out);
+    int rc = RenderToPng(req, fractal, &error, out, pngCompletion);
     if (rc != 0) {
         errorOut << "error: " << error << "\n";
         return rc;
@@ -915,7 +917,8 @@ ExecuteRenderRequest(const CliArgs &args,
         consoleOpts.Color = args.Color;
         RenderToConsole(fractal, consoleOpts, out);
     }
-    if (!args.Quiet && !args.OutFile.empty()) {
+    // Tracked batch saves announce publication when their completion result is reported.
+    if (!args.Quiet && !args.OutFile.empty() && !pngCompletion) {
         out << "Wrote " << args.OutFile << "\n";
         out.flush();
     }
@@ -947,7 +950,7 @@ ExecuteServerRender(const CliArgs &args,
     }
     req.PngCompletion = PngCompletionMode::Background;
 
-    return ExecuteRenderRequest(args, req, fractal, out, errorOut);
+    return ExecuteRenderRequest(args, req, fractal, out, errorOut, nullptr);
 }
 
 void
@@ -968,7 +971,7 @@ ResetBatchRenderSettings(Fractal &fractal)
     }
 }
 
-FractalSharkCli::IpcBatchResult
+FractalSharkCli::PendingBatchResult
 ExecuteBatchImage(const std::vector<std::string> &arguments,
                   Fractal &fractal,
                   int defaultWidth,
@@ -977,7 +980,8 @@ ExecuteBatchImage(const std::vector<std::string> &arguments,
                   bool serverMode)
 {
     const auto started = std::chrono::steady_clock::now();
-    FractalSharkCli::IpcBatchResult result;
+    FractalSharkCli::PendingBatchResult pending;
+    auto &result = pending.Result;
     std::ostringstream output;
     std::ostringstream errors;
     CliArgs args;
@@ -1006,10 +1010,12 @@ ExecuteBatchImage(const std::vector<std::string> &arguments,
                     errors << "error: " << requestError << "\n";
                 } else {
                     request.PngCompletion = PngCompletionMode::Background;
+                    pending.Output = args.OutFile;
+                    pending.AnnounceOutput = !args.Quiet;
                     result.Width = static_cast<uint32_t>(request.Width);
                     result.Height = static_cast<uint32_t>(request.Height);
-                    result.Response.Status =
-                        ExecuteRenderRequest(args, request, fractal, output, errors);
+                    result.Response.Status = ExecuteRenderRequest(
+                        args, request, fractal, output, errors, &pending.PngCompletion);
                     if (result.Response.Status == 0) {
                         result.Iterations = fractal.GetNumIterations<uint64_t>();
                         result.OverallMs = fractal.GetBenchmark().m_Overall.GetDeltaInMs();
@@ -1030,7 +1036,7 @@ ExecuteBatchImage(const std::vector<std::string> &arguments,
             .count());
     result.Response.Stdout = output.str();
     result.Response.Stderr = errors.str();
-    return result;
+    return pending;
 }
 
 std::vector<std::string>
@@ -1183,6 +1189,21 @@ RunBatch(const CliArgs &args)
         }
     }
 
+    size_t nextToReport = 0;
+    // Both local and remote completions use valid-image ordinals. This also keeps
+    // prevalidated errors in input order when an earlier PNG is still being written.
+    const auto onResult = [&](size_t validIndex, const FractalSharkCli::IpcBatchResult &result) {
+        const size_t imageIndex = validIndexes[validIndex];
+        while (nextToReport < imageIndex) {
+            PrintBatchImageError(nextToReport, batch.Images.size(), batch.Images[nextToReport]);
+            ++nextToReport;
+        }
+        PrintBatchImageResult(imageIndex, batch.Images.size(), batch.Images[imageIndex], result);
+        if (result.Response.Status != 0) {
+            ++failedCount;
+        }
+        nextToReport = imageIndex + 1;
+    };
     if (args.Mode == CliMode::Client && !validIndexes.empty()) {
         FractalSharkCli::IpcRequest request;
         request.Operation = FractalSharkCli::IpcOperation::Batch;
@@ -1190,20 +1211,7 @@ RunBatch(const CliArgs &args)
         for (const size_t index : validIndexes) {
             request.BatchArguments.push_back(batch.Images[index].Arguments);
         }
-        size_t nextToReport = 0;
         size_t completedCount = 0;
-        const auto onResult = [&](size_t validIndex, const FractalSharkCli::IpcBatchResult &result) {
-            const size_t imageIndex = validIndexes[validIndex];
-            while (nextToReport < imageIndex) {
-                PrintBatchImageError(nextToReport, batch.Images.size(), batch.Images[nextToReport]);
-                ++nextToReport;
-            }
-            PrintBatchImageResult(imageIndex, batch.Images.size(), batch.Images[imageIndex], result);
-            if (result.Response.Status != 0) {
-                ++failedCount;
-            }
-            nextToReport = imageIndex + 1;
-        };
         if (!FractalSharkCli::SendBatch(args.Endpoint, request, onResult, completedCount, error)) {
             std::cerr << "error: batch IPC failed after " << completedCount << " responses: " << error
                       << "\n";
@@ -1223,10 +1231,6 @@ RunBatch(const CliArgs &args)
                       << failedCount << " failed, " << unknownCount << " unknown\n";
             return 3;
         }
-        while (nextToReport < batch.Images.size()) {
-            PrintBatchImageError(nextToReport, batch.Images.size(), batch.Images[nextToReport]);
-            ++nextToReport;
-        }
     } else {
         std::unique_ptr<Fractal> fractal;
         if (!validIndexes.empty()) {
@@ -1238,22 +1242,26 @@ RunBatch(const CliArgs &args)
                                                 /*hostOwnedGlPresentation=*/true,
                                                 GpuMode::Auto);
         }
-        for (size_t index = 0; index < batch.Images.size(); ++index) {
-            const auto &image = batch.Images[index];
-            if (!image.Error.empty()) {
-                PrintBatchImageError(index, batch.Images.size(), image);
-                continue;
-            }
-            const auto result =
-                ExecuteBatchImage(image.Arguments, *fractal, 1024, 768, UINT64_MAX, false);
-            PrintBatchImageResult(index, batch.Images.size(), image, result);
-            if (result.Response.Status != 0) {
-                ++failedCount;
-            }
+        FractalSharkCli::BatchCompletionQueue completions;
+        const auto report = [&](size_t validIndex, const FractalSharkCli::IpcBatchResult &result) {
+            onResult(validIndex, result);
+            return true;
+        };
+        for (size_t validIndex = 0; validIndex < validIndexes.size(); ++validIndex) {
+            const auto &image = batch.Images[validIndexes[validIndex]];
+            completions.Push(validIndex,
+                             ExecuteBatchImage(image.Arguments, *fractal, 1024, 768, UINT64_MAX, false));
+            completions.ReportReady(report);
         }
+        completions.ReportAll(report);
         if (fractal) {
             fractal->CleanupThreads(/*all=*/true);
         }
+    }
+
+    while (nextToReport < batch.Images.size()) {
+        PrintBatchImageError(nextToReport, batch.Images.size(), batch.Images[nextToReport]);
+        ++nextToReport;
     }
 
     const auto elapsed =
@@ -1301,18 +1309,31 @@ RunServer(const CliArgs &serverArgs)
         }
 
         if (request.Operation == FractalSharkCli::IpcOperation::Batch) {
+            FractalSharkCli::BatchCompletionQueue completions;
+            std::string writeError;
+            const auto report = [&](size_t, const FractalSharkCli::IpcBatchResult &result) {
+                return FractalSharkCli::WriteBatchResult(connection, result, writeError);
+            };
+            size_t imageIndex = 0;
+            bool connected = true;
             for (const auto &arguments : request.BatchArguments) {
-                const auto result = ExecuteBatchImage(arguments,
-                                                      fractal,
-                                                      serverArgs.Width,
-                                                      serverArgs.Height,
-                                                      serverArgs.CommitCapBytes,
-                                                      true);
-                std::string writeError;
-                if (!FractalSharkCli::WriteBatchResult(connection, result, writeError)) {
-                    std::cerr << "warning: could not send batch result: " << writeError << "\n";
+                completions.Push(imageIndex++,
+                                 ExecuteBatchImage(arguments,
+                                                   fractal,
+                                                   serverArgs.Width,
+                                                   serverArgs.Height,
+                                                   serverArgs.CommitCapBytes,
+                                                   true));
+                if (!completions.ReportReady(report)) {
+                    connected = false;
                     break;
                 }
+            }
+            if (connected) {
+                connected = completions.ReportAll(report);
+            }
+            if (!connected) {
+                std::cerr << "warning: could not send batch result: " << writeError << "\n";
             }
             continue;
         }
@@ -1457,7 +1478,7 @@ RunCli(int argc, char *argv[])
                     request.CommitCapBytes,
                     /*hostOwnedGlPresentation=*/true,
                     args.GpuRuntimeMode);
-    return ExecuteRenderRequest(args, request, fractal, std::cout, std::cerr);
+    return ExecuteRenderRequest(args, request, fractal, std::cout, std::cerr, nullptr);
 }
 
 } // anonymous namespace

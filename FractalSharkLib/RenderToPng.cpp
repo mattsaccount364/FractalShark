@@ -3,6 +3,7 @@
 #include "RenderToPng.h"
 
 #include "ConsoleLog.h"
+#include "Environment.h"
 #include "PointZoomBBConverter.h"
 #include "RenderThreadPool.h"
 
@@ -19,6 +20,19 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err)
 int
 RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::ostream &out)
 {
+    return RenderToPng(req, fractal, err, out, nullptr);
+}
+
+int
+RenderToPng(const RenderRequest &req,
+            Fractal &fractal,
+            std::string *err,
+            std::ostream &out,
+            std::future<SaveResult> *pngCompletion)
+{
+    if (pngCompletion) {
+        *pngCompletion = std::future<SaveResult>{};
+    }
     auto fail = [&](const std::string &message, int code) {
         if (err) {
             *err = message;
@@ -95,10 +109,24 @@ RenderToPng(const RenderRequest &req, Fractal &fractal, std::string *err, std::o
     fractal.CalcFractal(/*drawFractal=*/true);
 
     if (!req.OutPngBasename.empty()) {
-        fractal.SaveCurrentFractal(
-            req.OutPngBasename, req.PreserveIterationBuffer, SaveOverwritePolicy::SkipExisting);
-        if (req.PngCompletion == PngCompletionMode::Wait) {
+        if (req.PngCompletion == PngCompletionMode::Background && !pngCompletion) {
+            fractal.SaveCurrentFractal(
+                req.OutPngBasename, req.PreserveIterationBuffer, SaveOverwritePolicy::SkipExisting);
+        } else {
+            auto completion = fractal.SaveCurrentFractalWithResult(
+                req.OutPngBasename, req.PreserveIterationBuffer, SaveOverwritePolicy::SkipExisting);
+            if (req.PngCompletion == PngCompletionMode::Background) {
+                *pngCompletion = std::move(completion);
+                return 0;
+            }
+            // Draining also releases task captures and recycles moved iteration buffers.
             fractal.CleanupThreads(/*all=*/true);
+            const auto result = completion.get();
+            if (!result.Succeeded()) {
+                return fail("RenderToPng: could not write PNG file \"" +
+                                Environment::WideToUtf8(result.OutputPath) + "\": " + result.Diagnostic,
+                            1);
+            }
         }
     }
 

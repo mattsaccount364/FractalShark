@@ -2914,6 +2914,30 @@ Fractal::SaveCurrentFractal(std::wstring filenameBase, bool copyTheIters, SaveOv
         std::move(filenameBase), copyTheIters, overwrite);
 }
 
+std::future<SaveResult>
+Fractal::SaveCurrentFractalWithResult(std::wstring filenameBase,
+                                      bool copyTheIters,
+                                      SaveOverwritePolicy overwrite)
+{
+    const auto backend = RequiresUseLocalColor() ? PngParallelSave::EncoderBackend::Cpu
+                                                 : PngParallelSave::EncoderBackend::Gpu;
+    std::future<SaveResult> completion;
+    m_SavePool->Submit(
+        [this, backend, filenameBase = std::move(filenameBase), copyTheIters, overwrite, &completion] {
+            // Submit reserves capacity before creating the potentially large image snapshot.
+            auto save = CreateSaveTask(
+                PngParallelSave::Type::PngImg, backend, filenameBase, copyTheIters, overwrite);
+            // Pass ownership as an invocation argument rather than capturing it in the
+            // packaged task's shared state. Keeping the future cannot keep the snapshot alive.
+            std::packaged_task<SaveResult(std::unique_ptr<PngParallelSave>)> task(
+                [](std::unique_ptr<PngParallelSave> snapshot) { return snapshot->Run(); });
+            completion = task.get_future();
+            return FractalSaveThreadPool::Task(
+                [task = std::move(task), save = std::move(save)]() mutable { task(std::move(save)); });
+        });
+    return completion;
+}
+
 template <PngParallelSave::Type Typ>
 int
 Fractal::SaveFractalData(std::wstring filenameBase, bool copyTheIters, SaveOverwritePolicy overwrite)

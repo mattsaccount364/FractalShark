@@ -450,9 +450,13 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Clear Perturbation References -- High} (command): Clears high-class cached references.
 
       \item \emph{Auto (default)} (radio): Automatically selects the perturbation
-      algorithm. At 16,384 estimated precision bits and above it selects MT9;
-      below that threshold it follows the zoom rules in
-      \cref{subsec:ref-orbit-pipeline}. Recommended for most use.
+      algorithm using estimated precision bits. It selects ST below 640 bits,
+      MT3 from 640 through 6,783 bits, MT3 with compressed reference reuse from
+      6,784 through 16,383 bits, and MT9 from 16,384 through 32,767 bits.
+      At 32,768 bits and above it selects GPU reference generation when CUDA
+      and the reference format and precision are supported; otherwise it uses
+      MT9. See \cref{subsec:ref-orbit-pipeline} for eligibility details.
+      Recommended for most use.
       \item \emph{Single Thread (ST)} (radio): Uses a single-threaded
       reference-orbit computation with no periodicity checking.
       \item \emph{Multi Thread (MT)} (radio): Uses a multithreaded

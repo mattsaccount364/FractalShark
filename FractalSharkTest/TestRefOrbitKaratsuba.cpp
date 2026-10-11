@@ -3,6 +3,7 @@
 #include "AbortMonitor.h"
 #include "AlgCmds.h"
 #include "Fractal.h"
+#include "GpuPrecisionDispatch.h"
 #include "MenuState.h"
 #include "MenuTree.h"
 #include "PerturbationResults.h"
@@ -530,11 +531,53 @@ TEST(RefOrbitKaratsuba_Aliasing)
     CheckBatch(products, x.Get(), y.Get(), x.Get(), y.Get(), cross.Get());
 }
 
+TEST(RefOrbitKaratsuba_ZeroOneLimbAndMixedInputs)
+{
+    std::mt19937_64 random{0x5A07};
+    // Minimum requested precision exercises construction rounding. Reusing each backend
+    // across zero, one-limb, and full-width batches exposes stale scratch and metadata.
+    for (const mp_bitcnt_t bits : {mp_bitcnt_t{1}, mp_bitcnt_t{128}, mp_bitcnt_t{16'384}}) {
+        MpfValue x(bits), y(bits), xSquared(bits), ySquared(bits), cross(bits);
+        FractalShark::RefOrbitKaratsubaProducts products(bits);
+        for (const int left : {-3, -1, 0, 1, 5}) {
+            for (const int right : {-3, -1, 0, 1, 5}) {
+                mpf_set_si(x.Get(), left);
+                mpf_set_si(y.Get(), right);
+                ASSERT_EQ(MagnitudeSize(x.Get()), left == 0 ? mp_size_t{0} : mp_size_t{1});
+                ASSERT_EQ(MagnitudeSize(y.Get()), right == 0 ? mp_size_t{0} : mp_size_t{1});
+                CheckBatch(products, x.Get(), y.Get(), xSquared.Get(), ySquared.Get(), cross.Get());
+                CheckBatch(products, x.Get(), y.Get(), x.Get(), y.Get(), cross.Get());
+            }
+        }
+        for (const mp_size_t shortSize : {mp_size_t{0}, mp_size_t{1}}) {
+            for (const bool negative : {false, true}) {
+                if (shortSize == 0) {
+                    mpf_set_ui(x.Get(), 0);
+                } else {
+                    Randomize(x.Get(), shortSize, negative, random);
+                }
+                // Include the guard limb of the wide input even when its partner is short.
+                Randomize(y.Get(), y.Get()->_mp_prec + 1, !negative, random);
+                CheckBatch(products, x.Get(), y.Get(), xSquared.Get(), ySquared.Get(), cross.Get());
+                mpf_swap(x.Get(), y.Get());
+                CheckBatch(products, x.Get(), y.Get(), xSquared.Get(), ySquared.Get(), cross.Get());
+                CheckBatch(products, x.Get(), y.Get(), x.Get(), y.Get(), cross.Get());
+            }
+        }
+    }
+}
+
 TEST(RefOrbitKaratsuba_FullPrecisionRecurrence)
 {
     constexpr mp_bitcnt_t bits = 16'384;
-    for (const auto &coordinates :
-         {std::array{"-0.751", "0.1"}, std::array{"-0.1", "0.1"}, std::array{"-0.125", "0.125"}}) {
+    // Axis and cancellation cases change occupied widths after initialization;
+    // the same split backend must handle every iteration without a caller fallback.
+    for (const auto &coordinates : {std::array{"-0.751", "0.1"},
+                                    std::array{"-0.1", "0.1"},
+                                    std::array{"-0.125", "0.125"},
+                                    std::array{"0", "0"},
+                                    std::array{"-1", "0"},
+                                    std::array{"0", "1"}}) {
         MpfValue x(bits), y(bits), cx(bits), cy(bits), xSquared(bits), ySquared(bits), cross(bits),
             temporary(bits);
         MpfValue expectedX(bits), expectedY(bits), oracleX(bits), oracleY(bits), oracleCross(bits),
@@ -547,21 +590,10 @@ TEST(RefOrbitKaratsuba_FullPrecisionRecurrence)
         mpf_set(expectedY.Get(), y.Get());
         FractalShark::RefOrbitKaratsubaProducts products(bits);
         for (size_t iteration = 0; iteration < 32; ++iteration) {
-            if (MagnitudeSize(x.Get()) >= 2 && MagnitudeSize(y.Get()) >= 2) {
-                Oracle(oracleX.Get(), expectedX.Get(), expectedX.Get());
-                Oracle(oracleY.Get(), expectedY.Get(), expectedY.Get());
-                Oracle(oracleCross.Get(), expectedX.Get(), expectedY.Get());
-                products.Compute(xSquared.Get(), ySquared.Get(), cross.Get(), x.Get(), y.Get());
-            } else {
-                // Mirror the caller's short-operand path; subsequent full-width
-                // iterations continue to use the independent exact integer oracle.
-                mpf_mul(oracleX.Get(), expectedX.Get(), expectedX.Get());
-                mpf_mul(oracleY.Get(), expectedY.Get(), expectedY.Get());
-                mpf_mul(oracleCross.Get(), expectedX.Get(), expectedY.Get());
-                mpf_mul(xSquared.Get(), x.Get(), x.Get());
-                mpf_mul(ySquared.Get(), y.Get(), y.Get());
-                mpf_mul(cross.Get(), x.Get(), y.Get());
-            }
+            Oracle(oracleX.Get(), expectedX.Get(), expectedX.Get());
+            Oracle(oracleY.Get(), expectedY.Get(), expectedY.Get());
+            Oracle(oracleCross.Get(), expectedX.Get(), expectedY.Get());
+            products.Compute(xSquared.Get(), ySquared.Get(), cross.Get(), x.Get(), y.Get());
             mpf_mul_ui(cross.Get(), cross.Get(), 2);
             mpf_add(y.Get(), cross.Get(), cy.Get());
             mpf_sub(temporary.Get(), xSquared.Get(), ySquared.Get());
@@ -595,6 +627,106 @@ TEST(RefOrbitKaratsuba_WorkerHandoffStress)
     }
 }
 
+TEST(RefOrbitKaratsuba_StartupStorageModes)
+{
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    HighPrecision::defaultPrecisionInBits(16'384);
+    RefOrbitCalc calculator(fractal, UINT64_MAX);
+    calculator.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+    const HighPrecision cx{"-0.1"}, cy{"0.1"};
+    // Exercise the production specializations for every storage mode. A deep view
+    // keeps the periodicity radius far below this orbit's magnitude during the fixture.
+    ASSERT_TRUE(fractal.RecenterViewCalc(ViewAtPrecision(16'384).Recentered(cx, cy)));
+    const std::array expectedSamples{
+        std::array{0.0, 0.0}, std::array{-0.1, 0.1}, std::array{-0.1, 0.08}};
+    AbortMonitor abort(false);
+    auto checkStartup = [&]<PerturbExtras extras>(uint64_t limit, bool cancelBeforeStartup) {
+        calculator.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        calculator.ResetGuess(cx, cy);
+        fractal.SetNumIterations<uint64_t>(limit);
+        abort.SetStopCalculating(cancelBeforeStartup);
+        calculator.AddPerturbationReferencePoint<uint64_t,
+                                                 HDRFloat<double>,
+                                                 double,
+                                                 extras,
+                                                 RefOrbitCalc::BenchmarkMode::Disable>(fractal.GetPtz());
+        abort.ResetStopCalculating();
+        const auto *results = calculator.GetLast<uint64_t, HDRFloat<double>, extras>();
+        // InitResults always stores Z0, even if iteration zero is skipped or unpublished.
+        const uint64_t expectedCount = cancelBeforeStartup ? 1 : std::max(uint64_t{1}, limit);
+        ASSERT_EQ(results->GetCountOrbitEntries(), expectedCount);
+        ASSERT_EQ(results->GetPeriodMaybeZero(), uint64_t{0});
+        ASSERT_EQ(results->GetCompressionErrorExp(),
+                  fractal.GetCompressionErrorExp(Fractal::CompressionError::Low));
+        RuntimeDecompressor<uint64_t, HDRFloat<double>, extras> decompressor{*results};
+        for (size_t index = 0; index < expectedCount; ++index) {
+            HDRFloat<double> x, y;
+            results->GetComplex(decompressor, index, x, y);
+            ASSERT_NEAR(static_cast<double>(x), expectedSamples[index][0], 1e-15);
+            ASSERT_NEAR(static_cast<double>(y), expectedSamples[index][1], 1e-15);
+        }
+        if constexpr (extras == PerturbExtras::SimpleCompression) {
+            ASSERT_EQ(results->GetOrbitData()[0].u.f.CompressionIndex, uint64_t{0});
+        } else if constexpr (extras == PerturbExtras::Bad) {
+            ASSERT_FALSE(results->GetOrbitData()[expectedCount - 1].bad);
+        }
+    };
+    for (const uint64_t limit : {uint64_t{0}, uint64_t{1}, uint64_t{2}, uint64_t{3}}) {
+        for (const bool cancelBeforeStartup : {false, true}) {
+            checkStartup.template operator()<PerturbExtras::Disable>(limit, cancelBeforeStartup);
+            checkStartup.template operator()<PerturbExtras::SimpleCompression>(limit,
+                                                                               cancelBeforeStartup);
+            checkStartup.template operator()<PerturbExtras::Bad>(limit, cancelBeforeStartup);
+        }
+    }
+
+    // Force stored corrections in a short orbit so this checks actual waypoint indices,
+    // rather than only reconstructing all samples from the initial compressed entry.
+    constexpr uint64_t waypointIterations = 8;
+    constexpr int32_t waypointCompressionErrorExp = 100;
+    fractal.SetNumIterations<uint64_t>(waypointIterations);
+    fractal.SetCompressionErrorExp(Fractal::CompressionError::Low, waypointCompressionErrorExp);
+    auto generateWaypoints = [&]<PerturbExtras extras>() {
+        calculator.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        calculator.ResetGuess(cx, cy);
+        calculator.AddPerturbationReferencePoint<uint64_t,
+                                                 HDRFloat<double>,
+                                                 double,
+                                                 extras,
+                                                 RefOrbitCalc::BenchmarkMode::Disable>(fractal.GetPtz());
+        return calculator.GetLast<uint64_t, HDRFloat<double>, extras>();
+    };
+    const auto *plain = generateWaypoints.template operator()<PerturbExtras::Disable>();
+    ASSERT_EQ(plain->GetCountOrbitEntries(), waypointIterations);
+    std::vector<std::array<double, 2>> plainSamples;
+    for (uint64_t index = 0; index < waypointIterations; ++index) {
+        plainSamples.push_back({static_cast<double>(plain->GetOrbitData()[index].x),
+                                static_cast<double>(plain->GetOrbitData()[index].y)});
+    }
+    const auto *compressed = generateWaypoints.template operator()<PerturbExtras::SimpleCompression>();
+    ASSERT_EQ(compressed->GetCountOrbitEntries(), waypointIterations);
+    ASSERT_TRUE(compressed->GetCompressedOrbitSize() > 1);
+    RuntimeDecompressor<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression> decompressor{
+        *compressed};
+    for (size_t index = 0; index < waypointIterations; ++index) {
+        HDRFloat<double> x, y;
+        compressed->GetComplex(decompressor, index, x, y);
+        ASSERT_NEAR(static_cast<double>(x), plainSamples[index][0], 1e-15);
+        ASSERT_NEAR(static_cast<double>(y), plainSamples[index][1], 1e-15);
+    }
+    uint64_t previousIndex = 0;
+    for (size_t waypoint = 1; waypoint < compressed->GetCompressedOrbitSize(); ++waypoint) {
+        const auto &entry = compressed->GetOrbitData()[waypoint];
+        const uint64_t index = entry.u.f.CompressionIndex;
+        ASSERT_TRUE(index > previousIndex && index < waypointIterations);
+        ASSERT_NEAR(static_cast<double>(entry.x), plainSamples[index][0], 1e-15);
+        ASSERT_NEAR(static_cast<double>(entry.y), plainSamples[index][1], 1e-15);
+        previousIndex = index;
+    }
+}
+
 TEST(RefOrbitKaratsuba_FirstFinalAndActiveCancellation)
 {
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
@@ -604,7 +736,7 @@ TEST(RefOrbitKaratsuba_FirstFinalAndActiveCancellation)
     RefOrbitCalc calculator(fractal, UINT64_MAX);
     calculator.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
     const HighPrecision cx{"-0.1"}, cy{"0.1"};
-    for (const uint64_t limit : {uint64_t{1}, uint64_t{2}, uint64_t{3}}) {
+    for (const uint64_t limit : {uint64_t{0}, uint64_t{1}, uint64_t{2}, uint64_t{3}}) {
         calculator.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
         calculator.ResetGuess(cx, cy);
         fractal.SetNumIterations<uint64_t>(limit);
@@ -614,10 +746,16 @@ TEST(RefOrbitKaratsuba_FirstFinalAndActiveCancellation)
                                                  PerturbExtras::Disable,
                                                  RefOrbitCalc::BenchmarkMode::Enable>(fractal.GetPtz());
         const auto *results = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
-        ASSERT_EQ(results->GetCountOrbitEntries(), limit);
+        ASSERT_EQ(results->GetCountOrbitEntries(), std::max(uint64_t{1}, limit));
+        ASSERT_EQ(results->GetOrbitData()[0].x, 0.0);
+        ASSERT_EQ(results->GetOrbitData()[0].y, 0.0);
         if (limit > 1) {
             ASSERT_NEAR(results->GetOrbitData()[1].x, -0.1, 1e-15);
             ASSERT_NEAR(results->GetOrbitData()[1].y, 0.1, 1e-15);
+        }
+        if (limit > 2) {
+            ASSERT_NEAR(results->GetOrbitData()[2].x, -0.1, 1e-15);
+            ASSERT_NEAR(results->GetOrbitData()[2].y, 0.08, 1e-15);
         }
     }
     calculator.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
@@ -660,35 +798,142 @@ TEST(RefOrbitKaratsuba_IdleWorkerShutdown)
     }
 }
 
+TEST(RefOrbitAuto_PrecisionBoundaries)
+{
+    const auto renderer = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2);
+    struct SelectionCase {
+        uint64_t PrecisionBits;
+        RefOrbitCalc::PerturbationAlg Expected;
+    };
+    // Expectations are explicit so moving a threshold cannot make the test follow the implementation.
+    const std::array cases{
+        SelectionCase{639, RefOrbitCalc::PerturbationAlg::STPeriodicity},
+        SelectionCase{640, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
+        SelectionCase{641, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
+        SelectionCase{6'783, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
+        SelectionCase{6'784, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+        SelectionCase{6'785, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+        SelectionCase{16'383, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+        SelectionCase{16'384, RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
+        SelectionCase{16'385, RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
+        SelectionCase{32'767, RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
+        SelectionCase{32'768, RefOrbitCalc::PerturbationAlg::GPU},
+        SelectionCase{32'769, RefOrbitCalc::PerturbationAlg::GPU}};
+    for (const auto &test : cases) {
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, true, renderer) ==
+                    test.Expected);
+        const auto withoutGpu = test.Expected == RefOrbitCalc::PerturbationAlg::GPU
+                                    ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba
+                                    : test.Expected;
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, false, renderer) ==
+                    withoutGpu);
+    }
+}
+
+TEST(RefOrbitAuto_GpuTypeAndFormatCompatibility)
+{
+    // Exercise the whole catalog against a concrete supported set, including CPU HDR consumers.
+    // Plain types, scaled bookkeeping, and compressed double-float conversion must stay on MT9.
+    const std::array supported{RenderAlgorithmEnum::Cpu32PerturbedBLAHDR,
+                               RenderAlgorithmEnum::Cpu64PerturbedBLAHDR,
+                               RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR,
+                               RenderAlgorithmEnum::Cpu64PerturbedBLAV2HDR,
+                               RenderAlgorithmEnum::Cpu32PerturbedRCBLAV2HDR,
+                               RenderAlgorithmEnum::Cpu64PerturbedRCBLAV2HDR,
+                               RenderAlgorithmEnum::GpuHDRx32PerturbedBLA,
+                               RenderAlgorithmEnum::GpuHDRx64PerturbedBLA,
+                               RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2,
+                               RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2PO,
+                               RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2LAO,
+                               RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2,
+                               RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2PO,
+                               RenderAlgorithmEnum::GpuHDRx32PerturbedRCLAv2LAO,
+                               RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2,
+                               RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2PO,
+                               RenderAlgorithmEnum::GpuHDRx2x32PerturbedLAv2LAO,
+                               RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2,
+                               RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2PO,
+                               RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2LAO,
+                               RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2,
+                               RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2PO,
+                               RenderAlgorithmEnum::GpuHDRx64PerturbedRCLAv2LAO};
+    for (const auto &renderer : RenderAlgorithms) {
+        const bool compatible =
+            std::find(supported.begin(), supported.end(), renderer.Algorithm) != supported.end();
+        const auto expected = compatible ? RefOrbitCalc::PerturbationAlg::GPU
+                                         : RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba;
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, true, renderer) == expected);
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'767, true, renderer) ==
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, false, renderer) ==
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+    }
+}
+
+TEST(RefOrbitAuto_GpuPrecisionCapacity)
+{
+    const auto renderer = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2);
+    // GPU buckets store 32-bit limbs. Test the capacity without allocating a viewport at that depth.
+    constexpr uint64_t maximumGpuBits = static_cast<uint64_t>(MaxSupportedLimbCount) * 32;
+    for (const auto bits : {maximumGpuBits - 1, maximumGpuBits}) {
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, true, renderer) ==
+                    RefOrbitCalc::PerturbationAlg::GPU);
+    }
+    for (const auto bits : {maximumGpuBits + 1, std::numeric_limits<uint64_t>::max()}) {
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, true, renderer) ==
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+    }
+}
+
 TEST(RefOrbitKaratsuba_AutoSelectionAndExplicitOverride)
 {
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
     Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
     fractal.GetRenderPool()->Drain();
     for (const auto bits : {uint64_t{400},
+                            uint64_t{639},
+                            uint64_t{640},
+                            uint64_t{641},
                             uint64_t{3400},
+                            uint64_t{6'783},
+                            uint64_t{6'784},
+                            uint64_t{6'785},
                             uint64_t{10'000},
                             uint64_t{16'383},
                             uint64_t{16'384},
-                            uint64_t{16'385}}) {
+                            uint64_t{16'385},
+                            uint64_t{32'767},
+                            uint64_t{32'768},
+                            uint64_t{32'769}}) {
         fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
         ASSERT_TRUE(fractal.RecenterViewCalc(ViewAtPrecision(bits)));
-        if (bits >= FractalShark::RefOrbitKaratsubaAutoPrecisionBits) {
+        if (bits >= 16'384) {
             ASSERT_TRUE(fractal.GetPerturbationAlg() ==
                         RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
-        } else if (bits == 3400) {
-            ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-        } else if (bits == 400) {
-            ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::STPeriodicity);
-        } else {
+        } else if (bits >= 6'784) {
             ASSERT_TRUE(fractal.GetPerturbationAlg() ==
                         RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
+        } else if (bits >= 640) {
+            ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
+        } else {
+            ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::STPeriodicity);
         }
-        fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-        ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::MTPeriodicity3);
-        fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
-        ASSERT_TRUE(fractal.GetPerturbationAlg() ==
-                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+        const auto selected = fractal.GetPerturbationAlg();
+        const uint64_t reusePadding =
+            bits >= 6'784 && bits < 16'384
+                ? AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits
+                : 0;
+        ASSERT_EQ(fractal.GetPrecision(), bits + reusePadding);
+        ASSERT_TRUE(fractal.GetPerturbationAlg() == selected);
+
+        // Explicit GPU selection is also preserved even when runtime CUDA is disabled;
+        // generation retains its existing error contract, while this test checks the picker only.
+        for (const auto explicitAlg : {RefOrbitCalc::PerturbationAlg::MTPeriodicity3,
+                                       RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba,
+                                       RefOrbitCalc::PerturbationAlg::GPU}) {
+            fractal.SetPerturbationAlg(explicitAlg);
+            ASSERT_TRUE(fractal.GetPerturbationAlg() == explicitAlg);
+        }
     }
 }
 
@@ -744,6 +989,55 @@ TEST(RefOrbitKaratsuba_CancellationAndPeriodicity)
     const auto *results = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
     ASSERT_TRUE(results->GetPeriodMaybeZero() > 0);
     ASSERT_TRUE(results->GetCountOrbitEntries() < 64);
+}
+
+TEST(RefOrbitKaratsuba_BenchmarkPeriodicityGuard)
+{
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    HighPrecision::defaultPrecisionInBits(16'384);
+    constexpr uint64_t iterationLimit = 32;
+    fractal.SetNumIterations<uint64_t>(iterationLimit);
+    RefOrbitCalc calculator(fractal, UINT64_MAX);
+    calculator.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+    auto generate = [&]<RefOrbitCalc::BenchmarkMode benchmarkState>(const HighPrecision &cx,
+                                                                    const HighPrecision &cy) {
+        calculator.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        calculator.ResetGuess(cx, cy);
+        calculator.AddPerturbationReferencePoint<uint64_t,
+                                                 double,
+                                                 double,
+                                                 PerturbExtras::Disable,
+                                                 benchmarkState>(fractal.GetPtz());
+        return calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
+    };
+    const HighPrecision zero{0};
+    const auto *ordinary =
+        generate.template operator()<RefOrbitCalc::BenchmarkMode::Disable>(zero, zero);
+    ASSERT_EQ(ordinary->GetPeriodMaybeZero(), uint64_t{2});
+    ASSERT_EQ(ordinary->GetCountOrbitEntries(), uint64_t{2});
+
+    // The same zero orbit must run to its limit when periodicity exits are compiled out.
+    const auto *benchmark =
+        generate.template operator()<RefOrbitCalc::BenchmarkMode::Enable>(zero, zero);
+    ASSERT_EQ(benchmark->GetPeriodMaybeZero(), uint64_t{0});
+    ASSERT_EQ(benchmark->GetCountOrbitEntries(), iterationLimit);
+    for (uint64_t iteration = 0; iteration < iterationLimit; ++iteration) {
+        ASSERT_EQ(benchmark->GetOrbitData()[iteration].x, 0.0);
+        ASSERT_EQ(benchmark->GetOrbitData()[iteration].y, 0.0);
+    }
+
+    // Escape remains active in benchmark mode, independent of the periodicity guard.
+    const HighPrecision escapingX{20};
+    const auto *escaped =
+        generate.template operator()<RefOrbitCalc::BenchmarkMode::Enable>(escapingX, zero);
+    ASSERT_EQ(escaped->GetPeriodMaybeZero(), uint64_t{0});
+    ASSERT_EQ(escaped->GetCountOrbitEntries(), uint64_t{2});
+    const auto *ordinaryEscape =
+        generate.template operator()<RefOrbitCalc::BenchmarkMode::Disable>(escapingX, zero);
+    ASSERT_EQ(ordinaryEscape->GetPeriodMaybeZero(), uint64_t{0});
+    ASSERT_EQ(ordinaryEscape->GetCountOrbitEntries(), uint64_t{2});
 }
 
 TEST(RefOrbitKaratsuba_CompressionExportsAndImaginaRoundtrip)

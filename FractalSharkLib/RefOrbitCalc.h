@@ -166,6 +166,12 @@ public:
     PerturbationAlg GetPerturbationAlg() const;
     std::string GetPerturbationAlgStr() const;
 
+    // Resolve Auto from the view's bit estimate without reuse padding. GPU eligibility
+    // uses an already resolved renderer and runtime state; no CUDA probe is performed here.
+    static PerturbationAlg ResolveAutoPerturbationAlg(uint64_t precisionBits,
+                                                      bool gpuAvailable,
+                                                      const RenderAlgorithm &renderAlgorithm);
+
     template <typename IterType, class T, PerturbExtras PExtras>
     PerturbationResults<IterType, T, PExtras> *GetLast();
 

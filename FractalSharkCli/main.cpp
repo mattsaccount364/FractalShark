@@ -218,8 +218,14 @@ PrintUsage()
         std::cout << "                      " << algorithm.Name << "\n";
     }
     std::cout
-        << "                    Auto selects MTPeriodicity9Karatsuba at 16384 required precision bits\n"
-           "                    Below that threshold Auto keeps its existing reference choices\n"
+        << "                    Auto uses estimated precision bits without reuse padding:\n"
+           "                      <640: STPeriodicity; 640-6783: MTPeriodicity3\n"
+           "                      6784-16383: MTPeriodicity3PerturbMTHighMTMed3\n"
+           "                      16384-32767: MTPeriodicity9Karatsuba\n"
+           "                      >=32768: GPU with working CUDA and a compatible HDR renderer\n"
+           "                    At >=32768, unsupported GPU type/format/precision uses MT9\n"
+           "                    CUDA disabled/unavailable also uses MT9 at that depth\n"
+           "                    Explicit reference choices bypass Auto\n"
            "                    MTPeriodicity9Karatsuba uses eight workers plus the caller\n"
            "                    Explicit MTPeriodicity9Karatsuba selection works at any depth\n"
            "                    GPU uses CUDA with an HDR perturbation render algorithm\n"

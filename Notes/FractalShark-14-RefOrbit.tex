@@ -19,7 +19,7 @@ across multiple renders at different perturbation precisions are
 therefore critical to the overall performance of the system.
 
 The following sections describe how \code{RefOrbitCalc} orchestrates single-threaded and
-multithreaded MPIR backends and the manually selected CUDA implementation,
+multithreaded MPIR backends and the CUDA implementation,
 together with storage and compression modes that trade memory footprint against
 recomputation.  The CUDA implementation uses a fused NTT recurrence while
 preserving the application contract and mathematical recurrence of the CPU
@@ -52,14 +52,16 @@ Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, 
   \item Picks an initial guess \((c_x,c_y)\) (center of the current view
         if unset).
   \item Chooses an algorithm from \code{m\_Perturbation\-Alg}.  In
-        \code{Auto}, an estimated precision of at least $16{,}384$ bits selects
-        \code{MTPeriodicity9Karatsuba}. Below that threshold, the zoom-factor
-        heuristic selects \code{STPeriodicity} below $10^{150}$,
-        \code{MTPeriodicity3} below $10^{2000}$, and
-        \code{MTPeriodicity3PerturbMTHighMTMed3} thereafter. The bit estimate
-        excludes reuse padding and does not depend on hardware concurrency. Automatic
-        selection does not choose the CUDA backend.  The manually selected
-        \code{GPU} value dispatches to the CUDA implementation.
+        \code{Auto}, the estimated precision selects \code{STPeriodicity}
+        below $640$ bits, \code{MTPeriodicity3} from $640$ through $6{,}783$ bits,
+        \code{MTPeriodicity3PerturbMTHighMTMed3} from $6{,}784$ through
+        $16{,}383$ bits, and \code{MTPeriodicity9Karatsuba} from $16{,}384$
+        through $32{,}767$ bits. At $32{,}768$ bits and above, \code{GPU} is
+        selected when CUDA is available and the effective render algorithm
+        supports GPU reference generation within its precision capacity;
+        otherwise, MT9 is selected. The estimate includes the minimum precision
+        margin, excludes reuse padding, and does not depend on hardware concurrency.
+        Explicit selections bypass Auto.
   \item Allocates a new \code{PerturbationResults} slot, initializes
         metadata and bounds, and runs the chosen orbit kernel until escape,
         periodicity detection, or the maximum iteration count is reached.
@@ -102,13 +104,25 @@ name MT3 also counts the calling thread. Explicit selections bypass Auto.
 \code{MTPeriodicity3\-PerturbMTHigh\-MTMed4} & Broken reuse-v4 selection;
   not a supported reference backend. \\
 \code{MTPeriodicity5} & Disabled MT5 entry point delegates to periodic MT3. \\
-\code{GPU} & Manually selected fused CUDA Ref2/v2 recurrence. \\
-\code{Auto} & Precision-first MT9 rule, then the zoom rules above; never GPU. \\
+\code{GPU} & Fused CUDA Ref2/v2 recurrence; explicit or automatic selection. \\
+\code{Auto} & Bit thresholds above; compatible GPU generation from
+  $32{,}768$ bits, with MT9 fallback. \\
 \code{MTPeriodicity9\-Karatsuba} & Eight workers plus caller; exact split products,
   full-precision recurrence additions and subtractions, with periodicity. \\
 \hline
 \end{tabularx}
 \end{table}
+
+GPU eligibility in Auto is derived from the typed render catalog and the existing
+CUDA runtime state. Supported HDR reference consumers include CPU renderers when
+CUDA is available; reference generation and per-pixel rendering remain separate
+choices. Scaled HDR rendering requires diagnostic reference bookkeeping, and
+compressed double-float rendering lacks the required plain-to-compressed
+materialization before conversion. Those formats retain MT9 in Auto. Requested
+precision above $16{,}777{,}216$ bits also retains MT9 because the largest GPU
+bucket contains $524{,}288$ 32-bit limbs. Auto therefore avoids selecting a GPU
+bucket that would cap the requested precision. The lower thresholds round the
+former $10^{150}$ and $10^{2000}$ zoom rules to 64-bit limb boundaries.
 
 \subsection{Single-threaded authoritative orbit}
 \label{subsec:ref-orbit-st}

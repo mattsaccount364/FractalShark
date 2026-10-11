@@ -96,14 +96,17 @@ memory latency.  Beyond a hardware- and workload-dependent threshold,
 multithreaded reference-orbit computation can outperform the
 single-threaded path in practice, with speedups increasing as precision grows.
 
-The current \code{Auto} implementation first estimates precision in bits,
-excluding reuse padding. At $16{,}384$ bits and above it selects
-\code{MTPeriodicity9Karatsuba}, without a hardware-concurrency test.
-Below that precision threshold it selects \code{STPeriodicity} below $10^{150}$,
-\code{MTPeriodicity3} from $10^{150}$ through values below $10^{2000}$, and
-\code{MTPeriodicity3PerturbMTHighMTMed3} at $10^{2000}$ and beyond.  These are
-fixed code thresholds, not a hardware benchmark or CUDA capability test, and
-\code{Auto} never selects the GPU backend.
+The current \code{Auto} implementation estimates precision in bits, including
+the minimum precision margin and excluding reuse padding. It selects
+\code{STPeriodicity} below $640$ bits, \code{MTPeriodicity3} from $640$ through
+$6{,}783$ bits, and \code{MTPeriodicity3\-PerturbMTHigh\-MTMed3} from $6{,}784$
+through $16{,}383$ bits. At $16{,}384$ through $32{,}767$ bits it selects
+\code{MTPeriodicity9\-Karatsuba}, without a hardware-concurrency test.
+At $32{,}768$ bits and above it selects GPU reference generation when CUDA,
+the effective renderer's reference format, and the supported precision capacity
+permit it; otherwise it retains MT9. These are fixed policy thresholds rather
+than a hardware benchmark. Eligibility and precision limits are described in
+\cref{subsec:ref-orbit-pipeline}.
 
 \paragraph{A simple cost model.}
 Let $C_{\mathrm{mul}}$ be one full-precision multiplication's cost,
@@ -185,13 +188,22 @@ The destination retains up to \code{\_mp\_prec+1} limbs. Karatsuba introduces
 no error before that final truncation. The bound concerns products of the
 stored inputs; it does not bound accumulated orbit error or certify periodicity.
 Ordinary \code{mpf\_mul} can clip inputs differently, so exact split assembly
-need not be bitwise identical to MT3. Zero or inputs shorter than two limbs
-use ordinary products in the caller.
+need not be bitwise identical to MT3. Fixed split buffers accommodate zero and
+one-limb inputs, including values produced by cancellation during the orbit.
+The caller therefore uses the split backend unconditionally. A zero product
+is stored in canonical MPIR form with both \code{\_mp\_size} and
+\code{\_mp\_exp} equal to zero. Periodicity termination is compiled out in
+benchmark mode, while derivative calculations and escape termination remain active.
 
 \paragraph{Worker ownership and handoff.}
 Each square has high, low, and sum workers; its high worker assembles the
 product after its two followers complete. The caller computes the cross
 product's high part, while two workers compute its low and sum parts.
+Iteration zero is handled by a separate prologue, which captures $z_1=c$ and
+advances the recurrence without publishing a sample or updating the derivative.
+The steady loop begins at index one and publishes the preceding sampled state,
+preserving MT3's sampling delay without a per-iteration startup check. Cancellation
+is checked before the prologue and at the existing intervals in the steady loop.
 All operand snapshots, products, and assembly buffers are sized before workers
 start and reused throughout the orbit. Each worker has a separate padded
 atomic state with \code{Idle}, \code{Run}, and \code{Stop} values. Release

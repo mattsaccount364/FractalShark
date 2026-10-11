@@ -16,6 +16,7 @@
 #include "PointZoomBBConverter.h"
 #include "PrecisionCalculator.h"
 #include "RecommendedSettings.h"
+#include "RenderAlgorithm.h"
 #include "ScopedMpir.h"
 
 #include "GpuPrecisionDispatch.h"
@@ -23,6 +24,7 @@
 #include "KernelInvoke.h"
 
 #include <algorithm>
+#include <array>
 #include <fstream>
 #include <math.h>
 #include <memory>
@@ -36,6 +38,47 @@
 #include <immintrin.h>
 #include <string>
 #include <tuple>
+
+namespace {
+
+// The former 10^150 and 10^2000 zoom cutoffs require approximately 616 and 6,761
+// bits, including the minimum precision margin. Round to 64-bit limb boundaries.
+constexpr uint64_t AutoMultithreadPrecisionBits = 640;
+constexpr uint64_t AutoReusePrecisionBits = 6'784;
+constexpr uint64_t AutoGpuPrecisionBits = 32'768;
+constexpr uint64_t GpuReferenceLimbBits = 32;
+constexpr uint64_t AutoGpuMaximumPrecisionBits =
+    static_cast<uint64_t>(MaxSupportedLimbCount) * GpuReferenceLimbBits;
+
+// Derive the supported orbit types from the render catalog once at compile time.
+// Double-float LA renderers generate their reference in OriginatingType, then convert it.
+constexpr auto AutoGpuReferenceCompatible = [] {
+    std::array<bool, std::tuple_size_v<RenderAlgorithmsTupleT>> compatible{};
+    std::apply(
+        [&](const auto &...renderAlgorithms) {
+            auto populate = [&]<typename RenderAlg>(const RenderAlg &) {
+                constexpr bool hdrReference =
+                    std::is_same_v<typename RenderAlg::OriginatingType, HDRFloat<float>> ||
+                    std::is_same_v<typename RenderAlg::OriginatingType, HDRFloat<double>> ||
+                    std::is_same_v<typename RenderAlg::OriginatingType,
+                                   HDRFloat<CudaDblflt<MattDblflt>>>;
+                constexpr bool hdrDoubleFloat =
+                    std::is_same_v<typename RenderAlg::MainType, HDRFloat<CudaDblflt<MattDblflt>>>;
+                // GPU generation publishes plain entries. Scaled rendering requires Bad
+                // bookkeeping; compressed double-float rendering lacks plain-to-compressed
+                // materialization before conversion. Both must use CPU generation in Auto.
+                compatible[static_cast<size_t>(RenderAlg::Algorithm)] =
+                    RenderAlg::RequiresReferencePoints && hdrReference &&
+                    RenderAlg::Algorithm != RenderAlgorithmEnum::GpuHDRx32PerturbedScaled &&
+                    !(hdrDoubleFloat && RenderAlg::RequiresCompression);
+            };
+            (populate(renderAlgorithms), ...);
+        },
+        RenderAlgorithmsTuple);
+    return compatible;
+}();
+
+} // namespace
 
 template <class Type> struct alignas(64) ThreadPtrs {
     std::atomic<Type *> In;
@@ -2153,13 +2196,30 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
     InitResults<IterType, T, decltype(*results), PExtras, ReuseMode::DontSaveForReuse>(
         *results, ptz, cx, cy);
 
+    const IterTypeFull iterationLimit = m_Fractal.GetNumIterations<IterType>();
+    RefOrbitCompressor<IterType, T, PExtras> compressor{
+        *results, m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low)};
+    // Startup exits still publish a complete Z0-only result, including compression
+    // metadata and the reserve hint. This helper is only called once per orbit.
+    const auto finalizeResults = [&] {
+        if constexpr (PExtras == PerturbExtras::Bad) {
+            results->SetBad(false);
+        }
+        results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
+        m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
+    };
+    if (iterationLimit == 0) {
+        finalizeResults();
+        return;
+    }
+
     MPIRBoundedAllocator boundedAllocator;
     boundedAllocator.InitScopedAllocators();
     struct CallerTls {
         CallerTls() { MPIRBoundedAllocator::InitTls(); }
         ~CallerTls() { MPIRBoundedAllocator::ShutdownTls(); }
     } callerTls;
-    // Reverse destruction order guarantees that products, compressors, and all MPIR
+    // Reverse destruction order guarantees that products and all MPIR
     // values disappear before callerTls, including on cancellation or exceptions.
     HighPrecision cxMpf;
     HighPrecision cyMpf;
@@ -2196,10 +2256,30 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
     T dzdcY{0.0};
     T doubleZxLast{0.0};
     T doubleZyLast{0.0};
-    RefOrbitCompressor<IterType, T, PExtras> compressor{
-        *results, m_Fractal.GetCompressionErrorExp(Fractal::CompressionError::Low)};
 
-    for (IterTypeFull i = 0; i < m_Fractal.GetNumIterations<IterType>(); ++i) {
+    // Keep cancellation at the original point after setup and before iteration zero.
+    if (AbortMonitor::GetStopCalculatingGlobal()) {
+        finalizeResults();
+        return;
+    }
+
+    // Peel iteration zero: capture Z1=c and advance once without publishing a sample
+    // or updating the derivative. The steady loop always has a preceding sample, so
+    // its publication and periodicity work need no per-iteration startup condition.
+    const T firstX = toLow(zx.backend());
+    const T firstY = toLow(zy.backend());
+    // Keep this short sequence identical to the full-width update in the steady
+    // loop. Explicit duplication avoids relying on a helper being inlined here.
+    products.Compute(
+        zxSquared.backend(), zySquared.backend(), cross.backend(), zx.backend(), zy.backend());
+    mpf_mul_ui(cross.backend(), cross.backend(), 2);
+    mpf_add(zy.backend(), cross.backend(), cyMpf.backend());
+    mpf_sub(temporary.backend(), zxSquared.backend(), zySquared.backend());
+    mpf_add(zx.backend(), temporary.backend(), cxMpf.backend());
+    doubleZxLast = firstX;
+    doubleZyLast = firstY;
+
+    for (IterTypeFull i = 1; i < iterationLimit; ++i) {
         if ((i & (AbortMonitor::AbortCheckInterval - 1)) == 0 &&
             AbortMonitor::GetStopCalculatingGlobal()) {
             break;
@@ -2208,56 +2288,45 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
         const T currentY = toLow(zy.backend());
         T doubleZx = doubleZxLast;
         T doubleZy = doubleZyLast;
-        SubType znSize = 0;
-        bool periodicityShouldBreak = false;
-        if (i > 0) {
-            if constexpr (PExtras == PerturbExtras::Disable) {
-                results->AddUncompressedIteration({doubleZx, doubleZy});
-            } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
-                compressor.MaybeAddCompressedIteration({doubleZx, doubleZy, i});
-            } else if constexpr (PExtras == PerturbExtras::Bad) {
-                results->AddUncompressedIteration({doubleZx, doubleZy, false});
-                const T norm = HdrReduce((doubleZx * doubleZx + doubleZy * doubleZy) * glitch);
-                const auto zxReduced = HdrReduce(HdrAbs(doubleZx));
-                const auto zyReduced = HdrReduce(HdrAbs(doubleZy));
-                results->SetBad(HdrCompareToBothPositiveReducedLE(zxReduced, smallFloat) ||
-                                HdrCompareToBothPositiveReducedLE(zyReduced, smallFloat) ||
-                                HdrCompareToBothPositiveReducedLE(norm, smallFloat));
-            }
-            const SubType tempZX = static_cast<SubType>(doubleZx) + static_cast<SubType>(cxCast);
-            const SubType tempZY = static_cast<SubType>(doubleZy) + static_cast<SubType>(cyCast);
-            znSize = tempZX * tempZX + tempZY * tempZY;
-
-            HdrReduce(dzdcX);
-            HdrReduce(dzdcY);
-            HdrReduce(doubleZx);
-            HdrReduce(doubleZy);
-            const T orbitNorm = HdrMaxPositiveReduced(HdrAbs(doubleZx), HdrAbs(doubleZy));
-            const T derivativeNorm = HdrMaxPositiveReduced(HdrAbs(dzdcX), HdrAbs(dzdcY));
-            auto periodicityRadius = results->GetMaxRadius() * derivativeNorm * highTwo;
-            HdrReduce(periodicityRadius);
-            if (HdrCompareToBothPositiveReducedLT(orbitNorm, periodicityRadius)) {
-                if constexpr (BenchmarkState == BenchmarkMode::Disable) {
-                    periodicityShouldBreak = true;
-                }
-            } else {
-                const T dzdcXOrig = dzdcX;
-                dzdcX = highTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + highOne;
-                dzdcY = highTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
-            }
+        [[maybe_unused]] bool periodicityShouldBreak = false;
+        if constexpr (PExtras == PerturbExtras::Disable) {
+            results->AddUncompressedIteration({doubleZx, doubleZy});
+        } else if constexpr (PExtras == PerturbExtras::SimpleCompression) {
+            compressor.MaybeAddCompressedIteration({doubleZx, doubleZy, i});
+        } else if constexpr (PExtras == PerturbExtras::Bad) {
+            results->AddUncompressedIteration({doubleZx, doubleZy, false});
+            const T norm = HdrReduce((doubleZx * doubleZx + doubleZy * doubleZy) * glitch);
+            const auto zxReduced = HdrReduce(HdrAbs(doubleZx));
+            const auto zyReduced = HdrReduce(HdrAbs(doubleZy));
+            results->SetBad(HdrCompareToBothPositiveReducedLE(zxReduced, smallFloat) ||
+                            HdrCompareToBothPositiveReducedLE(zyReduced, smallFloat) ||
+                            HdrCompareToBothPositiveReducedLE(norm, smallFloat));
         }
+        const SubType tempZX = static_cast<SubType>(doubleZx) + static_cast<SubType>(cxCast);
+        const SubType tempZY = static_cast<SubType>(doubleZy) + static_cast<SubType>(cyCast);
+        const SubType znSize = tempZX * tempZX + tempZY * tempZY;
 
-        // The split backend requires at least two stored limbs per operand. Zero and
-        // short values arise at initialization and cancellation; handle them here so
-        // the product helper can rely on its fixed-precision construction contract.
-        if (std::abs(zx.backend()->_mp_size) >= 2 && std::abs(zy.backend()->_mp_size) >= 2) {
-            products.Compute(
-                zxSquared.backend(), zySquared.backend(), cross.backend(), zx.backend(), zy.backend());
+        HdrReduce(dzdcX);
+        HdrReduce(dzdcY);
+        HdrReduce(doubleZx);
+        HdrReduce(doubleZy);
+        const T orbitNorm = HdrMaxPositiveReduced(HdrAbs(doubleZx), HdrAbs(doubleZy));
+        const T derivativeNorm = HdrMaxPositiveReduced(HdrAbs(dzdcX), HdrAbs(dzdcY));
+        auto periodicityRadius = results->GetMaxRadius() * derivativeNorm * highTwo;
+        HdrReduce(periodicityRadius);
+        if (HdrCompareToBothPositiveReducedLT(orbitNorm, periodicityRadius)) {
+            if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+                periodicityShouldBreak = true;
+            }
         } else {
-            mpf_mul(zxSquared.backend(), zx.backend(), zx.backend());
-            mpf_mul(zySquared.backend(), zy.backend(), zy.backend());
-            mpf_mul(cross.backend(), zx.backend(), zy.backend());
+            const T dzdcXOrig = dzdcX;
+            dzdcX = highTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + highOne;
+            dzdcY = highTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
         }
+        // Fixed split buffers accommodate changing occupied widths, including zero
+        // after cancellation; every iteration follows the same product path.
+        products.Compute(
+            zxSquared.backend(), zySquared.backend(), cross.backend(), zx.backend(), zy.backend());
         // Preserve MT3's sequence of full-width operations after the three products.
         mpf_mul_ui(cross.backend(), cross.backend(), 2);
         mpf_add(zy.backend(), cross.backend(), cyMpf.backend());
@@ -2265,18 +2334,18 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
         mpf_add(zx.backend(), temporary.backend(), cxMpf.backend());
         doubleZxLast = currentX;
         doubleZyLast = currentY;
-        if (periodicityShouldBreak) {
-            results->SetPeriodMaybeZero(static_cast<IterType>(results->GetCountOrbitEntries()));
+        // Benchmark mode retains derivative work but compiles out periodicity termination.
+        if constexpr (BenchmarkState == BenchmarkMode::Disable) {
+            if (periodicityShouldBreak) {
+                results->SetPeriodMaybeZero(static_cast<IterType>(results->GetCountOrbitEntries()));
+                break;
+            }
         }
-        if (periodicityShouldBreak || znSize > escapeNormSquared) {
+        if (znSize > escapeNormSquared) {
             break;
         }
     }
-    if constexpr (PExtras == PerturbExtras::Bad) {
-        results->SetBad(false);
-    }
-    results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
-    m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
+    finalizeResults();
 }
 
 template <typename IterType,
@@ -2939,29 +3008,39 @@ RefOrbitCalc::SetPerturbationAlg(PerturbationAlg alg)
 RefOrbitCalc::PerturbationAlg
 RefOrbitCalc::GetPerturbationAlg() const
 {
-    if (m_PerturbationAlg == PerturbationAlg::Auto) {
-        // GetPrecision() asks RequiresReuse(), which resolves Auto again. Estimate
-        // directly from the view without reuse padding to avoid recursion and an
-        // eligibility threshold that changes with the selected backend.
-        const uint64_t precisionBits = Fractal::GetPrecision(m_Fractal.GetPtz(), false);
-        if (precisionBits >= FractalShark::RefOrbitKaratsubaAutoPrecisionBits) {
-            return PerturbationAlg::MTPeriodicity9Karatsuba;
-        }
-        HighPrecision zoomFactor = m_Fractal.GetZoomFactor();
-
-        if (zoomFactor < HighPrecision{10}.power(150)) {
-            return PerturbationAlg::STPeriodicity;
-        } else if (zoomFactor < HighPrecision{10}.power(2000)) {
-            return PerturbationAlg::MTPeriodicity3;
-        } else {
-            // Roll the dice and hope the intermediate precision orbit
-            // works! :-)
-            // Note MTPeriodicity3PerturbMTHighMTMed4 is broken.
-            return PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3;
-        }
-    } else {
+    if (m_PerturbationAlg != PerturbationAlg::Auto) {
         return m_PerturbationAlg;
     }
+
+    // GetPrecision() asks RequiresReuse(), which resolves Auto again. Estimate
+    // directly from the view without reuse padding to avoid recursion and an
+    // eligibility threshold that changes with the selected backend.
+    const uint64_t precisionBits = Fractal::GetPrecision(m_Fractal.GetPtz(), false);
+    return ResolveAutoPerturbationAlg(
+        precisionBits, !m_Fractal.GpuBypassed(), m_Fractal.GetRenderAlgorithm());
+}
+
+RefOrbitCalc::PerturbationAlg
+RefOrbitCalc::ResolveAutoPerturbationAlg(uint64_t precisionBits,
+                                         bool gpuAvailable,
+                                         const RenderAlgorithm &renderAlgorithm)
+{
+    if (precisionBits < AutoMultithreadPrecisionBits) {
+        return PerturbationAlg::STPeriodicity;
+    }
+    if (precisionBits < AutoReusePrecisionBits) {
+        return PerturbationAlg::MTPeriodicity3;
+    }
+    if (precisionBits < FractalShark::RefOrbitKaratsubaAutoPrecisionBits) {
+        return PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3;
+    }
+    // RoundToSupportedLimbCount saturates at the largest GPU bucket. Avoid silently
+    // lowering requested precision when Auto exceeds that storage capacity.
+    if (precisionBits >= AutoGpuPrecisionBits && precisionBits <= AutoGpuMaximumPrecisionBits &&
+        gpuAvailable && AutoGpuReferenceCompatible[static_cast<size_t>(renderAlgorithm.Algorithm)]) {
+        return PerturbationAlg::GPU;
+    }
+    return PerturbationAlg::MTPeriodicity9Karatsuba;
 }
 
 std::string

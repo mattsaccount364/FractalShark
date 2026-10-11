@@ -450,7 +450,9 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Clear Perturbation References -- High} (command): Clears high-class cached references.
 
       \item \emph{Auto (default)} (radio): Automatically selects the perturbation
-      algorithm based on current conditions.  Recommended for most use.
+      algorithm. At 16,384 estimated precision bits and above it selects MT9;
+      below that threshold it follows the zoom rules in
+      \cref{subsec:ref-orbit-pipeline}. Recommended for most use.
       \item \emph{Single Thread (ST)} (radio): Uses a single-threaded
       reference-orbit computation with no periodicity checking.
       \item \emph{Multi Thread (MT)} (radio): Uses a multithreaded
@@ -458,16 +460,21 @@ choice and triggers any necessary reconfiguration.
       \item \emph{ST + Periodicity} (radio): Single-threaded reference-orbit
       computation with periodicity checking to detect convergence early.
       \item \emph{MT2 + Periodicity} (radio): Multithreaded reference-orbit
-      computation (generation~2) with periodicity checking.
-      \item \emph{MT2 + Periodicity + Perturb ST} (radio): MT2 reference orbit
-      with a single-threaded perturbation pass for the high-resolution layer.
+      computation with periodicity checking: two square workers plus the caller,
+      named MT3 in the implementation.
+      \item \emph{MT2 + Periodicity + Perturb ST} (radio): Despite the legacy
+      label, uses single-threaded authoritative generation and a single-threaded
+      medium reference, with compressed high-precision reuse data.
       \item \emph{MT2 + Periodicity + Perturb MT v1--v4} (radio entries):
-      MT2 reference orbit with multithreaded perturbation.  Versions v1--v3
-      represent different threading/scheduling strategies for the per-pixel
-      perturbation pass; v4 is marked as broken.
-      \item \emph{MT5 + Periodicity} (command): A newer multithreaded variant
-      (generation~5) with periodicity checking.  Only enabled when perturbation
-      support is available.
+      MT3 authoritative generation followed by medium-reference reuse.
+      Versions v1--v2 store uncompressed reuse data; v3 compresses it.
+      Version v2 moves reuse-entry storage to an additional worker relative to v1;
+      v4 is broken.
+      \item \emph{MT5 + Periodicity} (command): The disabled MT5 entry point
+      delegates to periodic MT3.
+      \item \emph{MT9 + Periodicity + Karatsuba} (radio): Eight workers plus
+      the caller compute exact split products, with full-precision recurrence
+      add/subtract operations. See \cref{subsec:ref-orbit-mt9}.
 
       \item \emph{GPU-Accelerated (see README)} (radio): Selects the fused
       Ref2/v2 implementation, which evaluates the complete high-precision
@@ -1066,9 +1073,24 @@ API names differ from the descriptive labels in the graphical menu.
     Supersampling factor ($\ge 1$).
 
   \item[\code{-{}-perturbation-alg NAME}]
-    Reference-orbit algorithm: \code{ST}, \code{MT},
-    \code{STPeriodicity}, \code{MTPeriodicity3}, \code{GPU},
-    \code{Auto}, among others.
+    Reference-orbit algorithm. All valid strings are listed below;
+    \cref{tab:reference-backends} explains their actual dispatch.
+    GPU reference generation requires CUDA and an HDR perturbation render algorithm.
+\begin{lstlisting}[language={}]
+Auto
+ST
+MT
+STPeriodicity
+MTPeriodicity3
+MTPeriodicity3PerturbMTHighSTMed
+MTPeriodicity3PerturbMTHighMTMed1
+MTPeriodicity3PerturbMTHighMTMed2
+MTPeriodicity3PerturbMTHighMTMed3
+MTPeriodicity3PerturbMTHighMTMed4
+MTPeriodicity5
+MTPeriodicity9Karatsuba
+GPU
+\end{lstlisting}
 
   \item[\code{-{}-commit-cap-bytes N}]
     Memory cap for growable vectors (default unlimited). Set it when starting

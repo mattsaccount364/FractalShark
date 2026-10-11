@@ -192,6 +192,12 @@ potentially impacting performance.
 
 \subsubsection{SaveForReuse Modes}
 
+The selections in \cref{tab:reference-backends} distinguish reuse storage
+from the arithmetic backend. MT9 currently uses \code{DontSaveForReuse}:
+it can publish uncompressed or waypoint-compressed downstream samples and
+use the existing Imagina interchange path, but it does not create the extra
+high-precision reuse stream consumed by the medium-reference backends.
+
 Both \code{SaveForReuse1} and \code{SaveForReuse2} store the same uncompressed
 MPIR reuse-entry format.  They differ in execution strategy.
 

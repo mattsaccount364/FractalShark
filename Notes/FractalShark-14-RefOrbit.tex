@@ -52,10 +52,12 @@ Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, 
   \item Picks an initial guess \((c_x,c_y)\) (center of the current view
         if unset).
   \item Chooses an algorithm from \code{m\_Perturbation\-Alg}.  In
-        \code{Auto}, the zoom-factor heuristic selects
-        \code{STPeriodicity} below $10^{150}$,
+        \code{Auto}, an estimated precision of at least $16{,}384$ bits selects
+        \code{MTPeriodicity9Karatsuba}. Below that threshold, the zoom-factor
+        heuristic selects \code{STPeriodicity} below $10^{150}$,
         \code{MTPeriodicity3} below $10^{2000}$, and
-        \code{MTPeriodicity3PerturbMTHighMTMed3} thereafter.  Automatic
+        \code{MTPeriodicity3PerturbMTHighMTMed3} thereafter. The bit estimate
+        excludes reuse padding and does not depend on hardware concurrency. Automatic
         selection does not choose the CUDA backend.  The manually selected
         \code{GPU} value dispatches to the CUDA implementation.
   \item Allocates a new \code{PerturbationResults} slot, initializes
@@ -66,6 +68,47 @@ Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, 
 To control memory pressure, \code{OptimizeMemory()} monitors process commit
 usage and opportunistically drops cached orbits that are not of the currently
 demanded variant type when the working set exceeds a configurable threshold.
+
+\paragraph{Complete selection catalog.}
+\Cref{tab:reference-backends} lists every \code{PerturbationAlg} value and its
+actual dispatch. A reuse selection controls reference generation and subsequent
+medium-precision reference construction, rather than selecting the per-pixel
+render algorithm. Reuse storage is described in \cref{subsec:ref-orbit-reuse}.
+The legacy menu label ``MT2'' counts the two square workers; the implementation
+name MT3 also counts the calling thread. Explicit selections bypass Auto.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption[Reference-orbit selections]{Complete reference-orbit selection catalog.
+  The CPU periodicity test is a termination heuristic, not an accuracy certificate.}
+\label{tab:reference-backends}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.48\textwidth}X}
+\hline
+\textbf{Enum / CLI name} & \textbf{Actual behavior} \\
+\hline
+\code{ST} & Factored MPIR recurrence, no periodicity. \\
+\code{MT} & MT3 expanded recurrence, no periodicity. \\
+\code{STPeriodicity} & ST with periodicity. \\
+\code{MTPeriodicity3} & Two square workers plus caller, with periodicity. \\
+\code{MTPeriodicity3\-PerturbMTHigh\-STMed} & ST authoritative generation,
+  \code{SaveForReuse3}; single-threaded medium reference. \\
+\code{MTPeriodicity3\-PerturbMTHigh\-MTMed1} & MT3 authoritative generation,
+  uncompressed \code{SaveForReuse1}; caller stores reuse entries. \\
+\code{MTPeriodicity3\-PerturbMTHigh\-MTMed2} & MT3 authoritative generation,
+  uncompressed \code{SaveForReuse2}; additional reuse-storage worker. \\
+\code{MTPeriodicity3\-PerturbMTHigh\-MTMed3} & MT3 authoritative generation,
+  compressed \code{SaveForReuse3}; additional reuse-storage worker. \\
+\code{MTPeriodicity3\-PerturbMTHigh\-MTMed4} & Broken reuse-v4 selection;
+  not a supported reference backend. \\
+\code{MTPeriodicity5} & Disabled MT5 entry point delegates to periodic MT3. \\
+\code{GPU} & Manually selected fused CUDA Ref2/v2 recurrence. \\
+\code{Auto} & Precision-first MT9 rule, then the zoom rules above; never GPU. \\
+\code{MTPeriodicity9\-Karatsuba} & Eight workers plus caller; exact split products,
+  full-precision recurrence additions and subtractions, with periodicity. \\
+\hline
+\end{tabularx}
+\end{table}
 
 \subsection{Single-threaded authoritative orbit}
 \label{subsec:ref-orbit-st}
@@ -101,7 +144,7 @@ Writing \(z_n = x_n + i y_n\), one iteration evaluates
 The equations follow from
 $(x_n+i y_n)^2=x_n^2-y_n^2+2i x_ny_n$.
 The single-threaded implementation evaluates the real expression as
-$(x_n-y_n)(x_n+y_n)$, using \code{Ref\-Orbit\-Multiplier} for both
+$(x_n-y_n)(x_n+y_n)$, using ordinary MPIR \code{mpf\_mul} for both
 high-precision products.  It computes $2x_ny_n+c_y$ into a temporary before
 overwriting $x_n$, then publishes the new imaginary value by swapping buffers.
 Both component updates therefore use the same old state.  The implementation also uses:
@@ -261,8 +304,10 @@ $2(3/4)(1/2)=3/4$.  Equality of these exact results does not require the
 rounded intermediate products to agree for arbitrary finite-precision inputs.
 
 The authoritative single-threaded CPU path uses the factored schedule through
-\code{Ref\-Orbit\-Multiplier}; \code{MT3} uses independent $x_n^2$ and
-$y_n^2$ workers and a main-thread cross product.  The CUDA engine
+\code{mpf\_mul}; \code{MT3} uses independent $x_n^2$ and
+$y_n^2$ workers and a main-thread cross product. MT9 instead reconstructs
+each of those three products from exact half-width integer products
+(\cref{subsec:ref-orbit-mt9}). The CUDA engine
 implements the same component equations through the factored nonlinear products
 \begin{align}
 R_n &= (x_n+y_n)(x_n-y_n)=x_n^2-y_n^2, \\

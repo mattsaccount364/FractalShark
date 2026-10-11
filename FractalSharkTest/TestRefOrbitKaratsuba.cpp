@@ -26,6 +26,7 @@
 #include <random>
 #include <sstream>
 #include <stdexcept>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -592,6 +593,55 @@ TEST(RefOrbitKaratsuba_WorkerHandoffStress)
             CheckBatch(products, x.Get(), y.Get(), xSquared.Get(), ySquared.Get(), cross.Get());
         }
     }
+}
+
+TEST(RefOrbitKaratsuba_FirstFinalAndActiveCancellation)
+{
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    HighPrecision::defaultPrecisionInBits(16'384);
+    RefOrbitCalc calculator(fractal, UINT64_MAX);
+    calculator.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+    const HighPrecision cx{"-0.1"}, cy{"0.1"};
+    for (const uint64_t limit : {uint64_t{1}, uint64_t{2}, uint64_t{3}}) {
+        calculator.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+        calculator.ResetGuess(cx, cy);
+        fractal.SetNumIterations<uint64_t>(limit);
+        calculator.AddPerturbationReferencePoint<uint64_t,
+                                                 double,
+                                                 double,
+                                                 PerturbExtras::Disable,
+                                                 RefOrbitCalc::BenchmarkMode::Enable>(fractal.GetPtz());
+        const auto *results = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
+        ASSERT_EQ(results->GetCountOrbitEntries(), limit);
+        if (limit > 1) {
+            ASSERT_NEAR(results->GetOrbitData()[1].x, -0.1, 1e-15);
+            ASSERT_NEAR(results->GetOrbitData()[1].y, 0.1, 1e-15);
+        }
+    }
+    calculator.ClearPerturbationResults(RefOrbitCalc::PerturbationResultType::All);
+    calculator.ResetGuess(cx, cy);
+    constexpr uint64_t limit = 1'048'576;
+    fractal.SetNumIterations<uint64_t>(limit);
+    AbortMonitor abort(false);
+    {
+        // Cancel a deliberately long bounded orbit after arithmetic has begun. No
+        // reference data is read concurrently; join the requester before assertions.
+        std::jthread requester([&abort] {
+            std::this_thread::sleep_for(std::chrono::milliseconds{100});
+            abort.SetStopCalculating(true);
+        });
+        calculator.AddPerturbationReferencePoint<uint64_t,
+                                                 double,
+                                                 double,
+                                                 PerturbExtras::Disable,
+                                                 RefOrbitCalc::BenchmarkMode::Enable>(fractal.GetPtz());
+    }
+    abort.ResetStopCalculating();
+    const auto *results = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
+    ASSERT_TRUE(results->GetCountOrbitEntries() > 1);
+    ASSERT_TRUE(results->GetCountOrbitEntries() < limit);
 }
 
 TEST(RefOrbitKaratsuba_IdleWorkerShutdown)

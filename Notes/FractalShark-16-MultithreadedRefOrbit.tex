@@ -6,7 +6,8 @@ of the single-threaded authoritative orbit (\cref{subsec:ref-orbit-st}) by
 decomposing each iteration across multiple CPU threads.  The design targets
 independent, high-latency big-integer operations within one reference
 recurrence, while minimizing synchronization overhead.  Iterations themselves
-remain sequential: the next batch needs both newly assembled components.  Two
+remain sequential, but squaring the next imaginary component can begin before
+the current real update finishes. Two
 recurring implementation patterns characterize this approach.
 
 The \code{MT5} entry point is currently disabled and falls back to \code{MT3};
@@ -33,6 +34,15 @@ $1/4$, and $2x_ny_n=3/4$, giving $z_{n+1}=5/16+3i/4$.
 Using the new real component in the imaginary product would instead give
 $2(5/16)(1/2)=5/16$, a different recurrence.  Parallelism therefore requires
 stable old operands and a join before their buffers can be reused.
+
+\paragraph{MT3 imaginary-square lookahead.}
+The main thread forms $y_{n+1}$ from the cross product before waiting for
+$x_n^2$. Once the current $y_n^2$ has been consumed into separate storage,
+the Y worker starts $y_{n+1}^2$ while the caller waits for $x_n^2$ and finishes
+\eqref{eq:mt-real-update}. A local flag records that the next Y-square is
+already in flight. The orbit dependency is therefore finer than a whole-iteration
+barrier: $y_{n+1}^2$ needs neither $x_n^2$ nor $x_{n+1}$. Stable square inputs and
+separate completed-result storage protect that overlap.
 
 The schedule evaluates the same polynomial as the single-threaded factored
 path, but its separately rounded squares need not give bitwise-identical
@@ -86,8 +96,10 @@ memory latency.  Beyond a hardware- and workload-dependent threshold,
 multithreaded reference-orbit computation can outperform the
 single-threaded path in practice, with speedups increasing as precision grows.
 
-The current \code{Auto} implementation uses the zoom factor as a proxy for
-required precision.  It selects \code{STPeriodicity} below $10^{150}$,
+The current \code{Auto} implementation first estimates precision in bits,
+excluding reuse padding. At $16{,}384$ bits and above it selects
+\code{MTPeriodicity9Karatsuba}, without a hardware-concurrency test.
+Below that precision threshold it selects \code{STPeriodicity} below $10^{150}$,
 \code{MTPeriodicity3} from $10^{150}$ through values below $10^{2000}$, and
 \code{MTPeriodicity3PerturbMTHighMTMed3} at $10^{2000}$ and beyond.  These are
 fixed code thresholds, not a hardware benchmark or CUDA capability test, and
@@ -121,3 +133,181 @@ treated as complementary strategies rather than a strict hierarchy: fewer limbs
 favor single-thread execution, while increasing precision increasingly favors
 multithreaded decomposition, with \code{Auto} providing an adaptive runtime
 selection mechanism.
+
+\subsection{MT9 exact split-product backend}
+\label{subsec:ref-orbit-mt9}
+
+The nine-thread Karatsuba reference design is inspired by
+Fractadyne~\cite{Fractadyne}, specifically its \code{ParSplit} and
+\code{split\_mandel\_walk} implementation in \code{backend\_rug.rs}.
+Each of the recurrence's three products is decomposed into three integer
+products of approximately half the original operand width. Eight persistent
+workers and the caller provide the nine arithmetic roles.
+
+\paragraph{Precision distinction from Fractadyne.}
+Both implementations reconstruct the split integer products exactly.
+Fractadyne additionally uses a derivative-driven adaptive working-precision
+schedule: when the schedule lowers precision, its recurrence products,
+additions, and subtractions round at that reduced precision. FractalShark's
+MT9 backend keeps recurrence addition and subtraction at the full configured
+MPIR precision throughout the orbit. Its derivative remains a reduced-precision
+periodicity estimate; it does not lower the arithmetic precision. In particular,
+``half-width'' describes integer multiplication operands, not a reduction of
+the recurrence's configured precision. The comparison refers to the inspected
+Fractadyne revision identified in the bibliography.
+
+\paragraph{Exact algebra and final truncation.}
+Let $\beta=2^w$, where $w$ is the number of usable bits in an MPIR limb, and
+let $m$ be the low-part limb count. For the full stored nonnegative input
+mantissas, including guard limbs, define
+\[
+ X=X_H\beta^m+X_L,\qquad Y=Y_H\beta^m+Y_L.
+\]
+With exact integer products
+$A=X_HY_H$, $B=X_LY_L$, and $C=(X_H+X_L)(Y_H+Y_L)$,
+\begin{equation}
+ XY=A\beta^{2m}+(C-A-B)\beta^m+B.
+ \label{eq:mt9-karatsuba}
+\end{equation}
+The middle term is $X_HY_L+X_LY_H\ge0$; no truncated subtraction or
+unaccounted borrow occurs. Squares use the same identity with $X=Y$.
+An extra sum limb accommodates $X_H+X_L$, and unequal high/low widths are
+handled by zero padding. The complete integer product is assembled before
+any output limbs are discarded.
+
+For a nonzero exact floating-point product with normalized limb exponent $e$,
+retaining $q$ limbs toward zero gives
+\begin{equation}
+ |\widehat{xy}-xy|<\beta^{e-q}.
+ \label{eq:mt9-local-truncation}
+\end{equation}
+The destination retains up to \code{\_mp\_prec+1} limbs. Karatsuba introduces
+no error before that final truncation. The bound concerns products of the
+stored inputs; it does not bound accumulated orbit error or certify periodicity.
+Ordinary \code{mpf\_mul} can clip inputs differently, so exact split assembly
+need not be bitwise identical to MT3. Zero or inputs shorter than two limbs
+use ordinary products in the caller.
+
+\paragraph{Worker ownership and handoff.}
+Each square has high, low, and sum workers; its high worker assembles the
+product after its two followers complete. The caller computes the cross
+product's high part, while two workers compute its low and sum parts.
+All operand snapshots, products, and assembly buffers are sized before workers
+start and reused throughout the orbit. Each worker has a separate padded
+atomic state with \code{Idle}, \code{Run}, and \code{Stop} values. Release
+stores and acquire loads publish jobs and results, with processor pause
+instructions while polling. Followers are dispatched before their lead,
+preventing a lead from treating the previous Idle state as new completion.
+There is at most one outstanding job per worker, so generation counters and
+a shared completion counter are unnecessary. Pending arithmetic must finish
+before snapshots are overwritten or workers are stopped.
+
+\paragraph{Evaluated software pipeline.}
+An experimental split interface started X-square work before sample publication
+and derivative bookkeeping. The caller finished the current cross product and
+formed $y_{n+1}$. After storing the completed $y_n^2$, the same Y snapshot
+was prepared for $y_{n+1}^2$ while the caller consumed $x_n^2$ and performed
+the full-precision real update. \Cref{fig:mt9-lookahead} shows the dependencies.
+The next iteration started only the new X-square if its Y-square was already
+pending. The prototype drained pending arithmetic before fallback, cancellation,
+or destruction and suppressed lookahead at known termination and the final
+iteration. Independent integer-oracle tests confirmed unchanged arithmetic.
+
+Neither the early-dispatch experiment nor the full orbit-lookahead prototype
+met the measurement criterion below. The split interface and experimental
+schedule were removed. The retained MT9 \code{Compute} prepares both input
+snapshots, dispatches all followers before the square leads, assembles the
+cross product on the caller, and waits for both square leads before storing
+the three outputs. Product assembly still overlaps other products within a
+batch, but the retained orbit loop has no next-iteration square lookahead.
+
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+  work/.style={draw, rounded corners, align=center, text width=2.7cm,
+               minimum height=10mm, font=\small},
+  dependency/.style={-{Latex[length=2mm]}, thick}]
+  \node[work] (xsq) at (0,1.5) {$x_n^2$};
+  \node[work] (cross) at (0,0) {$x_ny_n$};
+  \node[work] (ysq) at (0,-1.5) {$y_n^2$};
+  \node[work] (ynext) at (4.1,0) {Form $y_{n+1}$};
+  \node[work] (consume) at (4.1,-2) {Consume $y_n^2$};
+  \node[work, fill=blue!8] (lookahead) at (8.2,0) {Start $y_{n+1}^2$};
+  \node[work, fill=blue!8] (real) at (8.2,-2) {Finish $x_{n+1}$};
+  \draw[dependency] (cross) -- (ynext);
+  \draw[dependency] (ynext) -- (lookahead);
+  \draw[dependency] (ysq) -- (consume);
+  \draw[dependency] (consume) -- (real);
+  \draw[dependency] (consume.east) -- ++(0.45,0) |- (lookahead.south);
+  \draw[dependency] (xsq.east) -- (9.85,1.5) |- (real.east);
+  \node[align=center, font=\small] at (11.3,-0.7) {Shaded work\\may overlap};
+\end{tikzpicture}
+\caption[Imaginary-square lookahead dependencies]{Imaginary-square lookahead
+  dependencies used by MT3 and evaluated in the MT9 prototype. The current cross product and
+  Y-square must finish before Y's snapshot is replaced. Squaring the next Y
+  can overlap the current real update; positions do not represent measured durations.}
+\label{fig:mt9-lookahead}
+\end{figure}
+
+\paragraph{Measured pipeline evaluation.}
+Measurements on October 11, 2026 used an AMD Ryzen 9 5950X with 16 physical
+cores and 32 logical processors, Windows x64 Release, and 16,384 measured
+iterations per fixture. The complete-orbit workload was $c=-0.1+0.1i$,
+with benchmark-mode periodicity termination disabled. The product fixture used
+fixed full-mantissa signed inputs and excluded construction and oracle checks
+from timing; it is not a complete recurrence benchmark.
+
+Each stage alternated baseline and candidate order across five pairs. The
+retention rule required at least a 5\% median latency reduction in one MT9
+fixture with no regression greater than 5\% in another. Results within two
+percentage points of either threshold required ten additional pairs. Early
+dispatch qualified for that extension, but its best gain across all fifteen
+pairs was 4.23\% in the 16,384-bit product fixture; complete-orbit gains were
+0.87\%, 1.85\%, and $-1.03$\% at increasing precision. The stage was rejected.
+
+The orbit-lookahead prototype was compared against the original retained
+schedule in a fresh set of five pairs. \Cref{tab:mt9-orbit-pipeline-timings}
+reports complete-orbit medians and \cref{tab:mt9-product-pipeline-timings}
+reports synchronous product medians. Positive gains indicate lower latency.
+The unchanged MT3 control's median differences were below 1\% at every
+precision. The timing runs included no concurrent build or CPU profiling.
+
+\begin{table}[!htbp]
+\centering
+\caption[MT9 orbit-lookahead timings]{Complete-orbit MT9 timings, in microseconds
+  per iteration, for five alternating baseline/prototype pairs.}
+\label{tab:mt9-orbit-pipeline-timings}
+\begin{tabular}{rrrr}
+\hline
+\textbf{Bits} & \textbf{Baseline ($\mu$s)} & \textbf{Lookahead ($\mu$s)} & \textbf{Gain (\%)} \\
+\hline
+16,384 & 9.288 & 9.450 & $-1.75$ \\
+33,344 & 24.535 & 24.407 & 0.52 \\
+100,096 & 98.362 & 99.002 & $-0.65$ \\
+\hline
+\end{tabular}
+\end{table}
+
+\begin{table}[!htbp]
+\centering
+\caption[MT9 product-control timings]{Synchronous three-product MT9 timings,
+  in microseconds per batch, from the same five paired runs. The product
+  fixture retains the original batch schedule in both binaries.}
+\label{tab:mt9-product-pipeline-timings}
+\begin{tabular}{rrrr}
+\hline
+\textbf{Bits} & \textbf{Baseline ($\mu$s)} & \textbf{Prototype ($\mu$s)} & \textbf{Gain (\%)} \\
+\hline
+16,384 & 7.424 & 7.601 & $-2.39$ \\
+33,344 & 18.285 & 18.235 & 0.28 \\
+100,096 & 72.416 & 73.082 & $-0.92$ \\
+\hline
+\end{tabular}
+\end{table}
+
+The proposed overlap does not remove the dependency of the next cross product
+on the completed real component. Moving Y-square work earlier therefore need
+not shorten the critical path when the current cross product dominates.
+The measured result establishes no useful speedup for these workloads;
+timing medians alone do not establish per-thread utilization or rule out gains
+for other hardware or reference parameters.

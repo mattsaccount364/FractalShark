@@ -98,6 +98,8 @@ assertion-based framework (\code{TEST}, \code{ASSERT\_EQ},
   \item BLA and LA coefficients, evaluation, parameter handling, and storage.
   \item Save transactions, PNG output, and current-frame recoloring.
   \item Render cases and decoded-image golden checks.
+  \item MT9 exact-product oracles, guard limbs, handoff and lifetime checks,
+        recurrence precision, Auto selection, compression, and Imagina interchange.
 \end{itemize}
 
 \paragraph{Selecting a useful check.}
@@ -113,6 +115,25 @@ The portable Linux runner is
 requires real CUDA hardware; it is not implied by a CPU-only CI run. Focused
 PNG checks are documented in \cref{subsec:png-validation}. Large full-suite runs
 can take substantially longer than individual utility cases.
+
+\paragraph{MT9 arithmetic and performance fixtures.}
+The \code{RefOrbitKaratsuba\_*} cases compare split products against an
+independent \code{mpz\_mul} oracle over every stored input limb. Recurrence
+tests apply ordinary full-precision MPIR addition and subtraction after those
+oracle products. Product benchmarks and complete-orbit benchmarks are separate:
+the latter include sequential recurrence, sample publication, derivative
+bookkeeping, and worker startup/teardown. The complete-orbit workload uses
+$c=-0.1+0.1i$ and suppresses periodicity termination in benchmark mode.
+Each fixture measures 16,384 iterations at 16,384, 33,344, or 100,096 bits;
+\code{FRACTALSHARK\_REF\_ORBIT\_PROFILE\_ITERATIONS} can increase that count.
+For example:
+\begin{lstlisting}[language={}]
+Release\FractalSharkTest.exe --filter "RefOrbitKaratsuba_*"
+Release\FractalSharkTest.exe --filter "RefOrbitKaratsuba_Profile*"
+\end{lstlisting}
+Paired Release measurements alternate baseline and candidate order and retain
+MT3 as a control. Timing results describe the tested machine and workload,
+not a hardware-independent speedup or an end-to-end accuracy certificate.
 
 The tiered allocation strategy introduced earlier in this chapter addresses one aspect of memory
 pressure.  The next chapter examines a complementary mechanism---disk-backed

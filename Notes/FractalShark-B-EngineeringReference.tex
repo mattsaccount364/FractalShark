@@ -85,6 +85,15 @@ management, render-thread coordination, persistence, PNG output, shared
 commands, and functional tests.  The principal flows appear in
 \cref{sec:ref-orbit-calc,sec:render-thread-pool,sec:disk_backed_growable_vectors}.
 
+CPU reference arithmetic is selected independently of the per-pixel renderer.
+The complete enum-to-backend contract appears in \cref{tab:reference-backends}.
+\code{RefOrbitKaratsubaProducts} owns MT9's eight persistent arithmetic workers,
+fixed-width snapshots, and exact integer assembly buffers
+(\cref{subsec:ref-orbit-mt9}). Its lifetime remains inside the caller's MPIR
+allocator/TLS scope; workers and every MPIR object must be destroyed before
+their associated TLS arena is shut down. GPU reference generation instead
+uses the fused \code{HpSharkFloat} recurrence.
+
 \paragraph{\code{FractalSharkGpuLib}.}
 The rendering CUDA library owns the per-pixel launch surface and kernels for
 direct escape-time rendering, perturbation, BLA and LA~v2 traversal,

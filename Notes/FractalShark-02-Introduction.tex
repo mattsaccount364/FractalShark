@@ -1,6 +1,6 @@
 % === Introduction and motivation ===
 
-This document describes the algorithms, data structures, and implementation
+The document describes the algorithms, data structures, and implementation
 of \FractalShark{}, a high-performance, GPU-accelerated Mandelbrot set
 renderer designed for extreme deep-zoom exploration.  \FractalShark{}
 combines perturbation theory with linear approximation, NTT-based
@@ -25,6 +25,17 @@ Finder---and concludes with infrastructure details and development history.
 
 \section{\FractalShark{} Overview}
 \label{sec:goal}
+
+\paragraph{Reader background and route through the notes.}
+The mathematical explanations assume elementary calculus, complex arithmetic, and
+basic programming. Numerical methods, transform multiplication, and GPU execution
+concepts are introduced before their implementation details. The rendering chapters
+first establish a direct calculation, then show which work perturbation and
+approximation can share or skip. The reference-orbit chapters explain how that shared
+input is computed. Readers interested in using the application can begin with
+\cref{sec:user-documentation}; the engineering appendix and dated development history
+provide implementation and historical context. The final appendix treats GPU PNG
+encoding as a supporting technique rather than a prerequisite for fractal mathematics.
 
 \begin{figure}[!htbp]
   \centering

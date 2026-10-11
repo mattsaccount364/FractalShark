@@ -19,6 +19,16 @@ iteration can be larger than the true first-escape iteration by up to
 continuous/smooth coloring based on the first bailout), use a chunk size of 1 or
 insert bailout checks within the unrolled body.
 
+\paragraph{Worked chunk example.}
+For $c=1$, the exact orbit begins $0,1,2,5,26$. The first value strictly outside
+the radius-two circle is $z_3=5$. A loop that checks only after four updates first
+observes escape at $z_4=26$, one update late. The example counts recurrence updates;
+an individual kernel's stored-counter convention must also be considered when
+comparing output counts. More generally, a chunk of $k$ updates can postpone the
+observation by at most $k-1$ updates, provided arithmetic remains usable until the
+check. Large escaped values may overflow before the end of a chunk. The iteration
+budget must also be handled explicitly when it is not a multiple of $k$.
+
 This optimization was mainly explored for educational purposes; in practice, the
 benefit is small compared to other optimizations such as perturbation (\cref{sec:perturbation-concept}) and linear
 approximation (\cref{sec:approx-accel}).

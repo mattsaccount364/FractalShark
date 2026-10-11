@@ -1,27 +1,29 @@
 \section{HDR Floating-Point Representation}
 \label{sec:hdr-float}
 
-Deep-zoom Mandelbrot rendering places unusual demands on numerical
-representation. Orbit values may span an extreme dynamic range over the course
-of iteration, while small relative differences between nearby orbits must be
-tracked accurately. Standard floating-point formats are poorly matched to this
-combination of requirements: fixed-precision mantissas limit relative accuracy
-at large magnitudes, while arbitrary-precision formats incur prohibitive
-computational cost when used per pixel.
+Deep-zoom Mandelbrot rendering must represent pixel offsets far below the
+smallest nonzero native floating-point value. For example, an offset of
+$2^{-2000}$ is meaningful in a sufficiently deep view, although it underflows
+to zero in IEEE~754 double precision. Computing every pixel with arbitrary
+precision would retain that offset but repeat expensive work across the image.
+The desired representation instead combines a wide exponent range with the
+modest significand precision needed for per-pixel perturbation.
 
 To address this gap, the implementation employs a custom \emph{high dynamic range (HDR)}
 floating-point representation that explicitly separates scale and precision
 (\cref{fig:type-hierarchy}).
-This representation is designed to preserve relative accuracy across a wide
-range of magnitudes while remaining efficient on GPUs.
+The representation extends range while retaining the precision of its selected
+mantissa type; it does not manufacture additional significant bits.
 
 \subsection{Decoupling scale and precision}
 
-In standard IEEE floating-point arithmetic, each value is represented as a
-mantissa multiplied by a power of two, with both components stored implicitly in
-a single word. While convenient, this tightly couples scale and precision: as
-values grow in magnitude, fewer bits remain available to represent small
-relative differences.
+In standard IEEE floating-point arithmetic, each finite nonzero value has a
+significand multiplied by a power of two. The significand precision is fixed:
+a normal float has 24 significant binary digits and a normal double has 53,
+regardless of magnitude. Absolute spacing grows with magnitude, while relative
+spacing remains approximately constant. Subnormal values near underflow have
+fewer significant digits. The limitation addressed here is the finite exponent
+range, rather than a loss of normal-number significand bits at large magnitudes.
 
 The HDR representation instead stores values in the form
 \begin{equation}
@@ -30,34 +32,60 @@ x = m \cdot 2^{e},
 where:
 \begin{itemize}
 \item \(m\) is a fixed-precision mantissa stored in standard floating-point or
-      double-double format, and
+      multi-component expansion format, and
 \item \(e\) is an explicitly managed integer exponent.
 \end{itemize}
 
-By storing the exponent separately, the mantissa can remain centered near unit
-magnitude regardless of the overall scale of the value. This separation preserves relative
-precision even when the absolute value becomes extremely large or small.
+By storing the exponent separately, the mantissa can remain near unit magnitude
+even when the represented number is extremely small. For example,
+$x=1.5\cdot2^{-2000}$ stores the ordinary mantissa~1.5 and the integer
+exponent~$-2000$. The available exponent range is finite, but substantially wider
+than the native float or double range. Rounding, cancellation, and insufficient
+mantissa precision remain possible.
 
 \subsection{Normalization and arithmetic}
 
-HDR arithmetic maintains the invariant that the mantissa remains within a fixed
-normalized range. After each arithmetic operation, the mantissa is renormalized
-and any excess scaling is folded into the exponent. Conceptually, this mirrors
-the behavior of floating-point normalization, but with explicit control over the
-process.
+Reduced nonzero scalar values use a mantissa with $1\le |m|<2$ for the native
+mantissa types. Multiplication or addition may temporarily leave that range;
+\code{Reduce()} transfers the mantissa's binary scale into the explicit
+exponent. Performance-sensitive code can delay reduction, so normalization is
+a required property at designated operation and comparison boundaries rather
+than a claim that every intermediate is immediately normalized. Zero has a
+separate representation and does not satisfy the nonzero invariant.
 
 Arithmetic operations are performed as follows:
 \begin{itemize}
 \item \textbf{Multiplication} combines mantissas and adds exponents.
 \item \textbf{Addition and subtraction} align exponents explicitly before
       operating on mantissas.
-\item \textbf{Renormalization} ensures that mantissas remain well-scaled and
-      numerically stable.
+\item \textbf{Renormalization} transfers powers of two between the mantissa and
+      exponent without changing the represented value, apart from arithmetic
+      rounding already incurred.
 \end{itemize}
 
 Because mantissas are stored using fixed-precision types, these operations map
 naturally to GPU hardware while avoiding the overhead of general-purpose
 arbitrary-precision arithmetic.
+
+\paragraph{Worked exponent alignment.}
+Let $x=1.5\cdot2^{-2000}$ and $y=1.25\cdot2^{-2002}$. Addition first uses the
+larger exponent:
+\[
+x+y=(1.5+1.25\cdot2^{-2})2^{-2000}
+    =1.8125\cdot2^{-2000}.
+\]
+All mantissa operations are ordinary arithmetic on values near~1; constructing
+the unscaled numbers in double precision would have lost both inputs. Their
+product is
+\[
+xy=(1.5\cdot1.25)2^{-4002}=1.875\cdot2^{-4002}.
+\]
+For a product requiring normalization,
+$(1.5\cdot2^{-2000})^2=2.25\cdot2^{-4000}
+=1.125\cdot2^{-3999}$. Dividing the mantissa by~2 therefore increases the
+stored exponent by~1. Conversely, adding a contribution much smaller than one
+mantissa unit in the last place can still round it away; a wider exponent alone
+does not prevent that loss.
 
 \subsection{HDR complex numbers}
 
@@ -66,14 +94,23 @@ complex value
 \[
 z = x + i y
 \]
-is represented by storing separate HDR values for the real and imaginary
-components. Both components share the same conceptual structure but may have
-independent exponents.
+can be represented as two independent HDR scalars. The implementation also uses
+\code{HDRFloatComplex<SubType>}, which stores two mantissas with one shared
+integer exponent:
+\[
+z=(m_x+i m_y)2^e.
+\]
+Construction aligns the component exponents to the larger one, and reduction
+uses the larger component scale. The smaller component need not have a
+unit-sized mantissa. For example,
+$x=1.5\cdot2^{-2000}$ and $y=1.25\cdot2^{-2002}$ become
+$z=(1.5+0.3125i)2^{-2000}$. Sharing an exponent reduces storage and alignment
+work, but an extreme ratio between components can still underflow the smaller
+mantissa. Independent scalar components and shared-exponent complex values
+therefore have different representational tradeoffs.
 
-This representation allows the magnitude of \(z\) to grow or shrink over many
-orders of magnitude while maintaining accurate relative phase and magnitude
-information, which is critical for both escape testing and perturbation-based
-methods.
+Both forms support magnitudes beyond native exponent limits. Their phase and
+magnitude accuracy remain limited by the selected mantissa arithmetic.
 
 \subsection{Role of HDR in perturbation and reference orbits}
 
@@ -100,22 +137,21 @@ rendering; it does not replace the MPIR or \code{HpSharkFloat} recurrence.
 Compared to standard floating-point formats, HDR arithmetic offers:
 \begin{itemize}
 \item substantially increased dynamic range,
-\item stable relative precision independent of magnitude,
-\item predictable and controllable numerical behavior.
+\item the selected mantissa precision across that extended range, and
+\item explicit normalization and exponent alignment.
 \end{itemize}
 
 Compared to arbitrary-precision libraries, it avoids dynamic memory allocation,
 irregular control flow, and large per-operation overheads, making it well suited
 for parallel execution on GPUs.
 
-\subsection{Summary}
+\subsection{Choosing range and precision independently}
 
-The HDR floating-point representation provides a numerically robust and
-computationally efficient foundation for deep-zoom Mandelbrot rendering. By
-explicitly separating scale and precision, it bridges the gap between standard
-floating-point arithmetic and full arbitrary-precision methods. In combination
-with perturbation, it enables accurate, high-performance rendering across
-extreme zoom levels while remaining compatible with GPU execution models.
+HDR addresses values that would overflow or underflow a native type. The
+multi-component types in \cref{sec:extended-precision-types} address a different
+problem: retaining more significant digits when ordinary mantissa precision is
+insufficient. Combining the two mechanisms supplies both range and precision
+without repeating arbitrary-precision reference calculations for every pixel.
 
 \begin{figure}[!htbp]
 \centering
@@ -150,9 +186,9 @@ extreme zoom levels while remaining compatible with GPU execution models.
 
 % Row 3: reference-orbit arithmetic
 \node[typebox, fill=gray!12] (mpir) at (0, 4.2) {MPIR};
-\node[bitlabel, right=1pt] at (mpir.east) {runtime-selected};
+\node[bitlabel, above=2pt of mpir] {runtime-selected};
 \node[typebox, fill=gray!12] (hpshark) at (3.2, 4.2) {HpSharkFloat};
-\node[bitlabel, right=1pt] at (hpshark.east) {fixed specialization};
+\node[bitlabel, above=2pt of hpshark] {fixed specialization};
 
 % Arrows: increasing precision
 \draw[->, blue!40, thick] (float) -- (dblflt);
@@ -162,19 +198,16 @@ extreme zoom levels while remaining compatible with GPU execution models.
 \draw[->, blue!40, thick] (gqf.north) -- (mpir.south);
 \draw[->, blue!40, thick] (gqd.north) -- (hpshark.south);
 
-% Column labels
-\node[font=\tiny, gray, rotate=90, anchor=south] at (-1.3, 1.4)
-  {fp32-based};
-\node[font=\tiny, gray, rotate=90, anchor=south] at (5.4, 1.4)
-  {fp64-based};
-
-% HDRFloat<T> wrapper
+% Outline only the implemented native and two-float HDR mantissa families.
 \begin{scope}[on background layer]
   \node[draw, dashed, rounded corners=6pt, orange!70!black, thick,
         inner xsep=16pt, inner ysep=8pt,
-        fit=(float)(double)(gqf)(gqd)] (hdrbox) {};
-  \node[font=\scriptsize, orange!70!black, anchor=south east]
-    at (hdrbox.north east) {\code{HDRFloat<T>} wrapper};
+        fit=(float)(double)] (hdrnative) {};
+  \node[draw, dashed, rounded corners=6pt, orange!70!black, thick,
+        inner xsep=16pt, inner ysep=8pt,
+        fit=(dblflt)] (hdrpair) {};
+  \node[font=\scriptsize, orange!70!black, anchor=north]
+    at (1.6,-0.75) {Implemented \code{HDRFloat<T>} mantissas};
 \end{scope}
 
 % Precision arrow
@@ -201,7 +234,7 @@ extreme zoom levels while remaining compatible with GPU execution models.
   \draw[decorate, decoration={brace, amplitude=4pt, mirror}, thick]
     (0, 3.15) -- (4.0, 3.15)
     node[midway, below=5pt, font=\tiny]
-      {64~bits, tightly coupled};
+      {64~bits, fixed field widths};
 
   % HDRFloat<T>
   \node[font=\scriptsize, anchor=east] at (-0.1, 1.45)
@@ -237,9 +270,10 @@ extreme zoom levels while remaining compatible with GPU execution models.
   \FractalShark{}, from native IEEE~754 types (bottom) through
   multi-component expansion types to the two reference-orbit arithmetic roles
   at the top: runtime-selected MPIR and fixed-width \code{HpSharkFloat}
-  specializations.  The dashed outline indicates the mantissa types used by the
-  implemented \code{HDRFloat<T>} instantiations; it is not a claim that every
-  device type is wrapped.
+  specializations. The dashed outlines identify only float, double, and the
+  two-float expansion as implemented \code{HDRFloat<T>} mantissas. The
+  double-double and four-component types remain in the precision hierarchy
+  without being marked as implemented HDR wrappers.
   (b)~Comparison of the standard IEEE~754 \code{double} layout, where
   exponent and mantissa share a fixed bit budget, with the
   \code{HDRFloat<T>} representation, which stores an explicit integer

@@ -2,8 +2,10 @@
 \label{sec:feature-finder}
 
 Given a viewer location and a search radius, \FractalShark{} can automatically
-locate the center of a nearby mini-Mandelbrot copy---i.e.\ the unique parameter
-$c$ at which the critical orbit is exactly periodic.  This capability is
+locate a candidate center of a nearby mini-Mandelbrot copy by searching for a
+parameter $c$ whose critical orbit returns to zero.  The search radius limits
+the region of interest; Newton iteration is a local solver and does not
+guarantee selection of the nearest center.  This capability is
 implemented by the \code{FeatureFinder} class (files
 \code{FeatureFinder.h}/\code{FeatureFinder.cpp}), whose design is heavily
 influenced by the periodic-point finder in the Imagina fractal viewer \cite{Imagina}.  The
@@ -25,21 +27,27 @@ can operate at any zoom depth supported by the renderer.
 \subsection{Motivation: mini-Mandelbrot copies}
 \label{subsec:ff-motivation}
 
-The Mandelbrot set contains infinitely many small-scale copies of itself,
-commonly called \emph{mini-brots}.  Each copy is the nucleus of a hyperbolic
-component of period~$p$: a connected region of the parameter plane in which the
-critical orbit $z_0=0,\;z_{n+1}=z_n^2+c$ converges to an attracting cycle of
-exact period~$p$.  The center of the component---the \emph{nucleus}---is the
-unique parameter $c^*$ satisfying
+The Mandelbrot set contains small-scale copies of itself, commonly called
+\emph{mini-brots}.  Their central parameters are associated with hyperbolic
+components: regions where the critical orbit
+$z_0=0,\;z_{n+1}=z_n^2+c$ converges to an attracting cycle of some least
+period~$p$.  The center of a given component---its \emph{nucleus}---has the
+critical point on that cycle and satisfies
 \begin{equation}\label{eq:ff-nucleus}
 z_p(c^*) = 0,\qquad z_0 = 0,
 \end{equation}
-where $z_p$ denotes the $p$-fold iterate of the critical point.
+where $z_p$ denotes the $p$-fold iterate of the critical point.  Since the
+recurrence is deterministic, $z_p=0$ makes the orbit repeat from its initial
+state.  The equation alone gives a period dividing $p$, not necessarily least
+period $p$, and can have many roots in the parameter plane.  For example,
+$z_2(c)=c^2+c=c(c+1)$ has roots $0$ (least period one) and $-1$ (least
+period two).  A claimed exact period must exclude returns at proper divisors
+of $p$; the numerical candidate trigger is not such a certification.
 
 Locating these nuclei is useful for several reasons:
 \begin{itemize}
 \item \textbf{Automatic navigation.}  Given a user click, the finder can snap
-  to the nearest mini-brot center and report its period and intrinsic size,
+  to a candidate mini-brot center and report its period and estimated scale,
   enabling one-click deep-zoom targeting.
 \item \textbf{Scale estimation.}  The derivative $\partial z_p/\partial c$ at
   the nucleus determines the local magnification scale of the mini-brot
@@ -70,7 +78,7 @@ derivatives.  Three evaluator structs encapsulate this:
   suitable when no reference orbit is available.
 \item \code{PTEvaluator} --- uses a precomputed reference orbit and
   perturbation delta $\Delta c$ to evaluate the orbit, decompressing
-  reference data on the fly via \code{RuntimeDecompressor}.
+  reference data on the fly via \code{Runtime\-Decompressor}.
 \item \code{LAEvaluator} --- uses the linear-approximation (LA) coefficients
   from \code{LAReference} to skip early iterations, falling back to
   perturbation for the remaining tail.
@@ -81,8 +89,9 @@ periodicity trigger fires; when \code{FindPeriod=false}, it evaluates at a
 known period and returns the residual, $\partial z/\partial c$, and
 $z_{\mathrm{coeff}}$.
 
-\paragraph{Common Newton loop (\code{FindPeriodicPoint\_Common}).}
-All three \code{FindPeriodicPoint} overloads delegate to this template,
+\paragraph{Common Newton loop.}
+All three \code{FindPeriodicPoint} overloads delegate to
+\code{FindPeriodicPoint\_Common},
 which:
 \begin{enumerate}
 \item Calls the evaluator with \code{FindPeriod=true} to obtain a candidate
@@ -101,7 +110,7 @@ which:
 \end{enumerate}
 
 \paragraph{Phase~B: MPF refinement (\code{RefinePeriodicPoint\_HighPrecision}).}
-This method retrieves the candidate from \code{FeatureSummary}, converts
+The method retrieves the candidate from \code{FeatureSummary}, converts
 its coordinates to GMP \code{mpf\_t} at the candidate's stored precision,
 and calls the Imagina-style mixed Newton--Halley polisher described in
 \cref{subsec:ff-newton,subsec:ff-halley,subsec:ff-mixed-prec}.  On
@@ -148,6 +157,11 @@ update
          \;=\; \frac{z_p}{\partial z_p / \partial c},
 \qquad c \leftarrow c - \Delta c.
 \end{equation}
+The first-order Taylor model is
+$F(c-\Delta c)\approx F(c)-F'(c)\Delta c$.  Setting that model to zero
+gives the correction in \eqref{eq:ff-newton-step}; another complete orbit
+evaluation then checks the new candidate rather than assuming the linear
+model was exact.
 Writing $z_p = z_x + i\,z_y$ and $\partial z_p/\partial c = d_x + i\,d_y$,
 the complex division expands to:
 \begin{align}
@@ -157,6 +171,24 @@ the complex division expands to:
 (When the Halley gate is satisfied, a higher-order step using
 $\partial^2 z_p/\partial c^2$ replaces the Newton step; see
 \cref{subsec:ff-halley}.)
+
+\paragraph{A worked period-two Newton step.}
+For $p=2$, the inner loop gives
+$F(c)=c^2+c$, $F'(c)=2c+1$, and $F''(c)=2$.
+Starting from $c=-0.9$ gives $F=-0.09$ and $F'=-0.8$.
+The correction is $\Delta c=0.1125$, so the new parameter is
+$-1.0125$.  Two more Newton steps give approximately
+$-1.00015243902439$ and $-1.00000002323057$.
+Writing $c=-1+e$ shows exactly why the errors decrease quadratically:
+\[
+e_{\mathrm{next}}
+=e-\frac{e(e-1)}{2e-1}
+=\frac{e^2}{2e-1}.
+\]
+Near $e=0$, the denominator is close to $-1$ while the numerator is
+quadratic.  At $c=-1/2$, however, $F'=0$ and the Newton division is
+undefined; near a simple root is an essential assumption.
+A starting point near $c=0$ can instead converge to the lower-period root.
 
 \paragraph{Convergence.}
 Standard Newton--Raphson converges quadratically near a simple root.  The
@@ -180,7 +212,11 @@ period.  The criterion used is: at iteration~$n$, if
 |z_n|^2 \;<\; R^2 \cdot \left|\frac{\partial z_n}{\partial c}\right|^2,
 \end{equation}
 then $p = n$ is accepted as the candidate period, where $R$ is the search
-radius.  This test detects the moment the orbit passes close to the origin
+radius.  Write $d_n=\partial z_n/\partial c$ for the derivative at the
+current scan index.  The inequality is equivalent to $|z_n/d_n|<R$ when
+$d_n\ne0$: the linearized Newton displacement for a return at iteration $n$
+fits inside the search radius.  It proposes a candidate rather than proving that a root lies there.
+The test detects the moment the orbit passes close to the origin
 relative to the local stretching factor $|\partial z/\partial c|$, which is
 characteristic of near-periodic behavior.  A dynamic tightening mechanism
 (implemented in the \code{PeriodicityPP} helper) progressively shrinks the
@@ -221,11 +257,11 @@ effective $R^2$ during the scan to reduce false triggers.
   \node[innerbox, below=0.3cm of dzdc] (d2) {$d2 \leftarrow 2(\mathit{dzdc}^2 + z \cdot d2)$};
   \node[precbox, right=0.1cm of d2.east] {${\sim}53$-bit};
 
-  \node[font=\scriptsize, above=0.15cm of orbit] {Repeat $p$ times:};
+  \node[font=\scriptsize, above=0.15cm of orbit] (repeat) {Repeat $p$ times:};
 
   \begin{scope}[on background layer]
     \node[draw, dashed, rounded corners, fill=orange!4,
-          fit=(orbit)(dzdc)(d2), inner xsep=6pt, inner ysep=10pt,
+          fit=(orbit)(dzdc)(d2)(repeat), inner xsep=6pt, inner ysep=10pt,
           label={[font=\scriptsize\bfseries]above:Inner loop (GPU-amenable)}] (innerfit) {};
   \end{scope}
 
@@ -242,7 +278,8 @@ effective $R^2$ during the scan to reduce false triggers.
   (left) updates the candidate~$c$ via Newton steps on the CPU.  Each
   step calls the inner loop (right), which iterates $p$~times to
   evaluate $z_p$, $\mathit{dzdc}_p$, and $d2_p$ at three different
-  precision levels.  The inner loop is the computational bottleneck and
+  precision levels. All right-hand sides use the previous iteration's state.
+  The inner loop is the computational bottleneck and
   the target for GPU acceleration.}
 \label{fig:newton-loops}
 \end{figure}
@@ -259,7 +296,8 @@ quantities simultaneously at \emph{different precision levels}:
   $z_{n+1} = z_n^2 + c$.
 \item \textbf{First derivative} ($\partial z/\partial c$, written
   $\mathit{dzdc}$) --- \emph{derivative precision} (\code{mpf\_t}, a
-  reduced precision $P_d \le P_c$; see \cref{subsec:ff-mixed-prec}):
+  separately selected precision $P_d$, typically reduced relative to $P_c$
+  but not always bounded by it; see \cref{subsec:ff-mixed-prec}):
   $\mathit{dzdc}_{n+1} = 2\,z_n \cdot \mathit{dzdc}_n + 1$.
 \item \textbf{Second derivative} ($\partial^2 z/\partial c^2$, written
   $d2$) --- \emph{low precision} (\code{HDRFloat<double>}, ${\sim}53$-bit
@@ -269,14 +307,21 @@ quantities simultaneously at \emph{different precision levels}:
 
 \noindent
 Initial conditions: $z_0 = 0$, $\;\mathit{dzdc}_0 = 0$, $\;d2_0 = 0$.
+Differentiating $z_{n+1}=z_n^2+c$ once gives
+$d_{n+1}=2z_nd_n+1$.  Differentiating again and applying the product rule
+gives $q_{n+1}=2(d_n^2+z_nq_n)$, where $q_n=\partial^2z_n/\partial c^2$.
+For period two, the states are $(z_1,d_1,q_1)=(c,1,0)$ and
+$(z_2,d_2,q_2)=(c^2+c,2c+1,2)$, recovering the derivatives in the worked
+Newton example without differentiating a large degree-$2^{p-1}$ polynomial.
 
 The second derivative is deliberately kept at low precision because it
-enters only two quantities---the Halley correction factor
-(\cref{subsec:ff-halley}) and the error estimator
-(\cref{eq:ff-err}).  Both consumers depend primarily on the
-\emph{exponent} of $d2$, not its mantissa, so even ${\sim}24$~bits of
-mantissa (as on the GPU path) suffice; see \cref{subsec:ff-halley}
-for a detailed analysis.
+enters the Halley correction factor (\cref{subsec:ff-halley}) and a local
+error proxy (\cref{eq:ff-err}), rather than the coordinate recurrence.
+The gate and stop decision compare exponents of quantities formed from it;
+the Halley correction itself also depends on its mantissa and phase.
+The usefulness of a 24- or 53-bit approximation therefore depends on the
+conditioning of the derivative recurrence, as analyzed in
+\cref{subsec:ff-halley}.
 The $z$ and $\mathit{dzdc}$ values are truncated to low-precision
 \code{HDRFloat} before entering the $d2$ recurrence---the $d2$
 computation never touches the high-precision \code{mpf\_t}
@@ -337,8 +382,10 @@ overwritten (or all old values must be saved).
 
 \paragraph{Operation count.}
 Not all operations are equally expensive.  The CPU orbit and first-derivative
-recurrences use high-precision \code{mpf\_t} arithmetic, where each
-$N$-limb multiply costs $O(N \log N)$ and each add/subtract costs $O(N)$.
+recurrences use high-precision \code{mpf\_t} arithmetic, where large
+$N$-limb multiplication costs substantially more than the $O(N)$
+add/subtract operations.  MPIR chooses multiplication algorithms according
+to operand size; a single asymptotic formula does not describe every precision.
 The second derivative uses low-precision
 \code{HDRFloat} arithmetic (${\sim}53$-bit on the CPU path,
 ${\sim}24$-bit on the GPU path)---a handful of scalar floating-point
@@ -369,7 +416,7 @@ $d2$ ($2(\mathit{dzdc}^2 {+} z {\cdot} d2)$) & low-prec HDR &
 
 \noindent
 ``Muls'' in the table are full CPU $N \times N$ multiplications
-(\code{mpf\_mul}, $O(N \log N)$ each)---the dominant cost.
+(\code{mpf\_mul})---the dominant cost at large precision.
 ``$\times 2$'' denotes an $O(N)$ scaling by~two, and ``Add/subs'' includes
 constant additions.  The ``HP total'' row counts only the high-precision
 coordinate and first-derivative work; the $d2$ row contributes only cheap
@@ -395,8 +442,11 @@ coefficient
 \begin{equation}\label{eq:ff-zcoeff}
 w_n = \prod_{k=1}^{n-1} 2\,z_k,
 \end{equation}
-with the convention $w_0 = w_1 = 1$.  This product satisfies
-$\partial z_n/\partial c = w_n + \text{lower-order terms}$ and is used later
+with the convention $w_0 = w_1 = 1$.  Expanding
+$d_{n+1}=2z_nd_n+1$ repeatedly shows that $w_n$ is the contribution
+propagated from $d_1=1$; subsequent $+1$ terms also contribute to $d_n$.
+For instance, $d_3=4z_2z_1+2z_2+1=w_3+2z_2+1$.
+The product is used later
 to compute the intrinsic scale of the mini-brot (see
 \cref{subsec:ff-intrinsic-radius}).  In the code, \code{zcoeff} is
 initialized to~$1$ at $n=0$ (because $z_0 = 0$ would otherwise collapse the
@@ -434,9 +484,9 @@ the host; the inner loop---$p$ iterations of high-precision
 arithmetic per Newton step---runs on the GPU.  The host reads back
 $z_p$, $\mathit{dzdc}_p$, and $d2_p$ after each $p$-iteration batch,
 computes the Newton/Halley step, updates~$c$, and relaunches the inner
-loop.  For large $p$ and $N$ the total arithmetic volume scales as
-$O(p \cdot N \log N)$ per Newton step, making the GPU's throughput
-advantage decisive.  \code{OrbitEndpointEvaluator} maps the coordinate
+loop.  For large $p$ and $N$, the transform arithmetic volume is approximately
+$O(p \cdot N \log N)$ per Newton step when aligned support scales with
+limb count, motivating GPU acceleration at suitable precisions.  \code{Orbit\-Endpoint\-Evaluator} maps the coordinate
 precision to a supported limb count with \code{BitsToSupportedLimbCount},
 selects the corresponding Newton--Raphson precision specialization through
 \code{DispatchByLimbCount}, and calls
@@ -454,10 +504,9 @@ is because $F''$ serves two distinct purposes in the refinement loop:
   is satisfied, $F''$ enables a cubic-convergence step that can save expensive
   forward evaluations compared to plain Newton (see below).
 \item \textbf{Error estimator.}  The stopping criterion
-  (\cref{eq:ff-err}) uses $|F''|^2$ to estimate the residual after
-  each step.  Without the second derivative, the code would have no reliable
-  way to judge convergence short of comparing successive iterates---which
-  requires an extra forward evaluation per check.
+  (\cref{eq:ff-err}) uses $|F''|^2$ to estimate the local coordinate error
+  after a step.  It avoids an extra complete orbit evaluation solely to
+  obtain a new residual; the estimate remains a numerical proxy.
 \end{enumerate}
 
 Because $F''$ is carried in \code{HDRFloat} (${\sim}53$~bits of
@@ -478,6 +527,18 @@ convergence.  The Halley step for $F(c) = z_p(c)$ is
 \qquad c \leftarrow c - \Delta_H,
 \end{equation}
 where $F'=\partial z_p/\partial c$ and $F''=\partial^2 z_p/\partial c^2$.
+A quadratic Taylor model gives
+$0\approx F-F'\Delta c+\tfrac12F''(\Delta c)^2$.
+Rearranging it and replacing one factor of $\Delta c$ in the quadratic term
+by the Newton correction $\Delta_N=F/F'$ gives
+\[
+\Delta c\approx\Delta_N+\frac{F''}{2F'}\Delta_N\Delta c,
+\qquad
+\Delta c\approx\frac{\Delta_N}{1-FF''/[2(F')^2]}.
+\]
+The resulting rational expression is precisely the Halley update above.
+The construction incorporates curvature without requiring a separate
+quadratic-root choice for a complex correction.
 
 To evaluate \eqref{eq:ff-halley-step}, the denominator $D = 2(F')^2 - F\,F''$ involves a complex squaring and a
 complex product.  Writing $F = f_x + i\,f_y$, $F' = f'_x + i\,f'_y$, and
@@ -509,12 +570,29 @@ $F$ and $F'$.  The code uses the dimensionless ratio
 \rho^2 \;=\;
   \frac{|F|^2\,|F''|^2}{|F'|^4}
 \end{equation}
-and activates Halley only when $\rho^2 < 2^{-12}$.  When $\rho^2$ is
+and activates Halley when the reduced HDR exponent
+$E_{\rho^2}\le-12$.  For a positive normalized value
+$\rho^2=m2^{E_{\rho^2}}$ with $1\le m<2$, this means
+$\rho^2<2^{-11}$; it is an exponent-bin gate rather than a literal
+comparison with $2^{-12}$.  When $\rho^2$ is
 small the denominator $2(F')^2 - F\,F''$ is dominated by the $(F')^2$ term,
 so the Halley correction is a small, well-determined perturbation of the
 Newton step.  If the Halley denominator turns out to be exactly zero (or the
 gate is not satisfied), the code falls back to a plain Newton step for that
 iteration.
+
+\paragraph{A period-two Halley comparison.}
+At $c=-0.999$, $F=-0.000999$, $F'=-0.998$, and $F''=2$.
+Here $\rho^2\approx4.02\times10^{-6}$, well inside the gate.
+The Newton update is approximately $-1.00000100200401$.
+Halley instead gives $-0.999999998996994$.
+Indeed, for $c=-1+e$ its exact error is
+\[
+e_{\mathrm{next,Halley}}=\frac{e^3}{1-3e+3e^2}.
+\]
+At $e=0.001$, this is approximately $1.00300601\times10^{-9}$,
+whereas Newton leaves error approximately $-1.00200401\times10^{-6}$.
+The extra derivative can therefore save a full period-length evaluation.
 
 \paragraph{Is Halley worthwhile given low-precision $F''$?}
 The second derivative $F''$ is accumulated in \code{HDRFloat}
@@ -537,8 +615,12 @@ $\rho^2$; the correction factor has magnitude $\rho/2$), and $e^{i\theta}$
 is the complex phase of $F \cdot F'' / (F')^2$.
 
 \paragraph{Why it works: error analysis of the correction factor.}
-Starting from \eqref{eq:ff-halley-decomp}, write the true second derivative as $F''$ and the $b$-bit approximation as
-$\hat{F}'' = F''(1 + \epsilon)$ where $|\epsilon| \lesssim 2^{-b}$.  The
+Starting from \eqref{eq:ff-halley-decomp}, suppose the computed second
+derivative has a small relative error,
+$\hat{F}'' = F''(1 + \epsilon)$.  A well-conditioned calculation can make
+$|\epsilon|$ comparable to $2^{-b}$, but $b$ mantissa bits alone do not
+prove that bound after a long recurrence with cancellation.  Also assume
+$F,F'$ are sufficiently accurate and the root is simple.  The
 Halley step with the approximate $\hat{F}''$ is
 \[
 \hat{\Delta}_H \;=\; \Delta_N \cdot
@@ -571,26 +653,34 @@ e_{k+1}^{\text{(approx Halley)}} \;=\;
 $\Delta_N$ itself is $O(e_k)$, and the relative perturbation of the
 correction factor is $O(e_k \cdot \epsilon)$.)
 
-Two regimes emerge:
+The constants in these order estimates depend on the local derivatives.
+The meaningful error scale is normalized: with
+$\kappa=|F''(c^*)/F'(c^*)|$ and $\eta_k=\kappa|e_k|$, assuming
+$\kappa\ne0$ and moderate higher-derivative ratios, a local model gives
+$\eta_{k+1}=O(\eta_k^3)+O(\eta_k^2|\epsilon|)$.
+Here $\kappa$ converts coordinate error into a dimensionless measure of
+nonlinearity.  Under the further model $|\epsilon|\sim2^{-b}$, two regimes emerge:
 \begin{itemize}
-\item \textbf{Early convergence} ($|e_k| \gg 2^{-b}$): the $O(e_k^3)$ term
-  dominates, and the method converges cubically---identical to full-precision
-  Halley.  The $b$-bit noise is invisible.
-\item \textbf{Late convergence} ($|e_k| \ll 2^{-b}$): the
+\item \textbf{Early convergence} ($\eta_k \gg 2^{-b}$): the $O(e_k^3)$ term
+  dominates, giving the same cubic order as full-precision Halley; the
+  second-derivative noise is smaller than the cubic term in this model.
+\item \textbf{Late convergence} ($\eta_k \ll 2^{-b}$): the
   $O(e_k^2 \cdot \epsilon)$ term dominates.  Since $\epsilon$ is a fixed
   ${\sim}2^{-b}$, the effective recurrence becomes $|e_{k+1}| \approx
-  C \cdot e_k^2 \cdot 2^{-b}$, which is quadratic convergence (like Newton)
-  but with an extra constant factor of $2^{-b}$.  In terms of correct bits,
-  this gives ${\sim}2n + b$ bits per step---still better than Newton's
+  C \cdot |e_k|^2 \cdot 2^{-b}$, which is quadratic convergence (like Newton)
+  but with an extra factor of $2^{-b}$ in this model.  In terms of normalized bits,
+  this model gives approximately $2n+b$ normalized bits per step---still better than Newton's
   ${\sim}2n$, but no longer cubic.
 \end{itemize}
 
-The crossover occurs when $|e_k|^3 \approx |e_k|^2 \cdot 2^{-b}$,
-i.e.\ when $|e_k| \approx 2^{-b}$, or equivalently when the iterate has
-${\sim}b$ correct bits.
+In normalized units, the crossover occurs near
+$\eta_k\approx2^{-b}$, or $|e_k|\approx2^{-b}/\kappa$.
+Thus ${\sim}b$ \emph{normalized} bits mark the crossover in this model;
+the coordinate error may already have approximately $b+\log_2\kappa$
+correct bits.  Strong cancellation or inaccurate $F'$ can change the model.
 
 \paragraph{Empirical confirmation ($b = 53$).}
-Numerical experiments on the period-3 nucleus confirm this analysis
+Numerical experiments on the period-3 nucleus illustrate this local model
 for the CPU path ($b = 53$, \code{HDRFloat<double>}):
 
 \begin{center}
@@ -614,8 +704,8 @@ for the CPU path ($b = 53$, \code{HDRFloat<double>}):
 (Correct bits of the period-3 nucleus, starting from the same initial guess.)
 Steps~0--1 show cubic convergence for both Halley variants (ratio
 ${\approx}\,3$). At step~2, the 53-bit Halley begins to diverge from the
-full-precision version (173.8 vs.\ 179.6), consistent with the crossover at
-${\sim}53$ correct bits.  By step~4, the 53-bit Halley's ratio has dropped to
+full-precision version (173.8 vs.\ 179.6), following its crossover near
+53 normalized bits.  By step~4, the 53-bit Halley's ratio has dropped to
 ${\sim}2.1$, approaching quadratic.
 
 \paragraph{Net benefit.}
@@ -625,7 +715,7 @@ evaluations.  This saving comes from the early cubic burst: by the time the
 method degenerates to quadratic, it already has a ${\sim}3\times$ lead in
 correct bits over Newton, and this lead persists through the later quadratic
 phase.  Such savings are most pronounced when Phase~B starts below the
-${\sim}b$-bit crossover.  At already-accurate starts, the large cubic lead is
+${\sim}b$-normalized-bit crossover.  At already-accurate starts, the large cubic lead is
 absent, so the retained benefit is narrower: representative runs show only a
 0--1 outer-iteration advantage in this late regime, while $F''$ still remains
 useful for the Halley gate and error estimator.  For large period~$p$, even
@@ -633,28 +723,16 @@ that one saved forward evaluation still avoids $p$~expensive
 high-precision multiplies.
 
 \paragraph{Dependence on initial-guess quality.}
-Whether this step-count saving is significant in practice depends on how many
-correct bits the Phase~B starting point already has.  Phase~A produces an
-initial candidate from the renderer's pixel grid and a few Newton steps in
-the native float type~$T$.  The pixel resolution contributes approximately
-$\lfloor\log_2 Z\rfloor - \lceil\log_2 W\rceil$ correct bits, where $Z$ is
-the zoom factor and $W$ the screen width in pixels.  At shallow zoom
-($Z \sim 10^{4}$--$10^{10}$), the initial guess has roughly 14--30~correct
-bits, well below the ${\sim}b$-bit crossover, and the cubic burst is fully
-observable during Phase~B; this is the regime in which low-precision Halley
-delivers most of its practical iteration savings.  At deep zoom ($Z \gg 2^b$),
-pixel resolution alone provides hundreds of correct bits, placing the iterate
-well past the crossover before Phase~B begins.  In that regime the cubic
-convergence advantage is absent; the retained value of low-precision Halley is
-limited to the smaller late-regime improvement over Newton together with the
-information carried by $|F''|$ for the Halley gate and error estimator.
-Representative period~16045 runs still show the dependence.  After accounting
-for the ${\sim}88$-bit offset between actual and normalized bits
-(\cref{eq:ff-rho2-offset}), a 100-bit start retains about a one-iteration
-advantage to representative targets, whereas a 150-bit start is already in the
-narrowed 0--1-iteration envelope.  This result is consistent with the implementation
-and with partial production spot checks, but it is not yet a full validation of
-every production regime.
+The important starting-point measure is error relative to the local feature
+scale, not zoom factor or coordinate bits alone.  Phase~A supplies a numerical
+candidate, and the local ratio $\kappa=|F''/F'|$ can grow greatly with
+period.  If $\kappa\approx2^{88}$ and the absolute coordinate error is
+$2^{-100}$, the normalized error is approximately $2^{-12}$.
+With a well-conditioned 53-bit second derivative, that point is still in
+the cubic regime of the local model.  An error of $2^{-150}$ instead gives
+normalized error $2^{-62}$ and lies beyond its crossover.  Pixel spacing,
+candidate selection, derivative conditioning, and Phase~A refinement all
+affect the starting error; zoom alone does not determine the iteration saving.
 
 \paragraph{Interpreting the diagnostic metric.}
 The diagnostic ratio $\rho^2$ (\cref{eq:ff-halley-gate}) measures
@@ -666,51 +744,38 @@ $e_k = c_k - c^*$, so
 \qquad
   \text{normalized bits}
   \;=\; -\tfrac{1}{2}\log_2 \rho^2
-  \;=\; \text{correct bits} - \log_2 \frac{|F''|}{|F'|}.
+  \;\approx\; \text{correct bits} - \log_2 \frac{|F''|}{|F'|}.
 \end{equation}
-For the period-3 nucleus, $|F''/F'| \approx 2^{2.2}$ and the offset is
-negligible.  At period~16045, $|F''/F'| \approx 2^{88}$, so the
+For the period-3 example, $|F''/F'| \approx 2^{2.2}$, giving a small
+2.2-bit offset.  At period~16045, $|F''/F'| \approx 2^{88}$, so the
 $\rho^2$-derived metric understates actual correct bits by approximately
-88~bits.  At extreme periods ($p \sim 10^8$), the offset grows further,
-which can mask the early cubic burst in the diagnostic: the Phase~A
-initial guess may already have enough actual correct bits to place the
-iterate past the ${\sim}b$-bit crossover, even though the normalized
-metric appears low.
+88~bits in that example.  The normalized metric measures the local
+nonlinearity that controls the model crossover; it is not a count of correct
+coordinate bits.  The implementation reports an exponent-based integer
+approximation to that metric.
 
 \paragraph{GPU variant ($b = 24$).}
 The GPU NR path (\code{SharkParamsNR}) uses \code{SubType=float},
-so $d2$ is accumulated in \code{HDRFloat<float>} with $b \approx 24$.
-The crossover from cubic to quadratic convergence therefore occurs
-at ${\sim}24$~correct bits rather than ${\sim}53$, and the late regime
-gives ${\sim}2n + 24$ bits per step instead of ${\sim}2n + 53$.
-Representative fp32-like sweeps suggest that the remaining practical
-step-count benefit is likely even more concentrated toward comparatively coarse
-starts than on the CPU-like path.  Relative to the 53-bit CPU-like variant,
-the 24-bit path can forfeit roughly one outer iteration in some targets, but
-at already-accurate starts both variants often collapse to the same narrow
-0--1-iteration envelope relative to Newton.  This trend is consistent with the
-implementation and with partial production spot checks, but it is not yet a
-full production validation.
+so $d2$ is accumulated in \code{HDRFloat<float>} with approximately
+24 mantissa bits.  Under the same well-conditioned local model, its crossover
+occurs near 24 normalized bits rather than 53.  Retaining more second-derivative
+precision could extend the cubic regime, but would also increase arithmetic
+latency and register use in the leader thread.  The current implementation
+chooses the cheaper representation; a universal outer-step saving does not
+follow from its mantissa width.
 
-Using \code{double} or \code{dblflt} for the GPU $d2$ accumulation
-would shift the crossover to ${\sim}53$ or ${\sim}48$ correct bits,
-saving that one iteration.
-However, the $d2$ accumulation runs on a single GPU thread
-(block~0, thread~0) during the multiply phase, and upgrading it would
-increase register pressure and arithmetic latency for a gain of at most
-one saved forward evaluation.  This tradeoff is not currently considered
-worthwhile.
-
-The error estimator (\cref{eq:ff-err}) and Halley gate
-(\cref{eq:ff-halley-gate}) are unaffected by this choice: both depend
-only on the \emph{exponent} of $|F''|$, which the \code{HDRFloat}
-representation tracks exactly regardless of mantissa precision.
+The wide exponent range prevents ordinary native underflow and overflow in
+these auxiliary values.  It does not make their exponent mathematically exact:
+rounding and cancellation can change the computed magnitude, including its
+exponent bin.  The Halley gate and error proxy therefore remain numerical
+decisions, even though their final comparisons use exponents.
 
 \subsection{Mixed-precision refinement}
 \label{subsec:ff-mixed-prec}
 
-The Phase~B polisher (\code{RefinePeriodicPoint}) operates entirely in GMP
-\code{mpf\_t} arithmetic but uses two distinct precision levels to balance cost
+The Phase~B polisher (\code{RefinePeriodicPoint}) operates with GMP
+\code{mpf\_t} coordinate arithmetic on the host and a selectable CPU or GPU
+endpoint evaluator.  It uses two distinct high-precision levels to balance cost
 and accuracy, following the strategy used in Imagina.
 
 \paragraph{Coordinate vs.\ derivative precision.}
@@ -729,10 +794,12 @@ P_d = \operatorname{clamp}\!\left(
 where $E_{\mathrm{scale}}$ is the base-2 exponent of the scale factor
 $\text{Scale} \approx 1/|w_p \cdot \partial z_p/\partial c|$ and
 $E_{\max}^{|c|}$ is the exponent of $\max(|\Re c|,|\Im c|)$.
-The rationale is that the derivative need only be accurate enough to produce
-a Newton/Halley step whose relative error is smaller than the current
-residual; carrying it at full coordinate precision would roughly double the
-cost of each forward evaluation without improving the convergence rate.
+The derivative must be accurate enough for the desired coordinate correction.
+Reducing its precision can lower the cost of four CPU products per orbit step,
+but its rounding error can also limit convergence.  The clamped rule is an
+implementation policy that balances those costs rather than a proof of the
+required derivative accuracy.  Integer precision calculations round the
+intermediate division before clamping.
 
 \paragraph{Error estimator and stopping criterion.}
 After each step $\Delta c$, the code computes an error proxy entirely in
@@ -741,16 +808,24 @@ After each step $\Delta c$, the code computes an error proxy entirely in
 \mathrm{err} \;=\;
   \frac{|\Delta c|^4 \cdot |F''|^2}{|F'|^2}.
 \end{equation}
-Near a simple root the classical Newton error bound gives
+Near a simple root, Taylor expansion gives the local Newton estimate
 $|e_{k+1}| \approx |F''|/(2|F'|) \cdot |\Delta c|^2$,
-so $\mathrm{err} \approx 4\,|e_{k+1}|^2$.
+so $\mathrm{err} \approx 4\,|e_{k+1}|^2$ when the derivatives and step
+are accurate.  The relation is an asymptotic estimate, not a classical
+certified bound.  For the period-two Newton step at $c=-0.999$,
+$|\Delta c|\approx0.001001002$ and $|F''/F'|\approx2.004008$,
+giving $\mathrm{err}\approx4.032\times10^{-12}$; four times the actual
+next squared error is approximately $4.016\times10^{-12}$.
 Iteration stops when
 \begin{equation}\label{eq:ff-stop}
--\lfloor \log_2(\mathrm{err}) \rfloor \;\ge\; 2\,P_c,
+-E_{\mathrm{err}} \;\ge\; 2\,P_c,
 \end{equation}
-meaning $\mathrm{err} < 2^{-2P_c}$ and hence
-$|e_{k+1}| \lesssim 2^{-P_c}$---the next iterate has at least $P_c$~correct
-bits.
+where $E_{\mathrm{err}}$ is the reduced HDR exponent.  For nonzero
+$\mathrm{err}=m2^{E_{\mathrm{err}}}$ with $1\le m<2$, the selected bin
+implies $\mathrm{err}<2^{1-2P_c}$.  The intended coordinate error scale
+is therefore approximately $2^{-P_c}$ under the local model.  Reduced
+second-derivative arithmetic, Halley steps, and finite-precision rounding
+prevent this stop decision from certifying $P_c$ correct bits.
 
 \paragraph{Final correction and accept/reject.}
 After the main loop converges (or exhausts the iteration budget), a single
@@ -771,13 +846,27 @@ of the mini-brot copy is characterized by
   \frac{1}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|},
 \end{equation}
 where $w_p = \prod_{k=1}^{p-1} 2\,z_k$ is the \code{zcoeff} product
-\eqref{eq:ff-zcoeff} evaluated at $c^*$. The code reports an \emph{intrinsic radius}
+\eqref{eq:ff-zcoeff} evaluated at $c^*$.  The local return map explains the
+inverse product: for a small initial state $u$ and parameter change
+$\delta c$, it has the leading form
+$u'\approx w_pu^2+d_p\delta c$, where $d_p=\partial z_p/\partial c$.
+The initial square produces $u^2$ and the subsequent derivatives multiply it
+by $w_p$.  Rescaling to $v=w_pu$ gives
+$v'\approx v^2+(w_pd_p)\delta c$, so a unit change of the rescaled
+parameter corresponds to $1/|w_pd_p|$ in the original plane.  Higher-order
+terms remain omitted in this local model.
+The code reports an \emph{intrinsic radius}
 \begin{equation}\label{eq:ff-intrinsic-radius}
 r_{\mathrm{int}} = 4 \cdot \mathrm{Scale}
   = \frac{4}{\bigl|w_p \cdot \partial z_p/\partial c\bigr|}.
 \end{equation}
-Geometrically, $r_{\mathrm{int}}$ estimates the diameter of the
-period-$p$ hyperbolic component in the parameter plane.  It is stored
+The quantity is a renderer navigation scale, despite the historical
+``intrinsic radius'' name; it is not the geometric radius or diameter of a
+hyperbolic component.  At the period-two nucleus $c^*=-1$, $w_2=-2$ and
+$d_2=-1$, giving $\mathrm{Scale}=1/2$ and $r_{\mathrm{int}}=2$.
+The actual period-two bulb, whose cycle multiplier is $4(c+1)$, has
+radius $1/4$ and diameter $1/2$, demonstrating
+the distinction.  The reported scale is stored
 as a \code{HighPrecision} value in \code{FeatureSummary} and can be used by
 the renderer to set an appropriate zoom level or to determine the additional
 bits of precision needed to render the component's interior.
@@ -798,7 +887,10 @@ Each checkpoint records the current candidate~$c$ (real and imaginary
 parts as decimal strings at full working precision), the detected
 period~$p$, the MPIR precision in bits, the outer Newton iteration
 index, and the inner-loop iteration count within the current $p$-step
-evaluation.  Storing the inner-loop position allows resumption
+evaluation, the orbit state $z$, first derivative, and reduced second
+derivative.  The record also identifies the main, final-correction, or
+complete phase, and retains the seed and search-radius information needed
+for acceptance checks.  Storing the inner-loop position and its state allows resumption
 \emph{mid-evaluation}, not only at outer-step boundaries.
 
 \paragraph{Asynchronous writer.}
@@ -815,8 +907,8 @@ state.
 \paragraph{Save points.}
 Checkpoints are written at two granularities:
 \begin{itemize}
-  \item After each outer Newton step completes (precision doubling
-        boundary).
+  \item After an outer Newton step completes and at final-correction phase
+        transitions.
   \item Periodically during the inner-loop evaluation, via a progress
         callback that triggers whenever a configurable number of
         inner iterations have elapsed.
@@ -831,7 +923,14 @@ match the current request, the saved candidate~$c$ and iteration state
 are loaded and the refinement loop skips ahead to the checkpointed
 position.  If the period or precision do not match (indicating a
 different feature or a re-run at different settings), the checkpoint is
-ignored and refinement starts from scratch.
+ignored and refinement starts from scratch.  The endpoint evaluators interpret
+$\code{startIter}=0$ as fresh initialization, setting $z_0=d_0=q_0=0$.
+A positive $\code{startIter}$ instead consumes all supplied checkpoint states
+and performs only the remaining steps.  For example, resuming period $1000$
+at index $600$ requires $400$ further steps at the same candidate $c$;
+resetting the derivatives or orbit would evaluate a different state.  A
+complete-phase checkpoint skips both main and final correction; a final-phase
+checkpoint resumes only the final evaluation.
 
 \paragraph{Abort safety.}
 When the \code{AbortMonitor} sets the stop flag, the refinement loop
@@ -867,7 +966,7 @@ preceding evaluation's output, so successive steps cannot overlap.
 
 GPU acceleration of the inner loop via the \code{HpSharkFloat} backend
 is described in \cref{subsec:ff-inner-gpu}; this path is fully
-implemented and dispatches through \code{OrbitEndpointEvaluator} into the
+implemented and dispatches through \code{Orbit\-Endpoint\-Evaluator} into the
 fused Ref2/v2 kernel.
 
 With the core iteration algorithms and precision infrastructure now

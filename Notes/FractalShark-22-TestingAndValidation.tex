@@ -2,50 +2,43 @@
 \label{sec:testing}
 %% ===================================================================
 
-\FractalShark{} maintains three independent test projects, each
-targeting a different layer of the system.  Together they provide
-coverage from low-level GPU arithmetic through high-level rendering
-correctness.
+A rendering failure can originate in arithmetic, coordinate conversion,
+approximation, coloring, or file output. Validation therefore checks intermediate
+contracts as well as final images. Two standalone runners cover complementary
+layers: \code{FractalSharkTest} owns CPU utility tests and render regressions,
+including explicitly selected CUDA cases, while \code{HpSharkFloatTest} exercises
+the high-precision GPU arithmetic engine. Passing one layer does not establish
+correctness of every other layer.
 
-\subsection{CrummyTest (rendering pipeline)}
+\subsection{Render regressions}
 \label{subsec:crummytest}
 
-\code{CrummyTest} (in \code{FractalSharkLib/CrummyTest.cpp}) is a
-functional test suite invoked from the application's right-click menu
-(\emph{Run Basic Test}).  It exercises the full rendering pipeline by
-calling \code{Drain()} followed by \code{CalcFractal(true)}---the
-direct rendering path (\cref{subsec:two-render-paths})---so that
-iteration results are written to \code{m\_CurIters} and can be
-inspected or saved.
+Render regression coverage formerly exposed through the \code{CrummyTest} GUI
+actions now belongs to the standalone \code{FractalSharkTest} runner. The old name
+is historical, rather than a current menu command. Render cases cover selected
+algorithm, view, iteration-width, compression, and save/load combinations;
+they do not blindly run every experimental mode.
 
-The suite iterates over every \code{RenderAlgorithm} entry, rendering
-multiple built-in views (including Views~0, 5, 10, and~11) with both
-32-bit and 64-bit iteration types.  Eight named tests run in sequence:
+A fixture calls \code{Drain()} before direct \code{CalcFractal(true)} so the
+authoritative CPU iteration buffer is current
+(\cref{subsec:two-render-paths}). PNG output uses \code{SaveCurrentFractal} and
+waits for save completion before examining the file. GPU cases require
+\code{--use-gpu}; View10, View27, billion-element stress cases, and documented
+incomplete modes remain disabled in routine runs.
 
-\begin{itemize}
-  \item \code{TestBasic}---renders each algorithm at several views and
-        iteration types.
-  \item \code{TestReferenceSave}---saves and reloads reference orbits,
-        verifying round-trip correctness.
-  \item \code{TestVariedCompression}---tests reference-orbit compression
-        at varying error thresholds.
-  \item \code{TestImaginaLoad}---loads orbits stored in Imagina format.
-  \item \code{TestPerturbedPerturb}---exercises perturbed iteration
-        chains for numerical correctness.
-  \item \code{TestWindowResize}---resizes the application window and
-        verifies re-rendering completes correctly.
-  \item \code{TestStringConversion}---validates string-to-precision and
-        precision-to-string conversion utilities.
-  \item \code{TestGrowableVector}---validates the
-        \code{GrowableVector} data structure
-        (\cref{sec:disk_backed_growable_vectors}).
-\end{itemize}
+\paragraph{What a golden comparison measures.}
+A render golden records the expected decoded RGBA16 image for an established
+fixture. Changing DEFLATE compression can change the file bytes while leaving
+every decoded channel unchanged. Consequently, render checksums cover decoded
+pixels, whereas encoder tests separately verify compression and container
+integrity. A successful build alone does not exercise either contract.
 
-\noindent
-A separate stress test, \code{TestReallyHardView27}, renders View~\#27
-(period ${\sim}28$~billion, one quadrillion iterations) and is intended
-as an overnight correctness and stability check rather than a routine
-regression test.
+For example, changing a pixel's red channel from $1000$ to $1001$ must change
+its decoded-image checksum, even if an 8-bit preview displays the same color.
+Re-encoding the unchanged pixels with a different valid Huffman table need not
+change that checksum. Golden updates therefore require reviewing pixel changes;
+they must not be used simply to dismiss a failing comparison. The user appendix
+describes the update workflow in \cref{sec:render-regression-tests}.
 
 \subsection{HpSharkFloatTest (GPU arithmetic)}
 \label{subsec:hpsharkfloattest}
@@ -61,7 +54,8 @@ Each vector is validated through complementary comparisons:
 \begin{enumerate}
   \item \textbf{GPU vs.\ MPIR.}  The fused GPU result is converted to
         MPIR values and compared with the same recurrence evaluated in
-        arbitrary-precision arithmetic.  MPIR is the ground truth.
+        arbitrary-precision arithmetic. MPIR supplies the authoritative finite-
+        precision reference for this comparison; it is not an exact-real oracle.
   \item \textbf{CPU oracle vs.\ MPIR.}  The CPU
         \code{ReferenceReferenceOrbit2} implementation uses the
         \code{HpSharkFloat} representation and is independently checked
@@ -82,12 +76,14 @@ reference-orbit pipeline at three zoom depths: View~5
 (${\sim}16{,}000$ iterations), View~30 (${\sim}670{,}000$ iterations), and
 View~32 (${\sim}30{,}000{,}000$ iterations).
 
-\subsection{FractalSharkTest (utility types)}
+\subsection{FractalSharkTest (utilities and integration)}
 \label{subsec:fractalsharktest}
 
 \code{FractalSharkTest} (in \code{FractalSharkTest/}) is a standalone
-CPU executable that validates the fundamental data types and conversion
-utilities used throughout the codebase.  It uses a lightweight
+test executable that validates fundamental data types, numerical helpers,
+shared GUI state, reference and approximation storage, save transactions, and
+render integration. CPU cases run without CUDA hardware; CUDA cases are selected
+with \code{--use-gpu}.  It uses a lightweight
 assertion-based framework (\code{TEST}, \code{ASSERT\_EQ},
 \code{ASSERT\_NEAR}) and covers:
 
@@ -99,7 +95,24 @@ assertion-based framework (\code{TEST}, \code{ASSERT\_EQ},
   \item \code{HighPrecision} string parsing and round-trip conversion.
   \item \code{PointZoomBBConverter} coordinate transforms
         (\cref{subsec:coordinates}).
+  \item BLA and LA coefficients, evaluation, parameter handling, and storage.
+  \item Save transactions, PNG output, and current-frame recoloring.
+  \item Render cases and decoded-image golden checks.
 \end{itemize}
+
+\paragraph{Selecting a useful check.}
+List tests before choosing a narrow filter; multiple filters select the union of
+matching names. For example, the following commands list the catalog and select
+HDR arithmetic tests on Windows:
+\begin{lstlisting}[language={}]
+Debug\FractalSharkTest.exe --list-tests
+Debug\FractalSharkTest.exe --filter "*HDRFloat*"
+\end{lstlisting}
+The portable Linux runner is
+\code{./build-debug/FractalSharkTest/FractalSharkTest}. GPU arithmetic validation
+requires real CUDA hardware; it is not implied by a CPU-only CI run. Focused
+PNG checks are documented in \cref{subsec:png-validation}. Large full-suite runs
+can take substantially longer than individual utility cases.
 
 The tiered allocation strategy introduced earlier in this chapter addresses one aspect of memory
 pressure.  The next chapter examines a complementary mechanism---disk-backed

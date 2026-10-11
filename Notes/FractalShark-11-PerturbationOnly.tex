@@ -1,8 +1,10 @@
-\section{Perturbation-only Mandelbrot rendering (without linear approximation)}
+\section[Perturbation-only Mandelbrot rendering]{Perturbation-only Mandelbrot rendering (without linear approximation)}
 \label{sec:perturb-only}
 
-This kernel can render the Mandelbrot set using \emph{perturbation alone}, i.e.,
-without taking any LA~v2 linear-approximation steps. The same CUDA entry point
+Perturbation-only rendering provides the simplest complete use of a shared
+reference orbit. Every original iteration is evaluated, making the path a useful
+baseline for understanding the coefficient-based skipping introduced next.
+The same CUDA entry point
 \code{mandel\_1xHDR\_float\_perturb\_lav2<IterType,T,SubType,Mode,PExtras>} is
 used; the behavior is selected at compile time via \code{LAv2Mode}. In
 particular, when \code{Mode} includes only the perturbation path (e.g.\
@@ -16,7 +18,9 @@ The goal remains standard escape-time rendering for
 \[
 z_{n+1} = z_n^2 + c,\qquad z_0=0,
 \]
-with bailout \(|z|^2 \ge 4\). For each pixel, the kernel computes the parameter
+with the mathematical escape guarantee at $|z|^2>4$; equality does not guarantee
+escape. The implemented bailout is the later threshold described in
+\cref{sec:perturb-only-reconstruct}. For each pixel, the kernel computes the parameter
 \(c\), iterates until escape or \code{n\_iterations}, and stores the resulting
 iteration count in \code{OutputIterMatrix[idx]}.
 
@@ -29,10 +33,13 @@ nearby pixels.
 \label{sec:perturb-only-deltas}
 
 For a pixel parameter \(c\) near the reference parameter \(c_\star\), define
-\(\Delta c = c - c_\star\) and \(\Delta z_n = z_n - z_n^\star\).
+\(\Delta c = c - c_\star\) and, before rebasing,
+\(\Delta z_n = z_n - z_n^\star\).
 Substituting into the Mandelbrot recurrence yields the exact delta recurrence
 derived in \cref{subsec:perturbation-mixed-precision}:
-\cref{eq:perturb-exact}.
+\eqref{eq:perturb-exact}. After rebasing the reference index is~$r$ while the
+accumulated count is~$n$, and the state instead represents
+$z_n=z_r^\star+\Delta z$.
 Perturbation uses this recurrence directly: it is not a linearization. The work
 per iteration is reduced because \(z_n^\star\) is fetched from storage rather
 than recomputed in high precision.
@@ -51,7 +58,11 @@ and stores this as \code{DeltaSub0} (with scalar components \code{DeltaSub0X},
 \[
 \Delta z_0 = 0,
 \]
-so \code{DeltaSubN} is initialized to zero.
+so \code{DeltaSubN} is initialized to zero. For example, with
+$dx=dy=0.001$, $\code{centerX}=0.002$, and $\code{centerY}=-0.001$, pixel
+$(X,Y)=(3,2)$ receives $\Delta c=0.001-0.001i$. The center terms here are
+offsets in the reference-relative mapping, rather than the absolute
+high-precision coordinate~$c_\star$.
 
 \subsection{Perturbation recurrence used in the kernel}
 \label{sec:perturb-only-update}
@@ -96,9 +107,10 @@ tight and to enforce the type's reduction/normalization rules.
 Perturbation evolves \(\Delta z_n\), but escape-time rendering requires a
 bailout test on the absolute orbit \(z_n\). Each iteration reconstructs:
 \[
-z_n \approx z_n^\star + \Delta z_n,
+z_n \approx z_r^\star + \Delta z,
 \]
-using the stored reference sample \(z_n^\star\) and the current delta. In the
+using the current stored reference sample \(z_r^\star\) and delta. Before
+rebasing $r=n$; afterward the indices are separate. In the
 kernel, this appears as:
 \[
 x = x^\star + \Delta x,\qquad y = y^\star + \Delta y.
@@ -125,16 +137,37 @@ kernel includes a \emph{rebasing} mechanism that resets the delta
 representation when it becomes ill-conditioned. Conceptually, if the delta
 becomes comparable to or larger than the reconstructed orbit, the decomposition
 \(z = z^\star + \Delta z\) stops being numerically advantageous. In that case,
-the kernel folds the delta into the base by setting:
+the kernel changes coordinates relative to the reference origin by setting:
 \[
-\Delta z \leftarrow z,\qquad \text{and restart the reference index.}
+\Delta z \leftarrow z,\qquad r\leftarrow0,\qquad n\text{ unchanged}.
 \]
 Operationally, the code compares the reconstructed orbit magnitude proxy
 against the delta magnitude proxy, and also rebasing if the reference index
 reaches the end of the stored orbit samples (to avoid out-of-range sampling).
-After rebasing, perturbation continues from the new base representation.
+After rebasing, perturbation continues using the same stored reference from its
+origin. The stored reference orbit and the pixel parameter are unchanged.
 
-This mechanism keeps perturbation theory usable across a wide range of
+\paragraph{Worked rebase trace.}
+Use the orbit from \cref{subsec:perturbation-mixed-precision} with
+$c_\star=-1$, $\Delta c=0.001$, and suppose the usable reference segment ends at
+$r=2$. After two accepted individual updates the state is
+\[
+n=2,\qquad r=2,\qquad z_2^\star=0,\qquad \Delta z=-0.000999.
+\]
+Reconstruction gives $z=-0.000999$. Rebasing at the segment endpoint changes
+$r$ to~0 and assigns that same value to $\Delta z$, preserving $n=2$.
+The next update uses $z_0^\star=0$:
+\[
+\Delta z'=(-0.000999)^2+0.001=0.001000998001.
+\]
+The reference advances to $r=1$, whose value is~$-1$, so reconstruction gives
+$z=-0.998999001999$. With no bailout, the accumulated count advances to $n=3$.
+The result matches direct iteration even though $n=3$ and $r=1$ now differ.
+The trace uses accepted updates to explain index management; an update that
+triggers the implementation's bailout is tested before incrementing its stored
+count, as described above.
+
+The mechanism keeps perturbation usable across a wide range of
 pixels and iteration depths while preserving the core rendering objective:
 compute escape-time using a stable bailout on the reconstructed orbit.
 
@@ -156,7 +189,7 @@ In this configuration:
       bailout tests,
 \item the final escape-time count is written to \code{OutputIterMatrix}.
 \end{itemize}
-This kernel provides a complete Mandelbrot renderer based purely on reference-orbit
+The kernel provides a complete Mandelbrot renderer based purely on reference-orbit
 perturbation, without relying on any linear-approximation hierarchy.
 After all pixels are computed, the antialiasing and reduction passes
 (\cref{subsec:antialiasing,subsec:reduction}) extract the final color

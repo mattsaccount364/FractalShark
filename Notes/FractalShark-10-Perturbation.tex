@@ -47,20 +47,20 @@ pixel scales poorly.
     every node/.style={font=\small},
 ]
   % Image tile with pixel grid
-  \draw[thick] (0,0) rectangle (5,5);
-  \node[font=\scriptsize, above] at (2.5, 5) {Image tile (parameter plane)};
+  \draw[thick] (0.3,0.3) rectangle (4.7,4.7);
+  \node[font=\scriptsize, above] at (2.5, 4.7) {Square image tile (parameter plane)};
 
   % Faint pixel grid
   \foreach \x in {0.5,1,...,4.5} {
-    \draw[gray!15] (\x, 0) -- (\x, 5);
-    \draw[gray!15] (0, \x) -- (5, \x);
+    \draw[gray!15] (\x, 0.3) -- (\x, 4.7);
+    \draw[gray!15] (0.3, \x) -- (4.7, \x);
   }
 
   % Concentric distance rings labeled with R fractions
-  \draw[green!60!black, dashed] (2.5, 2.5) circle (0.6);
-  \node[green!60!black, font=\tiny, anchor=south west] at (2.9, 3.0) {$\tfrac{1}{4}R$};
-  \draw[orange!70!black, dashed] (2.5, 2.5) circle (1.4);
-  \node[orange!70!black, font=\tiny, anchor=south west] at (3.4, 3.7) {$\tfrac{1}{2}R$};
+  \draw[green!60!black, dashed] (2.5, 2.5) circle (0.55);
+  \node[green!60!black, font=\tiny, anchor=south west] at (2.85, 2.9) {$\tfrac{1}{4}R$};
+  \draw[orange!70!black, dashed] (2.5, 2.5) circle (1.1);
+  \node[orange!70!black, font=\tiny, anchor=south west] at (3.15, 3.4) {$\tfrac{1}{2}R$};
   \draw[red!60!black, dashed] (2.5, 2.5) circle (2.2);
   \node[red!60!black, font=\tiny, anchor=south west] at (4.0, 4.4) {$R$};
 
@@ -91,10 +91,10 @@ pixel scales poorly.
       node[right, font=\scriptsize] {$|\Delta c|$};
 
     % R tick marks on x-axis
-    \draw[green!60!black] (1.0, -0.1) -- (1.0, 0.1);
-    \node[green!60!black, font=\tiny, below] at (1.0, -0.1) {$\tfrac{1}{4}R$};
-    \draw[orange!70!black] (2.0, -0.1) -- (2.0, 0.1);
-    \node[orange!70!black, font=\tiny, below] at (2.0, -0.1) {$\tfrac{1}{2}R$};
+    \draw[green!60!black] (0.95, -0.1) -- (0.95, 0.1);
+    \node[green!60!black, font=\tiny, below] at (0.95, -0.1) {$\tfrac{1}{4}R$};
+    \draw[orange!70!black] (1.9, -0.1) -- (1.9, 0.1);
+    \node[orange!70!black, font=\tiny, below] at (1.9, -0.1) {$\tfrac{1}{2}R$};
     \draw[red!60!black] (3.8, -0.1) -- (3.8, 0.1);
     \node[red!60!black, font=\tiny, below] at (3.8, -0.1) {$R$};
 
@@ -103,49 +103,54 @@ pixel scales poorly.
       plot[smooth, domain=0:3.8] (\x, {0.8*\x});
 
     % Example pixels on curve
-    \fill[green!60!black] (1.0, 0.8) circle (2.5pt);
-    \node[green!60!black, font=\tiny, above left] at (1.0, 0.8)
+    \fill[green!60!black] (0.95, 0.76) circle (2.5pt);
+    \node[green!60!black, font=\tiny, above left] at (0.95, 0.76)
       {$\tfrac{1}{4}R$};
 
-    \fill[orange!80!black] (2.0, 1.6) circle (2.5pt);
-    \node[orange!80!black, font=\tiny, above left] at (2.0, 1.6)
+    \fill[orange!80!black] (1.9, 1.52) circle (2.5pt);
+    \node[orange!80!black, font=\tiny, above left] at (1.9, 1.52)
       {$\tfrac{1}{2}R$};
 
     \fill[red!70!black] (3.8, 3.04) circle (2.5pt);
     \node[red!70!black, font=\tiny, above left] at (3.8, 3.04)
       {$R$};
 
-    % Precision boundary
+    % An illustrative applicability threshold, not a bound in physical units.
     \draw[dashed, purple!60!black, thick] (-0.2, 2.0) -- (4.3, 2.0);
     \node[purple!60!black, font=\tiny, right, align=left] at (4.3, 2.0)
-      {precision\\limit};
+      {illustrative\\delta scale};
   \end{scope}
 
   % Bottom labels
-  \node[blue!70!black, font=\scriptsize, align=center] at (2.5, -0.5)
-    {$R = \code{MaxRadius}$ (view half-height)};
-  \node[font=\scriptsize, align=center] at (8.5, -0.5)
-    {Per-pixel $|\Delta z_n|$ grows with $|\Delta c|$};
+  \node[blue!70!black, font=\scriptsize, align=center] at (2.5, -0.95)
+    {$R = \code{MaxRadius}$\\view half-height};
+  \node[font=\scriptsize, align=center] at (8.5, -0.95)
+    {Local first-order response\\at a fixed iteration};
 \end{tikzpicture}
 \caption[Perturbation decomposition: spatial delta growth]{%
   Perturbation decomposition.  The reference orbit at $c_\star$
   (blue, center) is computed once at full precision.  Each pixel's
-  perturbation delta $\Delta z_n$ grows with both the spatial distance
-  $|\Delta c|$ from the reference and the number of iterations elapsed.
+  perturbation delta $\Delta z_n$ responds approximately linearly to
+  $\Delta c$ when the parameter offset is sufficiently small at a fixed
+  iteration. The slope depends on the reference orbit and iteration;
+  delta magnitude need not increase monotonically with either quantity.
   Dashed circles mark fractions of $R = \code{MaxRadius}$, the view
-  half-height in the parameter plane.  When $|\Delta z_n|$ exceeds the
-  working precision (purple line), the pixel must be \emph{rebased}
-  to recover accuracy---a common occurrence even for pixels well
-  inside the view.}
+  half-height in the parameter plane. In the illustrated square view, the
+  radius-$R$ disk is inscribed in the tile; its corners lie outside that disk,
+  at distance $\sqrt{2}R$ from the center. The purple line is an illustrative
+  delta scale, not a universal precision boundary. Actual rebasing tests
+  compare the delta with the reconstructed orbit and available reference
+  samples, as described in \cref{sec:perturb-only-rebase}.}
 \label{fig:perturbation-delta}
 \end{figure}
 
 A key observation underlying perturbation is that nearby parameters generate
-orbits that remain close for many iterations, as illustrated in
+orbits that can remain close for many iterations, as illustrated in
 \cref{fig:perturbation-delta}. In a typical image tile, all pixel
 parameters \(c\) lie within a small neighborhood of a central value. Their
 orbits therefore share a common large-scale structure, differing only by small
-corrections that grow gradually over time.
+corrections. Some reference orbits amplify these corrections rapidly, so
+closeness in the parameter plane does not guarantee indefinitely close orbits.
 
 Perturbation makes this structure explicit by selecting a single
 \emph{reference parameter} and expressing all nearby orbits relative to it. This
@@ -174,24 +179,61 @@ as a small deviation from the reference orbit:
 z_n = z_n^\star + \Delta z_n.
 \label{eq:perturb-decomposition}
 \end{equation}
-Substituting this expression into the Mandelbrot recurrence yields an exact
-update rule for the deviation:
+Substitution followed by subtraction of the reference recurrence gives
+\begin{align*}
+z_{n+1}^\star+\Delta z_{n+1}
+  &= (z_n^\star+\Delta z_n)^2+c_\star+\Delta c,\\
+\Delta z_{n+1}
+  &= (z_n^\star)^2+2z_n^\star\Delta z_n+(\Delta z_n)^2+c_\star+\Delta c
+     -\bigl((z_n^\star)^2+c_\star\bigr).
+\end{align*}
+The shared terms cancel, leaving the exact deviation recurrence
 \begin{equation}
 \Delta z_{n+1}
 = 2 z_n^\star \Delta z_n + (\Delta z_n)^2 + \Delta c.
 \label{eq:perturb-exact}
 \end{equation}
-No approximation has been introduced: as long as the reference orbit is computed
-accurately, this formulation preserves the exact Mandelbrot dynamics.
+The identity introduces no approximation in exact arithmetic. A computed
+reference, reduced reference samples, and finite-precision delta operations
+introduce numerical error; the algebra does not remove those errors.
 
 This decomposition has an important numerical consequence. The reference orbit
-\(z_n^\star\) typically grows in magnitude and requires arbitrary precision to be
-represented accurately at deep zoom. In contrast, the deviation \(\Delta z_n\)
+\(z_n^\star\) often has an ordinary magnitude, but its parameter must be specified
+to many digits at deep zoom and accumulated rounding must be controlled. The
+smallness of the viewport, rather than orbit growth alone, motivates a
+high-precision reference calculation. In contrast, the deviation \(\Delta z_n\)
 remains small for many iterations and can usually be evolved using much lower
 precision arithmetic. Perturbation therefore reorganizes the computation into a
 mixed-precision pipeline: expensive high-precision arithmetic is concentrated in
 a single shared orbit, while the majority of per-pixel work is performed using
 lower precision with significantly higher throughput.
+
+\paragraph{Worked orbit comparison.}
+Take the real reference $c_\star=-1$ and nearby pixel
+$c=-0.999$, so $\Delta c=t=0.001$. The reference alternates between~0 and~$-1$.
+Starting with $\Delta z_0=0$, the first deviations are
+\[
+\Delta z_1=t,\qquad
+\Delta z_2=-2t+t^2+t=-t+t^2=-0.000999,
+\]
+and, because $z_2^\star=0$,
+$\Delta z_3=(\Delta z_2)^2+t=0.001000998001$.
+\begin{center}
+\begin{tabular}{rrrr}
+\hline
+$n$ & $z_n^\star$ & $\Delta z_n$ & $z_n^\star+\Delta z_n$\\
+\hline
+0 & 0 & 0 & 0\\
+1 & $-1$ & $0.001$ & $-0.999$\\
+2 & 0 & $-0.000999$ & $-0.000999$\\
+3 & $-1$ & $0.001000998001$ & $-0.998999001999$\\
+\hline
+\end{tabular}
+\end{center}
+Direct iteration gives $z_2=(-0.999)^2-0.999=-0.000999$ and
+$z_3=(-0.000999)^2-0.999=-0.998999001999$, matching reconstruction.
+The example also shows why the quadratic term cannot always be discarded:
+at the zero reference sample it supplies the entire nonlinear contribution.
 
 \subsection{Real-valued formulation for implementation}
 
@@ -213,8 +255,10 @@ and expanding \cref{eq:perturb-exact} yields
    + 2 \Delta x_n \Delta y_n
    + \Delta c_y.
 \end{align}
-These equations map directly onto scalar arithmetic and can be evaluated
-efficiently in parallel for many pixels.
+Both right-hand sides use the same old $\Delta x_n,\Delta y_n$. Saving those
+values before writing either new component prevents the second update from
+accidentally using a mixture of old and new state. The equations otherwise map
+directly onto scalar arithmetic and can be evaluated in parallel for many pixels.
 
 \subsection{Reconstruction and escape testing}
 
@@ -224,27 +268,37 @@ iteration, the current iterate is reconstructed as
 \[
 z_n = z_n^\star + \Delta z_n,
 \]
-and the standard Mandelbrot bailout condition is applied:
+and a rendering bailout condition is applied. The mathematical escape theorem
+for an orbit starting at zero uses the strict condition
 \[
-|z_n|^2 \ge 4.
+|z_n|^2 > 4.
 \]
-The iteration at which this condition is first satisfied determines the pixel's
-escape time.
+Equality alone is insufficient: at $c=-2$, the orbit is $0,-2,2,2,\ldots$ and
+remains bounded despite reaching radius~2. Implementations may choose a larger
+bailout to support their coloring and count conventions. In particular, the
+LA~v2 perturbation tail uses squared radius~256
+(\cref{sec:perturb-only-reconstruct}); the mathematical test, implemented
+threshold, and stored count convention should be kept distinct.
 
 \subsection{Numerical stability and rebasing}
 
-Perturbation remains efficient only while the deviation \(\Delta z_n\) remains
+Perturbation is usually most advantageous while the deviation \(\Delta z_n\) remains
 small relative to the reference orbit. As the deviation grows, numerical
 cancellation and loss of significance may occur. Practical implementations
 therefore employ \emph{rebasing} \cite{Zhuoran2023ReferenceCompression,HeilandAllen2022DeepZoom},
-in which the current deviation
-is folded into the reference state and perturbation continues relative to this
-new baseline. This process preserves accuracy while maintaining numerical
-stability.
+which changes the decomposition of the current orbit estimate. The stored
+reference is not recomputed. Instead, the renderer can set
+$\Delta z\leftarrow z$ and restart its reference index at $r=0$, where
+$z_0^\star=0$. The accumulated pixel iteration count~$n$ is preserved, and the
+same exact identity applies using $z_r^\star$ at the new reference position.
+Rebasing can make subsequent arithmetic better conditioned; it cannot restore
+digits already lost. A step-by-step index trace appears in
+\cref{sec:perturb-only-rebase}.
 
 \subsection{Relation to other acceleration techniques}
 
-Perturbation preserves the exact dynamics of the Mandelbrot map and forms the
+The exact perturbation identity preserves the dynamics of the Mandelbrot map
+in exact arithmetic and forms the
 foundation of many advanced deep-zoom rendering techniques. It can be used by
 itself (\cref{sec:perturb-only}) or combined with additional approximations, such as bilinear approximation
 (\cref{sec:bilinear-approx}) or linear approximation (\cref{sec:la-v2-perturb}),

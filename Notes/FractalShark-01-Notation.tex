@@ -5,6 +5,17 @@ The following symbols appear throughout these notes.  Where a concept
 admits more than one notation the table lists the canonical form first
 and notes the section-local variant.
 
+The tables serve as a reference while reading, rather than a list of prerequisites.
+Each algorithm introduces its symbols where they are used. In particular, a pixel's
+accumulated iteration count and its position in a reusable reference orbit can differ;
+keeping those indices separate is essential when an algorithm rebases.
+
+For a complex number $z=x+iy$, the Euclidean magnitude is
+$|z|=\sqrt{x^2+y^2}$. Its squared magnitude $|z|^2=x^2+y^2$ avoids a square root
+in escape tests. Some approximation bounds instead use the cheaper component norm
+$\|z\|_\infty=\max(|x|,|y|)$. For $z=3+4i$, these three quantities are $5$, $25$,
+and $4$, respectively; they must not be interchanged silently.
+
 \begin{table}[!htbp]
 \centering
 \caption[General notation]{General notation used throughout these notes.}
@@ -67,11 +78,15 @@ $d_{x,n},\; d_{y,n}$ & components of $d_n$
 \centering
 \caption[Linear approximation notation]{Linear approximation notation.}
 \label{tab:notation-la}
-\begin{tabularx}{\textwidth}{llX}
+\begin{tabularx}{\textwidth}{
+    >{\raggedright\arraybackslash}p{0.25\textwidth}
+    >{\raggedright\arraybackslash}p{0.30\textwidth}
+    >{\raggedright\arraybackslash}X}
 \hline
 \textbf{Symbol} & \textbf{Meaning} & \textbf{Notes} \\
 \hline
-$z_\mathrm{ref}$ & reference orbit value at an LA entry & distinct from the global $z_n^\star$ \\
+$z_\mathrm{ref}$ & reference orbit value at an LA entry
+                  & equals $z_r^\star$ at the entry's starting reference index $r$ \\
 $z_j^\star$  & reference orbit value at LA stage boundary $j$
              & used when the LA hierarchy references specific stage entry points \\
 $\tilde{\Delta z}$ & prepared perturbation
@@ -80,6 +95,23 @@ $\tilde{\Delta z}$ & prepared perturbation
                   & $\Delta z_\mathrm{out} \approx
                      \code{ZCoeff}\cdot\tilde{\Delta z}
                    + \code{CCoeff}\cdot\Delta c$ \\
+\hline
+\end{tabularx}
+\end{table}
+
+\begin{table}[!htbp]
+\centering
+\caption[BLA and traversal notation]{BLA coefficients and indices used when traversing approximation tables.}
+\label{tab:notation-bla}
+\begin{tabularx}{\textwidth}{llX}
+\hline
+\textbf{Symbol} & \textbf{Meaning} & \textbf{Notes} \\
+\hline
+$A,\;B$ & BLA complex coefficients & $\Delta z_{\mathrm{out}}\approx A\Delta z+B\Delta c$ \\
+$\ell$ & map span & number of Mandelbrot updates represented by a map \\
+$r$ & reference index & can reset without resetting the accumulated count $n$ \\
+$R$ & BLA input radius & accepts incoming deltas only within the stored radius \\
+$\epsilon$ & BLA construction tolerance & implementation setting, not a final-image error certificate \\
 \hline
 \end{tabularx}
 \end{table}
@@ -110,12 +142,12 @@ $e_k$             & Newton iteration error at step $k$
 \hline
 \textbf{Symbol} & \textbf{Meaning} & \textbf{Notes} \\
 \hline
-$e_n$            & reconstruction error          & $z_n^{\mathrm{HP}} - \tilde{z}_n$ \\
+$e_n$            & reconstruction error          & reduced stored sample minus its replay \\
 $\hat{z}_n$      & low-precision shadow orbit     & reduced-precision copy of $z_n^\star$ \\
 $z_n^{\mathrm{HP}}$ & selected reference sample   & finite-precision source value before reduced replay \\
-$z_r$            & waypoint (rebasing) reference value
-                 & stored checkpoint from which intermediate iterations are replayed
-                   during orbit decompression \\
+$z_r$            & simple-compression waypoint value
+                 & stored sample from which intermediate iterations are replayed;
+                   maximal compression separately advances its reference index \\
 $R_{\max}$       & maximum perturbation radius    & stored in \code{PerturbationResults} \\
 \hline
 \end{tabularx}

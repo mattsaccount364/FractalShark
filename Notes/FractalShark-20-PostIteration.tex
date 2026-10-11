@@ -37,14 +37,25 @@ samples, maps each iteration count to a palette color
 by $k^2$ to produce an averaged \code{Color16} (16-bit per channel
 RGBA) output.
 
+\paragraph{Worked supersampling example.}
+At $k=2$, one output pixel combines four independently colored samples. If their
+RGB16 values are $(0,0,0)$, $(40000,0,0)$, $(0,40000,0)$, and $(0,0,40000)$,
+their channel sums are $(40000,40000,40000)$ and division by $k^2=4$ gives
+$(10000,10000,10000)$. Coloring precedes averaging: the palette is a cyclic,
+nonlinear mapping, so the average color cannot generally be obtained by coloring
+the average iteration count. A factor of four means sixteen samples per output
+pixel, rather than four.
+
 \paragraph{Stream separation.}
 Progressive frame extraction launches antialiasing and color readback
 on \code{m\_DisplayStream}, separate from the iteration kernels'
 \code{m\_ComputeStream}. Final frame extraction uses the compute stream.
 GPU palette recoloring also uses the compute stream. GPU PNG saves run
-coloring and antialiasing followed by encoding on that same stream
-(\cref{subsec:png-output}).
-The save caller waits for completion before releasing its snapshot.
+coloring and antialiasing followed by encoding in a dedicated save context, with
+its own stream (\cref{subsec:png-output}). The save job owns the captured iterations
+and palette settings until completion. Both CPU and GPU saves are queued;
+\code{SaveCurrentFractal} returns after submission, whereas
+\code{CleanupThreads(true)} waits for outstanding save work to finish.
 
 \paragraph{Kernel template.}
 \begin{lstlisting}
@@ -88,7 +99,7 @@ mapping itself is controlled by the palette system implemented in
 \paragraph{Palette types.}
 Five palettes are available, enumerated by
 \code{FractalPaletteType}:
-\code{Basic} (placeholder),
+\code{Basic} (grayscale recoloring),
 \code{Default} (rainbow transitions R$\to$Y$\to$G$\to$C$\to$B$\to$M),
 \code{Patriotic} (red/blue),
 \code{Summer} (red/green/cyan/white), and
@@ -118,6 +129,13 @@ compression---higher values produce wider color bands---and
 \code{local\_palIters} is the palette size at the active bit depth.
 The modulo wrapping causes the palette to cycle when the iteration
 count exceeds the palette length.
+
+\paragraph{Worked palette lookup.}
+For an escaped count of $19$, rotation $5$, auxiliary depth $2$, and a four-entry
+palette, the shifted count is $(19+5)\gg2=6$, so the palette index is $6\bmod4=2$.
+The shift is integer division by $2^2$, discarding the remainder. Escape status
+is determined before rotation: a count equal to the iteration limit stays black,
+even if palette wrapping would otherwise select a colored entry.
 
 \paragraph{Palette rotation.}
 CPU and GPU coloring add the palette rotation before the auxiliary-depth
@@ -158,8 +176,7 @@ exist in the fractal-rendering community:
     ($n_{\text{smooth}} = n - \log_2\!\log_2|z_n| + \text{const}$),
     banding is eliminated and color transitions become continuous.
   \item \textbf{Distance estimation.}  The analytic derivative
-    $\partial z_n/\partial c$ (already computed for perturbation
-    purposes) can yield an estimate of the distance from~$c$ to the
+    $\partial z_n/\partial c$ can yield an estimate of the distance from~$c$ to the
     Mandelbrot boundary.  Mapping distance to color emphasizes fine
     boundary structure and enables resolution-independent rendering of
     thin filaments.
@@ -174,11 +191,12 @@ exist in the fractal-rendering community:
     yielding distinctive visual effects.
 \end{itemize}
 \FractalShark{} currently implements only the palette-indexed method.
-Integrating smooth iteration counts is feasible with minimal additional
-complexity and would
-pair naturally with the existing palette infrastructure; distance
-estimation would leverage derivative data that the perturbation
-pipeline already maintains.
+Smooth coloring requires an escape magnitude in addition to the integer count.
+Distance estimation also requires the derivative of each rendered pixel's orbit.
+Reference-orbit and Feature Finder derivatives do not supply those per-pixel
+outputs automatically. The required state, validity treatment through skipped
+iterations, and output storage would have to be added to the rendering path;
+\cref{sec:future-directions} explains the mathematics.
 
 % -----------------------------------------------------------------
 \subsection{Iteration statistics via parallel reduction}
@@ -204,6 +222,14 @@ the same stream as the antialiasing kernel, so no additional
 synchronization is required.  After the kernel completes, the host
 copies back the \code{ReductionResults} via \code{cudaMemcpy} in
 \code{ExtractItersAndColors}.
+
+\paragraph{Worked reduction.}
+For counts $(2,4,6,8)$, two blocks can first form partial triples $(2,4,6)$ and
+$(6,8,14)$, where each triple stores minimum, maximum, and sum. Merging uses
+minimum for the first field, maximum for the second, and addition for the third,
+giving $(2,8,20)$. Those operations permit a hierarchy of independent partial
+results. The corresponding average is $20/4=5$; a histogram would retain more
+information about the distribution than these three aggregates.
 
 \paragraph{Current status.}
 The reduction results are computed every frame but are not currently

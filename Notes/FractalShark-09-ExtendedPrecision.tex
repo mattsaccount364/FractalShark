@@ -5,9 +5,11 @@ In perturbation-based rendering (\cref{sec:perturbation-concept}), each pixel
 computes a low-precision \emph{delta} from a high-precision reference orbit.
 The precision of this delta arithmetic (the \code{SubType} template parameter)
 determines both the accuracy of the rendered image and the GPU throughput.
-\FractalShark{} provides a hierarchy of multi-component floating-point types
-that trade additional ALU operations for higher effective precision without
-relying on native 64-bit floating-point hardware.
+\FractalShark{} provides multi-component floating-point types that trade
+additional arithmetic for higher effective precision. Float-based expansions
+avoid native fp64 arithmetic; double-based expansions use it. Unlike HDR, which
+extends the exponent range, an expansion retains information in additional
+significand components.
 
 \subsection{Motivation: the perturbation precision gap}
 \label{subsec:ep-motivation}
@@ -21,9 +23,10 @@ resolves these artifacts but incurs a substantial throughput penalty on consumer
 GPUs, where fp64 performance is significantly slower than fp32, with throughput ratios on the order of 32:1 on some architectures.
 
 The \textbf{2$\times$32 double-float} type bridges this gap: it provides
-${\sim}48$~bits of effective mantissa using only fp32 arithmetic, delivering
-sufficient precision for accurate perturbation while remaining on the fast
-fp32 ALUs.  This format is the extended-precision type with real practical value in
+${\sim}48$~bits of effective mantissa using only fp32 arithmetic. The additional
+precision resolves some cases that exceed a single float's accuracy while
+remaining on the fp32 ALUs; it is not sufficient for every orbit or view.
+This format is the extended-precision type with practical value in
 \FractalShark{}'s rendering pipeline.
 
 \FractalShark{} also includes higher-precision types (2$\times$64,
@@ -45,10 +48,25 @@ containing two \code{float} values:
     $|\mathtt{tail}| \le \tfrac{1}{2}\,\mathrm{ulp}(\mathtt{head})$,
     so that the represented value is exactly $\mathtt{head} + \mathtt{tail}$.
 \end{description}
-Construction from a \code{double} uses Knuth's error-free sum
-algorithm \cite{Knuth1997TAOCP2} to
-split the value into a head--tail pair.  The total storage is 8~bytes---the
-same footprint as a single \code{double}.
+Construction from a \code{double} first rounds to a float head and forms a float
+correction from the difference. Knuth's error-free sum algorithm
+\cite{Knuth1997TAOCP2} then normalizes that pair. The two-float sum represents
+the stored expansion exactly as a mathematical sum, but need not reproduce all
+53 bits of the original double. The total storage is 8~bytes, the same footprint
+as a single \code{double}.
+
+\paragraph{Worked addition and cancellation.}
+The next float above~1 is $1+2^{-23}$, so round-to-nearest float arithmetic gives
+$\operatorname{fl}(1+2^{-25})=1$. A head--tail expansion instead retains
+\[
+\mathtt{head}=1,\qquad \mathtt{tail}=2^{-25},\qquad
+x=1+2^{-25}.
+\]
+The correction satisfies the nonoverlap condition because
+$2^{-25}<\tfrac12\operatorname{ulp}(1)=2^{-24}$. Subtracting~1 from the
+expansion leaves $2^{-25}$, whereas subtracting from the rounded single float
+leaves zero. Compensation preserves information from the inputs; it cannot
+recover an offset that was already discarded before the expansion was formed.
 
 \paragraph{Arithmetic operations.}
 The CUDA device functions in \code{dblflt.cuh} implement the standard
@@ -57,28 +75,43 @@ operations:
 \begin{center}
 \begin{tabular}{lll}
 \hline
-\textbf{Function} & \textbf{Operation} & \textbf{Max relative error} \\
+\textbf{Function} & \textbf{Operation} & \textbf{Main mechanism} \\
 \hline
-\code{add\_dblflt(a, b)} & $a + b$  & $O(u^2) \approx 2^{-48}$ \\
-\code{sub\_dblflt(a, b)} & $a - b$  & $O(u^2) \approx 2^{-48}$ \\
-\code{mul\_dblflt(a, b)} & $a \times b$  & $O(u^2) \approx 2^{-47}$ \\
+\code{add\_dblflt(a, b)} & $a + b$  & compensated sums \\
+\code{sub\_dblflt(a, b)} & $a - b$  & compensated differences \\
+\code{mul\_dblflt(a, b)} & $a \times b$  & product residual and cross terms \\
 \code{sqr\_dblflt(a)}    & $a^2$         & optimized via $2 \cdot \mathtt{head} \cdot \mathtt{tail}$ \\
 \code{mul\_dblflt2x(a,b)}& $2ab$         & multiply then shift \\
 \hline
 \end{tabular}
 \end{center}
 
-All operations are built on fused multiply-add (\code{\_\_fmaf\_rn},
-\code{\_\_fmaf\_rd}) intrinsics, which compute $a \times b + c$ in a single
-rounding step.  This property is essential for maintaining the head--tail invariant:
-intermediate products must be exact or correctly rounded before the correction
-term is computed.  The error bounds listed above are the theoretical
-$O(u^2)$ bounds for compensated float arithmetic, where $u = 2^{-24}$ is
-the float unit roundoff.  Note that the source code comments in
-\code{dblflt.cuh} cite empirical error values of ${\sim}2^{-104.7}$;
-however, these measurements appear to have been inherited from the
-double-double (\code{dbldbl}) implementation (where they are consistent
-with $u = 2^{-53}$) and were not re-measured for the float-float variant.
+Addition and subtraction use correctly rounded float additions to recover
+rounding residuals. Multiplication uses fused multiply-add (FMA), which computes
+$ab+c$ with one final rounding rather than rounding the product separately.
+Writing $p=\operatorname{fl}(ab)$, the residual is obtained from
+$q=\operatorname{fma}(a,b,-p)$. For supported rounding and finite operands,
+without harmful overflow or underflow, the residual can be represented exactly
+and $p+q=ab$. Cross terms such as $a_{\mathrm{head}}b_{\mathrm{tail}}$ then
+incorporate the remaining expansion components, followed by normalization.
+
+For example, take the exactly representable floats $a=1+2^{-12}$ and
+$b=1-2^{-12}$. Their exact product is $1-2^{-24}$, the float immediately below~1,
+so its residual is zero. To expose a nonzero residual, use $a=b=1+2^{-12}$:
+\[
+ab=1+2^{-11}+2^{-24},\qquad
+p=1+2^{-11},\qquad q=2^{-24}.
+\]
+The last term lies halfway between neighboring floats at that scale; the even
+round-to-nearest result is~$p$, and FMA recovers the omitted term as~$q$.
+
+The effective precision is approximately twice that of float, with typical
+compensated-arithmetic errors of order $u^2$ for $u=2^{-24}$ under suitable
+assumptions. No uniform maximum relative-error theorem for all operations is
+asserted here, especially near underflow or severe cancellation. Comments in
+\code{dblflt.cuh} retain empirical values near $2^{-104.7}$ from the
+double-double lineage; those values do not establish the accuracy of the
+float-float specialization.
 
 \subsection{\code{CudaDblflt} wrapper and \code{HDRFloat} integration}
 \label{subsec:ep-cudadblflt}

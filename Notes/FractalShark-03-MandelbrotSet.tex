@@ -1,6 +1,11 @@
 \section{The Mandelbrot set and escape-time rendering}
 \label{sec:mandelbrot-intro}
 
+Escape-time rendering converts a question about an infinite sequence into a finite
+pixel calculation. The distinction matters: observing escape can establish that a
+parameter lies outside the set, while failing to observe escape within a budget
+usually establishes only that more iterations may be needed.
+
 The Mandelbrot set \(M\subset\mathbb{C}\) \cite{Mandelbrot1980Fractal} is defined as the set of complex
 parameters \(c\) for which the orbit of
 \begin{equation}
@@ -10,12 +15,22 @@ remains bounded. A common rendering method is \emph{escape-time}: iterate until
 the orbit magnitude exceeds a bailout threshold, or until a maximum iteration
 count is reached.
 
-A standard bailout uses \(|z_n|^2 \ge 4\), since \(|z|>2\) implies divergence:
+The standard mathematical escape guarantee uses \(|z_n|^2>4\), since
+\(|z|>2\) implies divergence:
 \begin{equation}
-|z_n|^2 = \Re(z_n)^2 + \Im(z_n)^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+|z_n|^2 = \Re(z_n)^2 + \Im(z_n)^2 > 4 \quad\Rightarrow\quad \text{escaped.}
 \end{equation}
 For each pixel, the stored value is the smallest \(n\) (or a bounded proxy) at
-which escape occurs, or the maximum iteration limit if escape never occurs.
+which the selected rendering bailout is observed, or the maximum iteration limit
+if no escape is observed within that budget. Kernels can use different bailout
+radii and counting conventions, as described in their algorithm sections.
+
+For $c=-1$, the orbit is $0,-1,0,-1,\ldots$. Returning to the same state proves
+that this particular orbit repeats and is bounded. For $c=1$, the orbit begins
+$0,1,2,5$ and escapes at the third update. A budget of two updates would not yet
+observe that escape, illustrating why finite non-escape alone is inconclusive.
+Equality at radius two is not itself an escape theorem; \cref{sec:real-form}
+gives a bounded counterexample.
 
 
 \subsection*{System architecture}

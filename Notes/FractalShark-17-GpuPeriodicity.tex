@@ -24,7 +24,7 @@ CUDA application path.
 At iteration \(n\), the high-precision state \((x_n, y_n)\) is available in the
 persistent kernel's reference state. The periodicity checker converts
 these values into a reduced high-dynamic-range scalar format,
-\(\mathrm{HDR}(\cdot)\), via a lossy but monotone extraction
+\(\mathrm{HDR}(\cdot)\), via a lossy extraction
 (\code{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
 buffer:
 
@@ -77,19 +77,21 @@ magnitudes:
 where hats denote reduced HDR representations after a normalization/reduction
 step (\code{HdrReduce}) to ensure stable comparisons.
 
-The checker uses a sufficient condition of the form
+The checker uses the heuristic condition
 
 \begin{equation}
   \lVert z_n\rVert_\infty < 2\,R\,\left\lVert\frac{dz_n}{dc}\right\rVert_\infty,
   \label{eq:periodicity-ineq}
 \end{equation}
 
-where \(R\) is a problem-dependent bound (stored as \code{RadiusY} in the
-reference structure). Intuitively, \eqref{eq:periodicity-ineq} compares the
-current orbit magnitude against a scaled sensitivity radius implied by the
-derivative growth: when the orbit state becomes small relative to the local
-linearization bound, further iteration is treated as converging toward a
-previous state and the algorithm flags a periodic cycle.
+where \(R\) is the configured view radius (stored as \code{RadiusY} in the
+reference structure).  To first order, varying $c$ by at most $R$ changes
+$z_n$ on a scale comparable to $R|d_n|$.  A state small relative to that scale
+suggests a nearby parameter whose critical orbit returns to zero.  The test
+does not compare two full orbit states, prove convergence to a cycle, or
+certify a least period.  The factor two and componentwise maximum are
+implementation choices rather than a rigorous enclosure of the nonlinear
+parameter dependence.
 Concretely, the device computes
 
 \begin{equation}
@@ -102,9 +104,17 @@ Concretely, the device computes
 and terminates when \(n_2 < n_3\), setting \code{PeriodicityStatus =
 PeriodFound} and recording \code{OutputIterCount = n+1}.
 
+\paragraph{A numerical interpretation.}
+For $c=-0.999$, the first two orbit values are $z_1=-0.999$ and
+$z_2=-0.000999$, with $d_2=2c+1=-0.998$.  Taking $R=0.001$ gives
+$|z_2|=0.000999<2R|d_2|=0.001996$, so the heuristic fires even though
+$z_2\ne0$.  At the nearby exact period-two center $c=-1$, the return
+is zero.  The example explains why the test is useful for early termination
+and why its positive result is not an exact periodicity certificate.
+
 \paragraph{Escape test.}
-We additionally apply a conventional escape-radius test in the same reduced
-domain. After forming the next-state candidates
+The checker also applies a reference-generation bailout in the same reduced
+domain.  It forms the cheap proxies
 \(
 \widehat{x}_n + \widehat{c}_x
 \)
@@ -121,7 +131,11 @@ the checker evaluates
 and declares \code{Escaped} when this value exceeds a fixed threshold
 (\code{256.0} in the current implementation). As with the periodicity
 criterion, all comparisons are performed on reduced positive HDR values to avoid
-high-precision control-flow costs on the device.
+high-precision control-flow costs on the device.  The expression
+$\widehat z_n+\widehat c$ is not $\widehat{z_{n+1}}$; for $z_n=2$ and
+$c=1$, the former is $3$ and the latter is $5$.  The threshold and proxy
+match the application reference contract, rather than the usual direct-pixel
+$|z_n|>2$ test.
 
 \paragraph{Control-flow placement and synchronization.}
 Periodicity checking is invoked once per iteration at the top of the reference
@@ -140,7 +154,7 @@ visible before subsequent work proceeds. If termination is requested, the
 iteration loop exits immediately; otherwise, the kernel proceeds into the
 fused NTT recurrence that produces the next high-precision state.
 
-This organization isolates termination logic from the fused recurrence pipeline
+The organization isolates termination logic from the fused recurrence pipeline
 while maintaining grid-wide early-exit behavior.  The checker publishes its
 status through one explicit \code{grid.sync()} per iteration.  The recurrence uses the same publication
 boundary to expose the iteration plan built by the leader.  The synchronization
@@ -159,8 +173,10 @@ runtime. Moreover, host-side checking would introduce additional latency and
 force a tighter coupling between device execution and CPU control flow. By
 performing periodicity detection directly on the GPU using reduced HDR
 representations, the implementation avoids repeated large data transfers while
-preserving an early-termination mechanism that is both inexpensive and tightly
-integrated with the cooperative-grid execution model.
+preserving an early-termination mechanism integrated with the
+cooperative-grid execution model.  The cost remains one reduced check and its
+publication barrier per iteration; the gain depends on how much later
+high-precision work termination avoids.
 
 The reference-orbit algorithms described above rely on high-precision arithmetic
 that must execute efficiently on the GPU.  The next chapter details the

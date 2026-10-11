@@ -5,7 +5,9 @@ High-resolution Mandelbrot rendering, perturbation theory (\cref{sec:perturbatio
 extreme demands on memory management. At deep zoom levels, a single authoritative
 reference orbit may contain tens of billions of elements; for example, an orbit
 with $2.7\times10^{10}$ iterations already implies a logical memory footprint far
-beyond what can be held resident in RAM, even with compact per-iteration storage.
+beyond what can be held resident in ordinary RAM configurations. At 16 bytes per
+complex-double record, $2.7\times10^{10}$ records require $432$ GB, approximately
+$402$ GiB, before any coefficient tables or allocator overhead.
 At this scale, both the cost of allocation and the cost of relocation become
 dominant design constraints.
 
@@ -15,8 +17,7 @@ while simultaneously maintaining \emph{stable virtual addresses} for previously
 returned pointers. This requirement arises naturally when the program hands out
 interior pointers into a buffer (e.g., into an orbit record array or a heap
 arena). Any reallocation-and-copy strategy would invalidate those pointers and
-would require copying large amounts of data, which is computationally
-infeasible at multi-billion-element scales.
+would require copying large amounts of data, which can dominate the calculation at multi-billion-element scales.
 
 In addition to scale and pointer stability, persistence is a first-class
 concern. Reference orbits are expensive to compute (\cref{subsec:ref-orbit-gpu}) but comparatively cheap to
@@ -34,15 +35,31 @@ memory avoids exhausting the system-wide virtual-memory commit charge,
 which on Windows is limited by RAM plus pagefile size.  With
 file-backed storage, the operating system demand-pages data into
 physical memory as needed and evicts it back to the file under
-pressure, so the working set stays manageable even when the logical
-data set far exceeds available RAM.
+pressure. A small active working set can therefore use much less resident RAM
+than the logical data set, although a workload touching most records still incurs
+memory pressure and disk I/O.
 
 To address these requirements, \FractalShark{} provides a
 \code{GrowableVector<EltT>} abstraction that combines (i) a fixed,
 virtually-contiguous address range reserved up front and (ii) incremental growth
-within that range by committing additional pages on demand. Growth is performed
+within that range by making additional capacity accessible on demand. Windows uses
+commit or section extension; Linux uses memory mappings and protection changes.
+Growth is performed
 in place, so the base address never changes and no copying is required as
-capacity increases. The abstraction supports two complementary backing modes:
+capacity increases, up to the chosen view size. The stable address applies during
+the live mapping, rather than guaranteeing the same address in a later process.
+
+\paragraph{Worked memory accounting example.}
+Suppose the vector reserves a 16 GiB virtual view, enables 256 MiB of capacity,
+contains 10 MiB of records, and has recently touched 4 MiB of pages. These are four
+different quantities. Growing capacity to 512 MiB leaves pointers into the retained
+records unchanged; it does not mean that all 512 MiB immediately reside in RAM.
+Linux temporary backing can have a 16 GiB sparse logical file length while consuming
+few disk blocks initially. Actual residence and disk allocation depend on access
+and operating-system paging.
+
+The abstraction supports two complementary backing modes. The following APIs
+describe the Windows implementation; the Linux mapping is explained at the end:
 
 \begin{enumerate}
   \item \textbf{Anonymous (pagefile-backed) growth.} A large virtual region is
@@ -87,15 +104,15 @@ capacity increases. The abstraction supports two complementary backing modes:
 
   % Capacity marker
   \draw[<->, thick, blue!70!black] (c0.north west) ++(0,0.15) -- ++(7.2, 0)
-    node[midway, above, label, blue!70!black] {Committed pages (in use)};
+    node[midway, above, label, blue!70!black] {Accessible capacity (not used size)};
 
   % Reserved marker
   \draw[<->, thick, gray] (c12.north west) ++(0,0.15) -- ++(4.8, 0)
     node[midway, above, label, gray] {Reserved (uncommitted)};
 
   % Growth arrow
-  \draw[->, thick, orange, dashed] (c11.east) ++(0.1, -0.35) -- ++(1.4, 0)
-    node[right, label, orange] {Growth: commit more pages};
+  \draw[->, thick, orange, dashed] (c11.east) ++(0.1, -0.75) -- ++(1.4, 0)
+    node[right, label, orange] {Enable more capacity};
 
   % Total region bracket
   \draw[decorate, decoration={brace, amplitude=5pt, mirror}, thick]
@@ -104,11 +121,11 @@ capacity increases. The abstraction supports two complementary backing modes:
 \end{tikzpicture}
 \caption[\code{GrowableVector} reserve-and-commit memory layout]{\code{GrowableVector} reserve-and-commit memory layout.
   A large virtual region is reserved at initialization, establishing a
-  stable base pointer \code{m\_Data}.  Pages are committed incrementally
-  as the vector grows (blue, left).  The reserved-but-uncommitted
-  region (hatched, right) consumes no physical memory until needed.
-  Because the base address never changes, all previously returned
-  pointers remain valid across growth operations.}
+  stable base pointer \code{m\_Data}. Accessible capacity grows incrementally
+  (blue, left), within the reserved region (hatched, right). Capacity, used
+  elements, and resident pages are distinct: making a page accessible does not
+  require it to remain resident. Pointers into retained records remain valid
+  across successful growth operations.}
 \label{fig:growable-vector}
 \end{figure}
 
@@ -123,17 +140,18 @@ At initialization time, the vector establishes an address anchor:
 
 Growth proceeds by increasing the logical capacity \code{m\_CapacityInElts}
 without moving data. In anonymous mode, this corresponds to committing
-additional pages within the reserved region. In file-backed mode, it corresponds
-to extending the underlying section and allowing the view to cover the expanded
-range. In both cases the implementation \emph{never} allocates a second buffer and
+additional pages within the reserved region on Windows, or changing page
+protections on Linux. Windows file-backed growth extends the section; Linux
+persistent growth extends the file within a fixed mapped view, while temporary
+sparse backing already has the full view's logical length. In both cases the implementation \emph{never} allocates a second buffer and
 copy: the address stability is enforced by explicitly requesting the existing
 base address and treating any base-address change as a hard error.
 
 \subsection{File-backed mapping for low-commit large buffers}
 \label{sec:file_backed_mapping}
 
-When a filename is provided (or a temporary filename is generated), the vector
-opens or creates a backing file and constructs a section object over it. The implementation uses
+When a filename is provided (or a temporary filename is generated), the Windows
+vector opens or creates a backing file and constructs a section object over it. It uses
 native NT section APIs (e.g., \code{NtCreateSection},
 \code{NtMapViewOfSection}, and \code{NtExtendSection}) to obtain a
 reserve-style mapping suitable for later extension.
@@ -177,8 +195,9 @@ The vector supports multiple policies that control whether data is persisted:
   \item \textbf{Temporary file-backed (\code{EnableWithoutSave}).} Upon
   \code{Trim()}, the view can be remapped to match the used size while
   \emph{reusing the same base address}. This remapping reduces the mapped span without
-  sacrificing pointer stability, and the file is automatically deleted when the
-  handle closes.
+  sacrificing the addresses of retained records. Windows deletes the temporary
+  file on close; Linux unlinks it after opening, and its storage survives through
+  the live descriptor and mapping.
   \item \textbf{Anonymous (\code{DontSave}).} Trimming is a logical operation
   (used size changes) while the reserved region remains as the stable anchor.
 \end{itemize}
@@ -188,8 +207,8 @@ The vector supports multiple policies that control whether data is persisted:
 
 The custom heap allocator builds its arena on top of the same
 \code{GrowableVector<uint8\_t>} abstraction. The heap is initialized by
-creating a file-backed growable vector for the heap arena and committing an
-initial chunk of memory. When the allocator needs more space, it expands the
+creating a temporary file-backed growable vector for the heap arena and making
+an initial chunk accessible. When the allocator needs more space, it expands the
 arena by growing the underlying vector in-place and then updating the heap's
 wilderness block (coalescing if possible). Because the arena grows within a
 reserved and stable virtual range, all heap pointers returned to the program
@@ -199,49 +218,31 @@ relocating the heap.
 \subsection{Portability and backing-file considerations}
 \label{sec:disk_backed_portability_notes}
 
-The implementation described above relies on Windows-specific virtual memory and
-section-mapping semantics, in particular the ability to reserve a virtually
-contiguous address range and to grow into that range while preserving a fixed
-base address. On Windows, this guarantee is achieved using native section objects backed by
-ordinary (non-sparse) files whose size is explicitly extended as the logical
-capacity grows.
+Windows and Linux implement the same stable-address contract with different
+operating-system mechanisms. On Windows, anonymous storage uses
+\code{VirtualAlloc} reserve/commit, while file-backed storage uses native section
+objects and explicitly extends ordinary backing files. Reserving an address range,
+charging committed storage, and making a page resident are separate events.
 
-An important consequence of this design choice is that the backing file itself
-physically grows on disk as the vector expands, even if large portions of the
-mapped address space are never touched. Windows mitigates the runtime memory
-impact by demand-paging pages into RAM and evicting them back to disk under
-memory pressure, but the on-disk footprint still reflects the full logical extent
-of the section. This behavior is acceptable—and often desirable—on Windows,
-where file-backed sections are tightly integrated with the operating system's
-paging and commit model.
+On Linux, anonymous storage reserves an \code{mmap} region with
+\code{PROT\_NONE}; growth enables pages with \code{mprotect}. File-backed storage
+uses a fixed \code{MAP\_SHARED} view. Persistent files grow through
+\code{ftruncate}. Temporary mode gives a sparse file the full view's logical
+length once, unlinks the file after opening, and subsequently grows capacity within
+that existing view. A sparse file allocates disk blocks for written regions rather
+than requiring physical storage for its complete logical length.
 
-More specifically, Windows treats a section backed by a regular (non-sparse)
-file with a well-defined size as a complete and deterministic backing store for
-any page in the mapped range. Page faults are resolved by reading from the file,
-and evicted pages can be written back to the same file without requiring
-additional allocation or metadata decisions at fault time. By explicitly
-growing the backing file as capacity increases, the implementation ensures that
-the backing storage for every potential page already exists. This aligns with
-Windows-native paging expectations and simplifies correctness guarantees around
-section growth, page-in, and page-out behavior.
+Temporary Linux trimming uses \code{mremap} without permission to move the mapping
+and checks that the address stayed fixed. Persistent trimming truncates the backing
+file to the used byte count. Neither platform promises unlimited growth: capacity
+must fit the selected view, and shrinking removes storage beyond the retained
+records. Linux protection changes also do not have the same commit-accounting
+semantics as Windows commits.
 
-On other platforms, or in alternative designs, a \emph{large sparse file} may be
-a more appropriate backing store for growable, disk-backed vectors. Sparse files
-allow the logical file size to greatly exceed the actual disk space consumed,
-allocating physical blocks only for regions that are written. When combined with
-memory-mapped I/O, this combination can preserve the core advantages of the approach—stable
-virtual addresses and low resident memory usage—while also minimizing disk space
-consumption for unused regions.
-
-The present implementation intentionally does not rely on sparse-file behavior,
-favoring predictability and robustness of paging semantics over minimizing
-nominal disk usage. This choice, while well aligned with Windows-native behavior,
-has implications for portability: environments that do not support extending a
-mapped view in place, or that impose stricter constraints on file-backed mappings
-(such as Wine or certain Unix-like kernels), may require alternative strategies.
-Possible approaches include explicit sparse-file usage, preallocation of large
-sparse sections, or fallback allocators that relax the stable-address requirement
-in exchange for broader compatibility.
+The common ownership rule is simpler than either implementation: existing live
+records keep their addresses during successful growth, and callers release those
+records before destroying their backing vector. Persistence retains data, not a
+particular virtual address across application runs.
 
 The preceding chapters have covered the full rendering pipeline from iteration
 kernels through memory management.  The next chapter (\cref{sec:future-directions}) surveys alternative and

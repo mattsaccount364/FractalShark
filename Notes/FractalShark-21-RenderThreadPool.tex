@@ -8,6 +8,12 @@ the UI thread never mutates \code{Fractal} state directly.  Instead it wraps
 mutations in lambdas and enqueues them into a work queue consumed by a pool of
 worker threads.
 
+A command queue gives each operation a defined point at which it changes shared
+state. A \emph{snapshot} is the collection of settings used for one calculation;
+a \emph{mutex} prevents two threads from changing protected state simultaneously.
+A completion handle lets a caller wait without repeatedly inspecting unfinished
+buffers. Those mechanisms separate responsive input from long-running arithmetic.
+
 \subsection{Architecture}
 
 \begin{figure}[!htbp]
@@ -26,7 +32,7 @@ worker threads.
   \node[worker, right=0.7cm of eq] (w) {Workers\\{\scriptsize($\times 4$)}};
   \node[worker, right=0.7cm of w] (calc) {\code{CalcFractal}};
   \node[gl, right=0.7cm of calc] (frame) {ProduceFrame};
-  \node[gl, below=0.5cm of frame] (glc) {GL consumer};
+  \node[gl, below=0.5cm of frame] (glc) {GL presenter};
 
   \draw[->] (ui) -- node[above, font=\scriptsize] {enqueue} (eq);
   \draw[->] (eq) -- node[above, font=\scriptsize] {dequeue} (w);
@@ -41,14 +47,16 @@ worker threads.
   dequeue, execute the command lambda under a mutex, call
   \code{CalcFractal} to render into a private
   \code{Iters\-Memory\-Container}, then produce a frame for the OpenGL
-  consumer thread.  Stale items in the queue are superseded by newer
+  presenter: a pool-owned consumer thread on Windows or the GUI thread on Linux.
+  Supersedable stale items in the queue are superseded by newer
   enqueues.}
 \label{fig:render-pipeline}
 \end{figure}
 
 \code{RenderThreadPool} owns \code{NumWorkers} worker threads (one per
-GPU renderer, currently four) and a
-dedicated OpenGL consumer thread.  The work queue is a \code{std::deque} of
+GPU renderer, currently four). Windows presentation uses a dedicated OpenGL
+consumer thread. Linux's GUI thread instead calls \code{TryPresentTick} while it
+owns the window's OpenGL context. The work queue is a \code{std::deque} of
 \code{RenderWorkItem} structs, each containing:
 
 \begin{itemize}
@@ -69,11 +77,11 @@ Workers execute a simple loop: dequeue an item, acquire a renderer and
 \subsection{Work Item Structure}%
 \label{subsec:work-item-struct}
 
-Each \code{RenderWorkItem} encapsulates a complete, self-contained
-description of a rendering job.  Workers read exclusively from the work
-item's fields, never from live \code{Fractal} members (with the
-exception of the \code{FractalPtr} back-pointer used for reference
-orbit access).  The struct comprises several categories of fields:
+Each \code{RenderWorkItem} carries the inputs and control information for one job.
+Command execution and the final snapshot of live state occur under the calculation
+mutex. Rendering then uses that snapshot, while shared reference-orbit access still
+requires the \code{FractalPtr} back-pointer and its ownership rules. The struct
+comprises several categories of fields:
 
 \begin{itemize}
   \item \textbf{Identity.}  A monotonic \code{SequenceNumber}
@@ -138,9 +146,9 @@ pushed back onto the vector and the condition variable is notified.
 After a successful render, the worker swaps its private
 \code{ItersMemoryContainer} into \code{m\_CurIters} under the
 calc-fractal mutex (if dimensions match).  This swap ensures that
-facilities requiring CPU-side iteration data
-(\code{SaveCurrentFractal}, \code{FindInterestingLocation}) see the
-most recently completed render without requiring a separate direct-path
+facilities requiring CPU-side iteration data, such as
+\code{Save\-Current\-Fractal} and \code{Find\-Interesting\-Location}, see
+the most recently completed render without requiring a separate direct-path
 call.  If dimensions do not match---e.g.\ a resize occurred between
 enqueue and completion---the swap is skipped and the old
 \code{m\_CurIters} is retained.
@@ -148,9 +156,12 @@ enqueue and completion---the swap is skipped and the old
 \subsection{Mutex Ordering and Deadlock Prevention}
 \label{subsec:mutex-ordering}
 
-The pool architecture introduces several mutexes with overlapping
-lifetimes.  The following lock-ordering discipline is maintained to
-prevent deadlock:
+The pool architecture introduces several mutexes with overlapping lifetimes.
+The following list identifies their responsibilities; it is not a global sequence
+in which every operation acquires them. Blocking renderer acquisition occurs before
+taking the calculation mutex, and work must not execute while holding the queue
+mutex. Otherwise a thread waiting for a resource could retain the lock needed by
+the thread that will return it.
 \begin{enumerate}
   \item \code{m\_WorkQueueMutex} --- protects the work queue and
         sequence counter.
@@ -177,12 +188,16 @@ closing a TOCTOU window in which \code{Drain()} could observe an
 empty queue with zero in-flight count between pop and the
 increment.
 
+TOCTOU means \emph{time of check to time of use}: a condition can change after one
+thread checks it. Here, removing an item and marking it active must appear as a
+single transition to a thread deciding whether rendering has drained.
+
 \subsection{Compute Stream and Display Stream Interaction}
 \label{subsec:stream-interaction}
 
 Each \code{GPURenderer} maintains two CUDA streams: a
 \emph{compute stream} on which iteration kernels are launched,
-and a \emph{display stream} (\code{m\_Stream1}) used by the
+and a \emph{display stream} (\code{m\_DisplayStream}) used by the
 antialiasing and color-extraction kernels
 (\cref{subsec:antialiasing}).  The two-stream design permits
 overlapped execution:
@@ -269,6 +284,14 @@ only the latest matters.  Two mechanisms discard stale work:
 AutoZoomer's pipelined animation frames set \code{Supersedable = false} so they
 are never discarded.
 
+\paragraph{Worked queue example.}
+Suppose three zoom renders $A,B,C$ arrive before a worker starts them. If they
+are supersedable, enqueuing $C$ discards the queued renders $A$ and $B$, whose
+completion handles are still signaled. An intervening mutation $M$ survives:
+the remaining order is $M,C$, so $C$ sees the updated settings. A non-supersedable
+animation frame also survives. Superseding a pending result does not undo a
+mutation that has already executed.
+
 \subsection{Two Rendering Paths}
 \label{subsec:two-render-paths}
 
@@ -283,7 +306,7 @@ final frame, the worker publishes its private iteration container into
 \code{m\_CurIters} when the dimensions and antialiasing factor still match.
 
 \paragraph{Direct path (\code{CalcFractal(true)}).}
-Used by \code{CrummyTest}, \code{AutoZoomer} Default/Max heuristic, and save
+Used by \code{FractalSharkTest} render regressions, \code{AutoZoomer} Default/Max heuristic, and save
 operations.  The caller constructs
 \code{CalcContext\{m\_Ptz,\;m\_CurIters\}} so GPU results are written directly
 into \code{m\_CurIters}.  The \code{drawFractal = true} flag triggers a
@@ -336,7 +359,7 @@ private \code{ItersMemoryContainer} avoids write contention on
 \code{m\_CurIters} during calculation, then publishes the completed
 container after final frame production.  The direct path should be used for
 workflows that intentionally bypass the pool, such as regression testing
-(\code{CrummyTest}) and high-resolution saves.  Callers that inspect
+(\code{FractalSharkTest}) and high-resolution saves.  Callers that inspect
 \code{m\_CurIters} after pool rendering must first call \code{Drain()} to
 ensure that no pool worker is concurrently modifying shared state.
 
@@ -352,8 +375,8 @@ so the iteration kernels continue executing concurrently
 
 The direct path is inherently serial: the caller blocks until
 \code{CalcFractal} completes, synchronizes the compute stream
-twice (once for iteration kernels, once for \code{RenderCurrent}),
-and only then returns control.  It should therefore be avoided in
+twice: once for iteration kernels and once for \code{RenderCurrent}. It
+only then returns control. It should therefore be avoided in
 latency-sensitive UI code paths.
 
 \subsection{MPIR Allocator Lifecycle}
@@ -387,7 +410,7 @@ is still active.
 
 On application exit, \code{RenderThreadPool::Shutdown()} sets the shutdown flag,
 clears the work queue (signalling completion on discarded items), and joins all
-worker threads.  Workers exit immediately on seeing the shutdown flag, even if
+worker threads. Workers exit immediately on seeing the shutdown flag, even if
 items remain in the queue.  In-progress \code{CalcFractal} calls check
 \code{m\_ShutdownFlag} during the GPU-wait loop and abort early.
 
@@ -405,22 +428,25 @@ meaningful precision at extreme zoom depths where IEEE~754 types are
 long exhausted.
 
 \paragraph{Bounding box from center and zoom.}
-Given a center $(c_x, c_y)$ and zoom factor~$Z$, the visible region
-is
+Given a center $(c_x, c_y)$ and zoom factor~$Z$, the initial square bounds are
 \[
   x \in \bigl[c_x - 2/Z,\; c_x + 2/Z\bigr],\qquad
   y \in \bigl[c_y - 2/Z,\; c_y + 2/Z\bigr].
 \]
 The constant~2 (the \code{Factor} member) sets the initial
-un-zoomed viewport to the range $[-2,2]$ in both axes.
+un-zoomed viewport to the range $[-2,2]$ in both axes. Aspect-ratio correction can
+expand one axis for a rectangular viewport; these are not every final viewport's
+bounds.
 
 \paragraph{Screen-to-complex and complex-to-screen transforms.}
 Pixel coordinates are mapped linearly:
 \[
-  x_{\text{calc}} = \frac{(x_{\text{px}} - x_0)\,(x_{\max}-x_{\min})}
+  x_{\text{calc}} = \frac{(x_{\text{px}} - X_{\mathrm{origin}})\,(x_{\max}-x_{\min})}
                          {W \cdot k},
 \]
-where $W$ is the screen width and $k$ is the antialiasing factor.
+where $W$ is the screen width, $k$ is the antialiasing factor, and
+$X_{\mathrm{origin}}=-x_{\min}Wk/(x_{\max}-x_{\min})$ is the calculation-grid
+coordinate of the complex plane's real origin.
 The $y$~axis is inverted (screen~$y$ increases downward; imaginary
 axis increases upward).  The inverse mapping is used to convert
 fractal coordinates back to pixel positions.
@@ -443,9 +469,9 @@ kernel's type parameter~\code{T}.  Type-specific overloads of
 \code{FillCoord} handle the conversion:
 \begin{itemize}
   \item \textbf{\code{double} / \code{float}.}  A single
-        \code{Convert<HighPrecision, T>} truncation.  Sufficient when the
-        per-pixel delta exceeds the machine epsilon of the target type
-        (roughly $2^{-52}$ for \code{double}, $2^{-23}$ for \code{float}).
+        \code{Convert<HighPrecision, T>} conversion. A nonzero increment must
+        remain representable, and its addition to an absolute origin is limited
+        by the spacing between representable values at that origin's magnitude.
   \item \textbf{\code{MattDbldbl} / \code{MattDblflt}.}  A two-component
         head--tail split: the head stores the leading-order truncation
         and the tail stores the residual $(\text{src} - \text{head})$,
@@ -456,13 +482,19 @@ kernel's type parameter~\code{T}.  Type-specific overloads of
   \item \textbf{\code{HDRFloat<T>}.}  Direct cast from
         \code{HighPrecision} followed by \code{HdrReduce}, which
         normalizes the mantissa--exponent representation so that the
-        mantissa lies in $[0.5,1)$.
+        ordinary nonzero scalar mantissa satisfies $1\le |m|<2$.
 \end{itemize}
 Because the conversion is applied identically to both the bounding-box
 origin and the per-pixel delta, the GPU kernel can reconstruct any
 pixel's complex-plane coordinate as
 $c_{\text{px}} = x_{\min} + \text{px}\cdot\Delta x$ using only the
 working type, with no further access to arbitrary-precision quantities.
+
+For perturbation, the origin is instead expressed relative to the reference center
+before conversion. The high-precision subtraction avoids losing a small offset by
+subtracting two already-rounded absolute coordinates. \code{FillGpuCoords} rejects
+a nonzero high-precision step that converts to zero and directs the caller to HDR
+or Auto. HDR supplies range, while the selected mantissa supplies precision.
 
 \paragraph{The antialiasing factor in delta computation.}
 \label{par:aa-delta}
@@ -501,8 +533,9 @@ the zoom deepens.
 \label{par:precision-heuristics}
 The function \code{PrecisionCalculator::GetPrecision} determines how
 many bits of mantissa the \code{HighPrecision} members require at a
-given zoom depth.  It converts the bounding-box deltas $\Delta x$ and
-$\Delta y$ to \code{HDRFloat<double>}, extracts the base-2 exponent
+given zoom depth. It converts the total viewport spans
+$|x_{\max}-x_{\min}|$ and $|y_{\max}-y_{\min}|$ to
+\code{HDRFloat<double>}, extracts the base-2 exponent
 of each (via \code{getExp} or \code{std::frexp}, depending on the
 numeric type), and takes the larger absolute exponent as the baseline.
 Two additive padding constants control the final value:
@@ -511,25 +544,30 @@ Two additive padding constants control the final value:
         $\text{bits} = |\text{exp}| + 120$
         (\code{Authoritative\-Min\-Extra\-Precision\-In\-Bits}).
         The 120-bit padding provides roughly 36 decimal guard digits
-        beyond the last significant bit of the per-pixel delta,
-        which suffices for single-use reference orbit computation
-        and coordinate arithmetic.
+        beyond the span's binary scale. The padding is a practical heuristic
+        for single-use reference computation and coordinate arithmetic, rather
+        than an error proof.
   \item \textbf{Reuse precision.}
         $\text{bits} = |\text{exp}| + 800$
-        (\code{AuthoritativeReuseExtraPrecisionInBits}).
+        (\code{Authoritative\-Reuse\-Extra\-Precision\-In\-Bits}).
         When \code{RequiresReuse} is true (the orbit will be
         saved and reused across views), an additional 680 guard bits
-        ensure that the reference orbit remains accurate even after
-        recentring to a nearby coordinate.
+        provide a larger margin when recentering and reusing an orbit. The
+        margin does not guarantee accuracy for arbitrary subsequent dynamics.
 \end{itemize}
-\code{SetPrecision} propagates this value to every
-\code{HighPrecision} member of the converter---$x_{\min}$,
+\code{SetPrecision} propagates this value to the bounds, center, and zoom
+members of the converter---$x_{\min}$,
 $x_{\max}$, $y_{\min}$, $y_{\max}$, $c_x$, $c_y$, and
 $Z$---via \code{precisionInBits}, and also updates MPIR's default
 precision so that newly constructed \code{mpf\_t} temporaries inherit
 the same width.  Because this call reallocates the underlying limb
 arrays, it is performed once per zoom-level change rather than per
 frame.
+
+For extracted span exponents $-300$ and $-302$, the baseline is $302$ bits.
+The two policies request $302+120=422$ or $302+800=1102$ bits, subject to MPIR's
+limb allocation rounding. The example uses extracted exponents explicitly because
+the \code{frexp} and reduced-HDR mantissa conventions differ by one binary scale.
 
 \paragraph{Maintaining \code{HighPrecision} throughout coordinate chains.}
 \label{par:hp-invariant}
@@ -542,11 +580,10 @@ members directly, using MPIR's in-place arithmetic (e.g.\
 \code{subFrom}, \code{divFrom\_ui}, \code{mulFrom}).  Down-conversion
 to a finite-precision type occurs only at the final stage when
 \code{FillGpuCoords} prepares values for GPU upload (described
-above under ``Down-conversion'').  This architecture ensures that
-accumulated rounding errors from successive zoom and pan operations do
-not degrade coordinate accuracy: each operation is computed at the full
-working precision determined by \code{SetPrecision}, and only the
-final GPU-facing values are truncated.
+above under the down-conversion discussion). Retaining the selected working
+precision reduces loss through successive zoom and pan operations. Every calculation
+still has finite precision; using \code{HighPrecision} does not eliminate rounding
+error.
 
 % -----------------------------------------------------------------
 \subsection{GPU memory allocation with host fallback}
@@ -609,8 +646,13 @@ selection:
         \code{GpuHDRx32PerturbedLAv2}---HDR arithmetic for extreme
         zoom depths.
 \end{itemize}
-The $10^{34}$ boundary corresponds to the representable exponent range
-of 32-bit floating-point numbers.  If the HDRx32 variant produces
+These boundaries are practical selection heuristics, rather than sharp accuracy
+limits. For example, zoom $10^6$ selects perturbation-only execution, while zoom
+$10^{40}$ selects HDR LA~v2. When GPU rendering is bypassed, Auto selects
+\code{Cpu64} below $10^9$, \code{Cpu64PerturbedBLA} below $10^{34}$, and
+\code{Cpu64PerturbedBLAV2HDR} beyond that. The $10^{34}$ boundary leaves margin
+before very small native-float values become unusable; it is not the exact
+underflow boundary of every calculation.  If the HDRx32 variant produces
 visual artifacts at extreme depths, the user can manually select
 \code{HDRx2x32} or \code{HDRx64} for additional precision.
 

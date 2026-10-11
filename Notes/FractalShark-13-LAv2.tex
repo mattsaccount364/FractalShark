@@ -239,20 +239,24 @@ The LA~v2 algorithm approximates the perturbation delta after multiple
 iterations as a linear function of two quantities: a nonlinearly transformed
 input perturbation and the parameter offset.  Concretely, each LA entry stores
 a reference orbit value \(z_\mathrm{ref}\) together with two complex
-coefficients \code{ZCoeff} and \code{CCoeff}. Its other fields describe
-where the map is applicable and how traversal continues:
+coefficients \code{ZCoeff} and \code{CCoeff}. Runtime rows describe the
+prepared-input domain and traversal metadata:
 \begin{itemize}
-  \item \code{LAThreshold} bounds the prepared perturbation;
-        \code{LAThresholdC} bounds the parameter offset.
+  \item \code{LAThreshold} bounds the prepared perturbation.
   \item \code{StepLength}, denoted $\ell$, counts the original
         Mandelbrot iterations covered by the entry.
   \item \code{NextStageLAIndex} identifies the same starting boundary
         in the next finer stage, or in the raw orbit for stage~0.
-  \item \code{MinMag} is construction state for minimum-magnitude
-        boundary detection; rendering does not use it.
 \end{itemize}
-Each stage stores its starting array offset \code{LAIndex} and its
-number of evaluable entries \code{MacroItCount}. An additional terminal
+Construction keeps \code{LAThresholdC}, the parameter-offset bound, and
+\code{MinMag}, the boundary-detection state, in a parallel
+\code{LAConstructionInfo} table. A local \code{LAConstructionEntry}
+combines that metadata with a runtime row while building maps; neither field
+is carried in every runtime row. Each stage stores its starting array offset
+\code{LAIndex}, its number of evaluable entries \code{MacroItCount}, and
+a cached \code{LAThresholdC} copied from its first construction entry.
+The stage gate therefore reads one cached bound instead of construction data.
+An additional terminal
 entry stores the reference at the final endpoint. The reference of
 entry~$j+1$, including that terminal entry, reconstructs the output of
 entry~$j$; the terminal entry is not an extra block to evaluate.
@@ -304,7 +308,7 @@ delegate Prepare and Evaluate to \code{FractalShark::LA} helpers.
 For an entry spanning $[a,b)$, reconstruction uses
 $z_b^\star+\Delta z_{\mathrm{out}}$, while Prepare uses $z_a^\star$.
 
-The initial conditions, set in the \code{LAInfoDeep} constructor, are
+The runtime-row constructor and construction-entry seed establish
 \[
 \begin{gathered}
 \code{ZCoeff}_0 = 1,\quad \code{CCoeff}_0 = 1,
@@ -326,7 +330,7 @@ Method~2 uses threshold tightening instead and does not need that seed.
 \subsection{Step-forward recurrence}
 \label{sec:la-step-forward}
 
-Each call to \code{LAInfoDeep::Step} absorbs one additional reference-orbit
+Each call to \code{LAConstructionEntry::Step} absorbs one additional reference-orbit
 iteration into an LA entry by appending a linearized perturbation step.
 Starting from the exact perturbation recurrence (dropping the quadratic
 \((\Delta z)^2\) term for subsequent iterations after Prepare):
@@ -377,37 +381,61 @@ the incoming derivative must also propagate through Prepare and
 \code{ZCoeff}; \code{CCoeff} alone is not the total derivative
 (\cref{sec:la-derivatives}).
 
-\paragraph{Worked three-iteration map.}
-For $c_\star=-1/2$, the reference samples are
-$z_0^\star=0$, $z_1^\star=-1/2$, $z_2^\star=-1/4$, and
-$z_3^\star=-7/16$. A block starting at $z_0^\star$ has the following
-coefficient development:
+\paragraph{Worked four-iteration map shared with BLA~v1.}
+\label{sec:la-worked-shared-map}
+Use the reference $c_\star=-1/2$ and span $r=1$ through $r=5$ from
+\cref{sec:bla-v1-worked-map}. Let the incoming delta be~$\xi$ and
+the parameter offset be~$t$. At $z_1^\star=-1/2$, Prepare gives
+$\tilde{\Delta z}=-\xi+\xi^2$. Seeding one update and appending the
+remaining three gives
 \begin{center}
 \begin{tabular}{clcc}
 \hline
 Span & Operation & \code{ZCoeff} & \code{CCoeff} \\
 \hline
 1 & Prepare and seed & $1$ & $1$ \\
-2 & Append $z_1^\star=-1/2$ & $-1$ & $0$ \\
-3 & Append $z_2^\star=-1/4$ & $1/2$ & $1$ \\
+2 & Append $z_2^\star=-1/4$ & $-1/2$ & $1/2$ \\
+3 & Append $z_3^\star=-7/16$ & $7/16$ & $9/16$ \\
+4 & Append $z_4^\star=-79/256$ & $-553/2048$ & $1337/2048$ \\
 \hline
 \end{tabular}
 \end{center}
-Writing the incoming delta as $\xi$ and $\Delta c=\varepsilon$,
-Prepare gives $\tilde{\Delta z}=\xi^2$, and the block estimates
-\[
-z_3\approx -\frac{7}{16}+\frac{1}{2}\xi^2+\varepsilon.
-\]
-The incoming quadratic term survives even though the remaining
-updates are linearized. For a fresh critical orbit, $\xi=0$, exact
-iteration instead gives
-\[
-z_3=-\frac{7}{16}+\varepsilon-\frac{1}{2}\varepsilon^2
-    +\varepsilon^4.
-\]
-The omitted terms show why a validity test is needed even when the
-first update is exact. The example illustrates coefficient algebra;
-it does not prescribe the boundaries chosen by table construction.
+The endpoint delta is therefore
+\begin{equation}
+\Delta z_{\mathrm{out}}\approx
+ \frac{553}{2048}\xi+\frac{1337}{2048}t-\frac{553}{2048}\xi^2.
+\label{eq:la-worked-four-map}
+\end{equation}
+The first two terms match the BLA map exactly; the last retains the square at
+the block input. Both methods still discard squares at subsequent summarized
+updates. Reconstruction adds $z_5^\star=-26527/65536$.
+
+For a fresh pixel, the initial exact update gives $\xi=t$. Choosing
+$t=0.001$ exposes the difference between the algebraic models:
+\begin{center}
+\begin{tabular}{lrr}
+\hline
+Method & Endpoint delta & Absolute error\\
+\hline
+Exact perturbation & $0.000921980959229$ & 0\\
+BLA~v1, one block & $0.000922851562500$ & $8.71\cdot10^{-7}$\\
+LA~v2, one block & $0.000922581542969$ & $6.01\cdot10^{-7}$\\
+\hline
+\end{tabular}
+\end{center}
+The offset deliberately exceeds the production thresholds; the table compares
+omitted terms rather than an accepted rendering traversal. No universal
+accuracy ordering follows from this particular example.
+The example specifies a map for teaching; adaptive construction need not
+choose these particular boundaries. A complete LA reference must also satisfy
+the construction and usability requirements described below.
+
+Starting at the critical point instead gives a useful zero-coefficient example.
+A three-update map at $r=0$ has coefficients $(1,1)$, $(-1,0)$, and
+$(1/2,1)$ as its span grows. Since Prepare is then $\xi^2$, it predicts
+$z_3\approx-7/16+\xi^2/2+t$. For a fresh orbit $\xi=0$, direct iteration
+gives $z_3=-7/16+t-t^2/2+t^4$. Retaining the square of the input does not
+retain squares of the parameter-dependent intermediate deltas.
 
 \subsection{Validity threshold}
 \label{sec:la-threshold}
@@ -437,6 +465,14 @@ small relative to the local reference magnitude limits the relative
 importance of the quadratic term. Division by the current coefficient
 magnitude translates that local restriction back to the block input.
 The minimum retains every restriction already encountered.
+The quotient formulas assume a nonzero coefficient. If the coefficient is
+zero while the reference magnitude is positive, that contribution is zero and
+adds no restriction; the previous finite threshold remains. In the current
+scalar implementation the corresponding quotient is unbounded or very large
+and the minimum retains that finite bound. If the reference magnitude is zero
+and the coefficient is nonzero, the new restriction is zero. A simultaneous
+zero numerator and denominator is not ordinary real division, so the displayed
+ratio must not be treated as an algebraic error certificate at that boundary.
 
 These tests use max-component magnitudes and configurable margins;
 they are practical controls on the approximation domain, not a
@@ -447,7 +483,7 @@ retained linear term and the omitted nonlinear terms.
 \paragraph{Parameter-offset threshold (\code{LAThresholdC}).}
 A companion threshold \code{LAThresholdC} controls validity with respect
 to the parameter offset \(\Delta c\).  It follows the same monotonically
-decreasing pattern but is normalized by \(\lVert\code{CCoeff}\rVert\):
+decreasing pattern but is normalized by \(\lVert\code{CCoeff}\rVert_\infty\):
 \begin{equation}
 \code{LAThresholdC}_{k+1}
   = \min\!\bigl(
@@ -466,13 +502,32 @@ parameter offset satisfies the validity bound \eqref{eq:la-threshold-c}:
   \quad\Longrightarrow\quad
   \text{skip this stage entirely.}
 \]
-The gate uses \code{LAThresholdC} from the \emph{first entry} of the
-stage. Parameter validity and prepared-delta validity are separate
+The gate uses the cached \code{LAThresholdC} copied from the \emph{first
+construction entry} of the stage. Parameter validity and prepared-delta validity
+are separate
 conditions: a small prepared delta does not compensate for an excessive
 parameter offset. Equality rejects the stage or prepared delta.
 Threshold scales are constructed from their configured exponents in
 the generation scalar type by \code{LAParametersRuntime}, preserving
 that type's exponent range.
+
+\paragraph{Worked threshold tightening.}
+For the shared four-update map, write $s=2^{-24}$ for both default scales.
+The first append uses $|z_2^\star|=1/4$ and seed coefficients~1, reducing
+both thresholds from~1 to $s/4$. The next prepared-delta candidates are
+$(7/8)s$ and $(79/112)s$, and the parameter candidates are
+$(7/8)s$ and $(79/144)s$. All exceed $s/4$, so the minimum keeps
+both final thresholds at $s/4$. With the small offset from the BLA radius
+example, $t=\epsilon/16=s/8$, the input $\xi=t$ gives
+$|\tilde{\Delta z}|=|{-t+t^2}|<s/4$ and $|t|<s/4$.
+Both LA gates pass for this illustrative map. The corresponding BLA radius
+is $3\epsilon/8$; differing thresholds constrain differing inputs and should
+not be compared as final-error bounds.
+
+In the critical-point example above, the two-update \code{CCoeff} is zero.
+Appending the nonzero sample $z_2^\star=-1/4$ adds no parameter restriction
+through that coefficient. Its earlier threshold is retained, while the update
+$2z_2^\star\cdot0+1$ restores \code{CCoeff} to~1.
 
 \subsection{Composing LA entries}
 \label{sec:la-composite}
@@ -482,8 +537,16 @@ combined iteration span.  If LA\(_1\) covers iterations \([a,b)\) with
 coefficients \((\code{ZCoeff}_1, \code{CCoeff}_1)\) and reference
 \(z_\mathrm{ref,1}\), and LA\(_2\) covers \([b,c)\) with
 \((\code{ZCoeff}_2, \code{CCoeff}_2)\) and reference \(z_\mathrm{ref,2}\),
-then composing them requires one linearized Prepare step at the boundary
-(dropping the quadratic term):
+then the first entry produces
+$u=\code{ZCoeff}_1\tilde{\Delta z}+\code{CCoeff}_1\Delta c$.
+Evaluating the second entry separately would produce
+\[
+\Delta z_{\mathrm{out}}\approx
+\code{ZCoeff}_2(2z_\mathrm{ref,2}u+u^2)
+ +\code{CCoeff}_2\Delta c.
+\]
+The composite drops the junction square $\code{ZCoeff}_2u^2$ and collects
+the remaining prepared-input and parameter coefficients:
 \begin{align}
 \code{ZCoeff}_\mathrm{comp}
   &= 2\,z_\mathrm{ref,2}\cdot\code{ZCoeff}_1\cdot\code{ZCoeff}_2,
@@ -511,6 +574,35 @@ as an affine chain.  The factor \(2\,z_\mathrm{ref,2}\) accounts for
 the linearized Prepare step at the junction between the two entries.
 The composite's reference is set to \(z_\mathrm{ref,1}\), since the
 composite's Prepare step operates at the first entry's starting point.
+
+\paragraph{Worked fine and coarse composition.}
+Split the shared four-update span into two two-update entries. The first,
+starting at $z_1^\star=-1/2$, has
+$Z_1=-1/2$, $C_1=1/2$; the second, starting at $z_3^\star=-7/16$, has
+$Z_2=-79/128$, $C_2=49/128$. Composition gives
+\[
+Z_{\mathrm{comp}}=\left(-\frac78\right)
+ \left(-\frac12\right)\left(-\frac{79}{128}\right)
+ =-\frac{553}{2048},
+\qquad
+C_{\mathrm{comp}}=\left(-\frac78\right)
+ \frac12\left(-\frac{79}{128}\right)+\frac{49}{128}
+ =\frac{1337}{2048}.
+\]
+These are exactly the coefficients constructed by appending individual samples.
+For $\xi=t=0.001$, the first fine output is
+$u=\xi/2-\xi^2/2+t/2=0.0009995$.
+Evaluating the second fine entry retains its own Prepare square and gives
+\[
+\Delta z_{\mathrm{fine}}
+ =-\frac{79}{128}\left(-\frac78u+u^2\right)+\frac{49}{128}t
+ \approx0.000921964972502.
+\]
+The coarse output in \eqref{eq:la-worked-four-map} exceeds this value by
+$(79/128)u^2\approx6.17\cdot10^{-7}$ because the coarse map discards the
+junction square. Fine evaluation is closer to exact perturbation in this
+example, but still omits squares inside each two-update entry. Coarsening saves
+one block evaluation while changing which nonlinear terms survive.
 
 \paragraph{Threshold propagation during composition.}
 The composite thresholds are \emph{not} the minimum of the two
@@ -561,7 +653,7 @@ Both propagated restrictions use the second entry's
 \code{LAThreshold}, since they limit the two contributions to that
 entry's prepared input.
 
-In the code, \code{LAInfoDeep::Composite} implements this operation and
+In the code, \code{LAConstructionEntry::Composite} implements this operation and
 is used by \code{CreateNewLAStage} to build higher-level stages from
 lower-level ones.
 
@@ -577,7 +669,8 @@ orbit's return structure. Validity thresholds still determine whether
 a particular pixel can use those blocks.
 
 \paragraph{Boundary detection.}
-Stage~0 appends raw orbit updates with \code{LAInfoDeep::Step}.
+Stage~0 appends raw orbit updates through the construction entry's
+\code{Step} method.
 Method~1, the default, tracks a minimum magnitude $m$, initially~4,
 over the appended reference samples. For a candidate sample $z_k^\star$,
 the update and boundary test are
@@ -720,7 +813,7 @@ z = deltaC  // initial returned value if no step was taken
 if n != 0 and an origin reference is available:
     z = orbit[referenceIndex] + deltaZ
 for stage from coarsest to finest, if reference is valid:
-    if normInfinity(deltaC) >= stage.first.LAThresholdC:
+    if normInfinity(deltaC) >= stage.LAThresholdC:
         continue
     j = referenceIndex
     while n < iterationLimit:
@@ -823,6 +916,24 @@ LAO writes the count reached by approximation alone. When approximation
 stops short, that count does not represent completion of the requested
 escape-time evaluation. PO initializes a zero delta and performs every
 update through the perturbation recurrence.
+
+\subsection{Construction, storage, and evaluation costs}
+As with BLA~v1, construction amortizes reference-dependent arithmetic over the
+image. LA entries store a reference value as well as two complex coefficients,
+a prepared-input threshold, and span/index metadata. Stage descriptors add one
+cached parameter threshold and array boundaries. Construction metadata remains
+separate, reducing the fields read by rendering. Adaptive boundaries can
+produce fewer long entries or more short entries depending on the reference;
+the number of stages and fallback granularity are therefore part of the cost.
+
+An accepted entry evaluates one complex Prepare operation and two complex
+coefficient products, regardless of how many original iterations it covers.
+Coarse entries save evaluation and reference traffic but discard nonlinear
+terms at more internal boundaries, as the worked composition demonstrates.
+Failed checks cost traversal work before finer entries or perturbation take
+over. GPU throughput depends on these accepted spans, table traffic, and
+divergence among neighboring pixels. Neither a large stage count nor a large
+nominal block length alone predicts acceleration.
 
 \subsection{Optional Approximation Transform (AT)}
 \label{sec:attractor-transform}
@@ -1001,12 +1112,13 @@ original orbit magnitude and iteration count are resolved by the
 remaining pipeline. A fully exhausted original budget requires no
 additional LA work.
 
-As an arithmetic trace, take $c_w=1$, $\ell=5$, an identity inverse
-transform, an original iteration budget of~100, and transformed
+As an arithmetic trace, take supplied $A=16$, $B=1$, $q=0$, and
+$\Delta c=1/16$, giving $c_w=AB\Delta c+Aq=1$ and inverse coefficient
+$1/A=1/16$. Let $\ell=5$, the original iteration budget be~100, and the transformed
 squared-radius limit~256. The transformed
 values are $0,1,2,5,26$. The next pre-update test observes
 $26^2>256$, so initialization returns $i=4$, $n=20$, and
-$\Delta z=26$. The values illustrate evaluation of supplied AT
+$\Delta z=26/16=13/8$. The values illustrate evaluation of supplied AT
 parameters; candidate construction and reference usability remain
 separate requirements.
 
@@ -1073,6 +1185,24 @@ Prepare step, and \code{ZCoeff} propagates through the linearized
 iterations.  The updates \eqref{eq:la-dzdz}--\eqref{eq:la-dzdc} are applied \emph{before}
 \code{Evaluate} updates \(\Delta z\) itself, so \(\Delta z\) in the
 formulas above is the pre-step value.
+
+\paragraph{Worked chain-rule update.}
+For the first two-update entry in the shared example,
+$z_\mathrm{ref}=-1/2$, $\code{ZCoeff}=-1/2$, and
+$\code{CCoeff}=1/2$. At incoming $\Delta z=0.001$, the derivative of its
+map with respect to the incoming delta is
+$2(-1/2+0.001)(-1/2)=0.499$. Taking an incoming parameter derivative~1
+and scale $S=1$ therefore gives
+\[
+\code{dzdc}'=1\cdot0.499+0.5=0.999.
+\]
+The first term propagates the parameter dependence already present in the
+incoming state; the second accounts for parameter contributions introduced
+inside this block. Direct differentiation of the two exact updates at
+$c=-0.499$ gives $0.999000004$. The difference comes from the nonlinear term
+omitted by the approximation. The corresponding incoming-state derivative,
+initialized to~1, becomes $\code{dzdz}'=0.499$ because it has no direct
+parameter contribution.
 
 Writing $\code{dzdz} = g_x + i\,g_y$, $\code{dzdc} = h_x + i\,h_y$,
 $\Delta z + z_\mathrm{ref} = q_x + i\,q_y$, and the scaling factor

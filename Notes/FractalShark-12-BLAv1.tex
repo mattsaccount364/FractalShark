@@ -57,18 +57,33 @@ yielding a linearized update:
 \begin{equation}
 \Delta z_{n+1} \approx A_n\,\Delta z_n + B_n\,\Delta c,\qquad
 A_n = 2z_n^\star,\quad B_n = 1.
+\label{eq:bla-v1-one-step}
 \end{equation}
 BLA generalizes this into precomputed multi-step maps that \emph{jump} multiple
-iterations while maintaining an explicit validity bound.
+iterations while maintaining an explicit applicability radius. The name BLA
+identifies the implemented method; its evaluated map is linear in the two
+complex inputs $\Delta z$ and $\Delta c$. It contains no product
+$\Delta z\Delta c$. A complex coefficient rotates and scales an input, and
+adding the two coefficient products combines the incoming-state and
+parameter-offset contributions.
+
+The single-update error before rounding is exactly $(\Delta z_n)^2$.
+For example, with $z_n^\star=-1/2$, $\Delta z_n=0.001$, and
+$\Delta c=0.001$, the exact update is $0.000001$ while the linearized
+update is zero. The relative error in that canceled result is large even
+though the omitted term is small in absolute magnitude. Such cancellation
+explains why an applicability test is necessary and why it does not by itself
+certify the final orbit error.
 
 \subsection{What \code{BLA<T>} stores}
-A \code{BLA<T>} instance stores two complex coefficients:
+The reference-dependent work can be reused only if each block has a compact
+description. A \code{BLA<T>} instance stores two complex coefficients:
 \[
 A = A_x + iA_y,\qquad B = B_x + iB_y,
 \]
 plus:
 \begin{itemize}
-  \item \code{r2}: a squared-radius validity bound used during lookup,
+  \item \code{r2}: the squared input-radius bound $R^2$ used during lookup,
   \item \code{l}: the number of Mandelbrot iterations summarized by this step.
 \end{itemize}
 These objects exist to accelerate \emph{escape-time evaluation} by evolving
@@ -88,13 +103,31 @@ expanded into real arithmetic:
 \Re(\Delta z') &= A_x \Re(\Delta z) - A_y \Im(\Delta z) + B_x \Re(\Delta c) - B_y \Im(\Delta c), \\
 \Im(\Delta z') &= A_x \Im(\Delta z) + A_y \Re(\Delta z) + B_x \Im(\Delta c) + B_y \Re(\Delta c).
 \end{align}
+Both expressions use the incoming real and imaginary components; neither may
+use a component overwritten by the other expression. For a small complex
+example, $A=i$, $B=2$, $\Delta z=1+i$, and $\Delta c=0.1-0.2i$ give
+$A\Delta z=-1+i$, $B\Delta c=0.2-0.4i$, and
+$\Delta z'=-0.8+0.6i$. The same arithmetic evaluates a long block once its
+coefficients have been constructed.
 
 \subsection{Composing steps to build longer jumps}
 If a first step maps \(\Delta z \mapsto A_1\Delta z + B_1\Delta c\) and a second maps
-\(\Delta z' \mapsto A_2\Delta z' + B_2\Delta c\), the composition is:
-\[
+\(\Delta z' \mapsto A_2\Delta z' + B_2\Delta c\), substitution gives
+\begin{align*}
+\Delta z'' &\approx A_2(A_1\Delta z+B_1\Delta c)+B_2\Delta c\\
+            &= (A_2A_1)\Delta z+(A_2B_1+B_2)\Delta c.
+\end{align*}
+The resulting coefficients are
+\begin{equation}
 A_{\text{new}} = A_2 A_1,\qquad B_{\text{new}} = A_2 B_1 + B_2.
-\]
+\label{eq:bla-v1-composition}
+\end{equation}
+The second block multiplies the first block's entire output. Its $A_2$ therefore
+multiplies both $A_1$ and $B_1$, whereas its own parameter contribution $B_2$
+is added afterward. Composition is exact for the two linear maps, but the maps
+already omit nonlinear terms. If their omitted contributions are $e_1,e_2$,
+the combined omission includes $A_2e_1+e_2$; a large coefficient can amplify
+earlier error.
 In the code (\code{BLA.h}), these two steps are passed as the parameters
 \code{x} and \code{y} to \code{getNewA} and \code{getNewB}, corresponding to
 step~1 and step~2 respectively.
@@ -106,28 +139,73 @@ the one- and two-iteration maps recursively but stores tables starting
 at level~2, with nominal length~4. The retained levels therefore begin
 at $4,8,16,\ldots$, as shown in \cref{fig:bla-v1-hierarchy}.
 
+\paragraph{Worked four-iteration construction.}
+\label{sec:bla-v1-worked-map}
+Use $c_\star=-1/2$ and start at reference index~$r=1$. The reference
+recurrence gives the following samples and one-update coefficients:
+\begin{center}
+\begin{tabular}{cccc}
+\hline
+$r$ & $z_r^\star$ & $A_r=2z_r^\star$ & $B_r$\\
+\hline
+1 & $-1/2$ & $-1$ & 1\\
+2 & $-1/4$ & $-1/2$ & 1\\
+3 & $-7/16$ & $-7/8$ & 1\\
+4 & $-79/256$ & $-79/128$ & 1\\
+\hline
+\end{tabular}
+\end{center}
+The endpoint is $z_5^\star=-26527/65536$. Combining the first two
+updates gives $A_{1\to3}=1/2$, $B_{1\to3}=1/2$; the next pair gives
+$A_{3\to5}=553/1024$, $B_{3\to5}=49/128$. Combining those pairs yields
+\begin{equation}
+A_{1\to5}=\frac{553}{2048},\qquad
+B_{1\to5}=\frac{553}{1024}\frac12+\frac{49}{128}
+         =\frac{1337}{2048},\qquad \ell=4.
+\label{eq:bla-v1-worked-coefficients}
+\end{equation}
+Thus four individual linearized updates reduce to
+$\Delta z_{\mathrm{out}}\approx(553\Delta z+1337\Delta c)/2048$.
+The block's reconstructed endpoint is
+$z_5^\star+\Delta z_{\mathrm{out}}$, not the reference sample at its input.
+
+For a fresh neighboring pixel, the exact first update gives
+$\Delta z_1=\Delta c=t$. With $t=0.001$, the four-update BLA estimate
+is $0.0009228515625$, while repeated exact perturbation gives
+approximately $0.000921980959229$. The difference is approximately
+$8.71\cdot10^{-7}$. The deliberately large offset makes the omission visible;
+it is not an example of an accepted production BLA block. The radius calculation
+below shows how a much smaller offset can pass lookup. The same reference and
+four-update span are used for the LA~v2 comparison in
+\cref{sec:la-worked-shared-map}.
+
 \subsection{Constructing and composing validity radii}
 \label{sec:bla-v1-validity}
 
 The one-iteration map drops $(\Delta z)^2$. To keep that term small
 relative to $A_n\Delta z$, the constructor assigns
 \begin{equation}
-r_n=\epsilon |A_n|=2\epsilon |z_n^\star|,
-\qquad \epsilon=2^{-23},\qquad \code{r2}=r_n^2.
+R_n=\epsilon |A_n|=2\epsilon |z_n^\star|,
+\qquad \epsilon=2^{-23},\qquad \code{r2}=R_n^2.
 \label{eq:bla-v1-radius}
 \end{equation}
 The value of $\epsilon$ comes from \code{BLAS::BLA\_BITS}; the same
 construction setting is used for the supported scalar types. The
 radius is an applicability threshold for the omitted quadratic term,
 rather than a certified bound on the complete pixel orbit error.
+For nonzero $A_n\Delta z$, the ratio of the omitted quadratic magnitude to
+the linear magnitude is $|\Delta z|/|A_n|$. Requiring
+$|\Delta z|<\epsilon|A_n|$ keeps that ratio below~$\epsilon$. The parameter
+term can cancel the linear term, and errors from previous blocks can accumulate,
+so that local comparison is not a relative-error bound on the complete result.
 
-For a first map with coefficients $A_1,B_1$ and radius $r_1$, followed
-by a second map with radius $r_2$, the implementation uses the stored
+For a first map with coefficients $A_1,B_1$ and radius $R_1$, followed
+by a second map with radius $R_2$, the implementation uses the stored
 maximum parameter-offset radius $R_{\max}$ to compose the bounds.
 For $|A_1|>0$, the merged radius is
 \begin{equation}
-r_{\mathrm{new}}=\min\!\left(
-  r_1,\ \max\!\left(0,\frac{r_2-|B_1|R_{\max}}{|A_1|}\right)
+R_{\mathrm{new}}=\min\!\left(
+  R_1,\ \max\!\left(0,\frac{R_2-|B_1|R_{\max}}{|A_1|}\right)
 \right).
 \label{eq:bla-v1-merged-radius}
 \end{equation}
@@ -137,6 +215,34 @@ $|A_1\Delta z+B_1\Delta c|\le |A_1||\Delta z|+|B_1|R_{\max}$
 and keeps the intermediate delta within the second domain. If the
 parameter contribution consumes that domain, the merged radius becomes
 zero and the strict lookup test rejects the map.
+
+\paragraph{Worked radius composition.}
+Use the coefficients from \cref{sec:bla-v1-worked-map} and choose a view
+whose maximum parameter offset is $R_{\max}=\epsilon/8$. Expressing every
+radius in units of~$\epsilon$ keeps the calculation readable. The one-update
+radii are $1,1/2,7/8,79/128$ in those units. For the first pair,
+\[
+\frac{R_{1\to3}}{\epsilon}
+ =\min\!\left(1,\frac{1/2-1/8}{1}\right)=\frac38.
+\]
+For the second pair,
+\[
+\frac{R_{3\to5}}{\epsilon}
+ =\min\!\left(\frac78,\frac{79/128-1/8}{7/8}\right)=\frac9{16}.
+\]
+Finally, the first pair has $|A|=|B|=1/2$, so
+\[
+\frac{R_{1\to5}}{\epsilon}
+ =\min\!\left(\frac38,
+     \frac{9/16-(1/2)(1/8)}{1/2}\right)=\frac38.
+\]
+An incoming $\Delta z=\Delta c=\epsilon/16$ therefore satisfies the
+strict four-update lookup test. Increasing the view radius consumes more of
+the intermediate domain even if the incoming delta is unchanged. At a zero
+reference, the one-update radius from \eqref{eq:bla-v1-radius} is zero;
+the strict test cannot accept that one-update map. Formula
+\eqref{eq:bla-v1-merged-radius} is written for a nonzero denominator, rather
+than defining division by a zero coefficient.
 
 \subsection{Aligned lookup and perturbation fallback}
 \label{sec:bla-v1-lookup}
@@ -226,6 +332,55 @@ points needed for bailout and rebasing; the exact placement of those
 tests differs between the native-double and HDR CUDA kernels. When
 rebasing is required, the absolute orbit estimate becomes the delta
 relative to the reference origin while $n$ is preserved.
+
+\paragraph{Worked count and reference-index trace.}
+Consider the validity pattern in \cref{fig:bla-v1-hierarchy}, a reference long
+enough to contain every shown endpoint, and $n_{\max}=21$. Suppose no bailout or
+rebase occurs during these updates. After the initial individual update,
+$(n,r)=(1,1)$. At $r=17$, assume that longer candidates are unavailable or fail
+their radius tests while the four-update candidate passes its radius test.
+The lookup therefore selects that candidate before checking its budget. The
+lookup and count changes are
+\begin{center}
+\begin{tabular}{clc}
+\hline
+Incoming $(n,r)$ & Action & Outgoing $(n,r)$\\
+\hline
+$(1,1)$ & Length 16 fails radius; length 8 passes & $(9,9)$\\
+$(9,9)$ & Candidates fail; four individual updates & $(13,13)$\\
+$(13,13)$ & Length 4 passes radius and budget & $(17,17)$\\
+$(17,17)$ & Length 4 reaches 21 exactly; reject & $(17,17)$\\
+$(17,17)$ & Four individual updates finish the budget & $(21,21)$\\
+\hline
+\end{tabular}
+\end{center}
+The last rejection illustrates the strict BLA budget rule rather than a radius
+failure. No coefficients are applied before the individual tail begins. For
+comparison, an LA~v2 block that reaches the budget exactly can be accepted.
+If rebasing instead occurs at $(n,r)=(17,17)$, reconstruction first forms
+$z=z_{17}^\star+\Delta z$; assigning $\Delta z=z$ and $r=0$ preserves $n=17$.
+The next individual update reaches $(n,r)=(18,1)$ if no bailout occurs.
+Both counts advance during a block, while only the reference count resets
+during rebasing.
+
+\subsection{Construction, storage, and evaluation costs}
+The hierarchy trades preprocessing and reference-dependent storage for fewer
+per-pixel recurrence evaluations. Each retained entry contains four real
+coefficient components, one real squared radius, and one integer length.
+Nominal four-update entries are approximately $n_{\mathrm{ref}}/4$ in number,
+eight-update entries approximately $n_{\mathrm{ref}}/8$, and so on. Ignoring
+terminal rounding, their geometric sum is less than
+$n_{\mathrm{ref}}/2$. Construction therefore requires linear work and storage
+in the reference length, with constants determined by arithmetic type and
+memory layout.
+
+Each accepted block costs two complex products and an addition, plus lookup
+and count management, regardless of its span. The saved work increases with
+accepted length. Long tables do not guarantee long accepted jumps: alignment,
+radius, endpoint, and budget restrictions can all force individual updates.
+GPU performance also depends on table traffic and how consistently neighboring
+threads choose the same path. Those costs explain why both the reference and
+the pixel domain matter when comparing acceleration methods.
 
 \subsection{Limits that motivate LA~v2}
 

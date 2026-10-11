@@ -1,7 +1,10 @@
 \section{Development History}
 \label{sec:development-history}
 
-This appendix records development notes that were posted over time.
+This appendix records development notes that were posted over time. The dates
+identify the implementation and validation state being reported, so a completed
+historical test run is not evidence for later changes. Present behavior is
+documented in the main chapters and the user and engineering appendices.
 
 \subsection{Release Notes}
 
@@ -42,14 +45,17 @@ procedure for updating only selected goldens when pixels intentionally change.
 \subsubsection{2026-10-4 Development --- CUDA PNG Output}
 \label{subsec:png-development-record}
 
-GPU render algorithms now save through the repository's CUDA PNG
-encoder, while CPU algorithms retain \code{WPngImage} and the save
-thread pool. GPU encoding and file writing finish on the initiating
-thread. The encoder preserves 16-bit pixels and automatically selects
+The initial integration routed GPU render algorithms through the repository's
+CUDA PNG encoder, while CPU algorithms retained \code{WPngImage} and the
+save thread pool. At that stage, GPU encoding and file writing finished on the
+initiating thread. The current save queue handles both backends in background
+workers, with a dedicated leased GPU save context; callers wait explicitly
+when they need a completed file (\cref{subsec:png-output}).
+The encoder preserves 16-bit pixels and automatically selects
 fixed, dynamic, or stored DEFLATE blocks by size
 (\cref{subsec:png-output}). Dynamic coding reduced the 4K Mandelbrot
 fixture from 1,180,922 to 857,686~bytes compared with the fixed/stored
-baseline; the complete comparison is in
+baseline; the retained timing and size example is in
 \cref{tab:png-compression-sizes}.
 
 Full Windows Debug and Release rebuilds and the repository formatter
@@ -80,11 +86,12 @@ the fused GPU reference-orbit implementation.
   requests in FIFO order. Local IPC uses named pipes on Windows and Unix-domain
   sockets on Linux.
 
-\item \textbf{PNG output and timing.} CPU server renders queue PNG encoding
-  in the background so it can overlap the next frame. GPU server renders finish
-  encoding and writing before responding. Client output reports per-frame request
-  time, including GPU saving; orderly server shutdown drains outstanding CPU
-  saves. A PowerShell example reports per-image and end-to-end batch timing.
+\item \textbf{PNG output and timing.} Server renders queue PNG encoding in the
+  background so it can overlap the next frame. The original CPU/GPU completion
+  distinction has since been superseded by a shared background save queue.
+  Client output reports per-frame request time through save submission;
+  orderly server shutdown drains outstanding CPU and GPU saves. A PowerShell
+  example reports per-image and end-to-end batch timing.
 
 \item \textbf{GPU reference-orbit work.} The fused Ref2/v2 implementation
   receives further NTT, carry-propagation, memory-layout, and test-harness
@@ -184,8 +191,8 @@ Version \code{0.53} introduced native Linux support.
   solution, and Linux release binaries are targeted at Ubuntu.
 
 \item \textbf{Native Linux GUI.} \code{FractalSharkGuiLinux} now uses Xlib and
-  GLX for its window and OpenGL presentation, a native hierarchical X11 popup
-  menu, and Dear~ImGui overlays for help and application dialogs. Navigation,
+  GLX for its window and OpenGL presentation, with Dear~ImGui for the popup
+  menu, help, and application dialogs. Navigation,
   drag and wheel zoom, automatic zoom, feature finding, fullscreen transitions,
   clipboard output, and the principal save/load workflows are connected to the
   shared renderer and command catalog. The Linux and Win32 applications are

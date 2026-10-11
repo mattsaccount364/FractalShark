@@ -78,37 +78,43 @@ design choices at a glance.
 \subsection{Glitch Detection and Correction}
 \label{subsec:glitch-detection}
 
-Some deep-zoom renderers that lack per-pixel rebasing encounter
-\emph{glitches}---pixels whose perturbation approximation has broken
-down, producing visually incorrect results.  The standard remedy in
-such renderers is a multi-pass detect-and-correct workflow.
+Finite-precision perturbation can produce \emph{glitches}: incorrect pixels
+caused by an unsuitable reference or loss of information in the delta
+representation.  A cancellation test can identify stressed pixels for
+another reference calculation.  One remedy is a multi-pass
+detect-and-correct workflow.
 
-The \emph{Pauldelbrot criterion} formalizes glitch detection: a pixel is
-considered glitched if, at some iteration~$n$,
+The \emph{Pauldelbrot criterion} flags possible glitches when cancellation
+makes the reconstructed pixel state small relative to the reference:
+
 \begin{equation}
-  |z_n^\star| < |\Delta z_n|
+  |z_n^\star+\Delta z_n|^2 < G\,|z_n^\star|^2,\qquad 0<G<1,
   \label{eq:pauldelbrot-criterion}
 \end{equation}
-holds---that is, the magnitude of the reference orbit drops below the
-perturbation delta, indicating that the reference is a poor fit.  The
-correction procedure is to scan the rendered image for such pixels,
+where $G$ is an empirical sensitivity setting.  For a real reference
+$z_n^\star=1$ and delta $\Delta z_n=-0.999$, the reconstructed state is
+$0.001$.  With $G=10^{-4}$, its squared magnitude $10^{-6}$ is below
+$10^{-4}$, so the test fires even though $|\Delta z_n|<|z_n^\star|$.
+Comparing reference and delta magnitudes alone misses the cancellation.
+The criterion is a diagnostic heuristic, not a proof that every flagged
+pixel is wrong.  The correction procedure is to scan the rendered image for such pixels,
 compute a new reference orbit centered on a glitched location, and
 re-render only the affected region.  This process repeats until no
 glitches remain and requires multi-reference orbit support
 (\cref{subsec:multi-reference}).
 
-\FractalShark{} sidesteps this workflow entirely by using
-\emph{rebasing} (\cref{sec:perturb-only-rebase}): whenever
-$|\Delta z_n| > |z_n|$ during iteration, the perturbation is reset by
-folding the delta back into the reference and restarting the reference
-index.  Rebasing corrects the instability per-pixel, on-the-fly, as
-each pixel iterates---eliminating the need for post-render glitch
-detection and multi-pass re-rendering.  In practice, rebasing is a more
-direct and efficient solution: the problematic condition is handled
-immediately at the point it occurs, rather than detected after the fact
-and corrected in a separate pass.  Details of the glitch phenomenon and
-related strategies are discussed in
-\cite{HeilandAllen2013Perturbation} and \cite{HeilandAllen2022DeepZoom}.
+\FractalShark{} uses \emph{rebasing} (\cref{sec:perturb-only-rebase})
+within pixel iteration.  When $|\Delta z|>|z|$, where $z$ is the
+reconstructed current pixel state, it sets $\Delta z\leftarrow z$ and
+resets the reference index to zero while retaining the accumulated pixel
+iteration count.  In the example above, the replacement delta is $0.001$.
+The algebra preserves $z$ because the new reference value is $z_0^\star=0$.
+Rebasing reduces this representation's cancellation problem, but cannot
+recover information already rounded away, repair an inaccurate reference, or
+certify LA/BLA truncation error.  Glitch diagnostics and additional references
+can therefore remain useful validation or fallback strategies.
+The cancellation criterion and rebasing are discussed in
+\cite{HeilandAllen2021DeepZoom,HeilandAllen2022DeepZoom}.
 
 % -----------------------------------------------------------
 \subsection{Series Approximation (SA)}
@@ -116,11 +122,11 @@ related strategies are discussed in
 
 Series Approximation was the original technique for skipping iterations
 in perturbation-based Mandelbrot rendering, introduced alongside
-perturbation theory itself~\cite{Martin2013Perturbation}.  It has since
-been largely superseded by linear approximation methods---both BLA~v1
+perturbation theory itself~\cite{Martin2013Perturbation}.  \FractalShark{} instead uses BLA~v1
 (\cref{sec:bilinear-approx}) and LA~v2
-(\cref{sec:la-v2-perturb})---which are simpler, more robust, and faster
-in practice.  SA is documented here for historical context.
+(\cref{sec:la-v2-perturb}).  SA illustrates another way to trade
+precomputation for per-pixel work; performance depends on the view and the
+chosen approximation order.
 
 SA constructs a polynomial $P(\Delta c)$ that approximates the
 perturbation $\Delta z_N$ after $N$~iterations, so that each pixel can
@@ -145,20 +151,32 @@ $\Delta c$ yields recurrences for the coefficients:
   C_{n+1} &= 2\,z_n^\star\,C_n + 2\,A_n\,B_n,
     \label{eq:sa-C}
 \end{align}
-with higher-order terms following the same pattern.  Note that
-\cref{eq:sa-A} is identical to the \code{CCoeff} recurrence used in
-LA~v2 (\cref{sec:la-step-forward})---this equivalence is not a coincidence; both
-capture the partial derivative $\partial z_n / \partial c$.
+with $A_0=B_0=C_0=0$ and higher-order terms following the same pattern.
+The linear coefficient $A_n$ is the derivative $\partial z_n/\partial c$.
+The parameter coefficient in a composed LA map captures the corresponding
+first-order parameter dependence, although LA also retains a nonlinear input
+operation (\cref{sec:la-step-forward}).
 
-\paragraph{Why linear approximation superseded SA.}
+For $c_\star=-1$, the first coefficients are
+$(A_1,B_1,C_1)=(1,0,0)$,
+$(A_2,B_2,C_2)=(-1,1,0)$, and
+$(A_3,B_3,C_3)=(1,1,-2)$.
+Thus a cubic approximation after three steps is
+$\Delta z_3\approx\Delta c+(\Delta c)^2-2(\Delta c)^3$.
+The exact expression has one additional term $(\Delta c)^4$.
+At $\Delta c=0.001$, these give $0.001000998$ and
+$0.001000998001$, respectively, showing both how skipping works and what
+truncation discards.
+
+\paragraph{Why the implementation uses linear approximation.}
 SA and linear approximation (BLA~v1, LA~v2) address the same
 problem---skipping iterations that would otherwise be computed one at a
 time---but they differ fundamentally in approach.  SA uses a
 higher-order polynomial in $\Delta c$: a single evaluation can skip many
-iterations, but the polynomial has no built-in validity bound and can
-diverge catastrophically when the approximation radius is exceeded.
-Renderers using SA must determine a safe skip count heuristically and
-fall back to full perturbation if the polynomial produces nonsense.
+iterations, but a truncated polynomial needs a remainder estimate or other
+applicability test.  The formulas above alone provide neither.  Implementations
+must select a suitable order and skip length and fall back when the retained
+polynomial is insufficient.
 
 Linear approximation, by contrast, uses first-order (linear)
 coefficients with explicit, precomputed validity thresholds
@@ -179,8 +197,8 @@ enable very large skips near periodic points, but the thresholds do
 not certify a complete orbit error bound or a universal performance
 advantage. Optimized SA variants such as NanoMB1,
 NanoMB2, and Super Series Approximation (SSA)
-(\cite{KallesFraktaler}) narrow the gap but remain more complex than
-linear approximation for comparable or inferior performance.
+(\cite{KallesFraktaler}) use more elaborate coefficient and validity
+management.  These alternatives do not establish a universal speed ordering.
 
 % -----------------------------------------------------------
 \subsection{Multi-Reference Orbit Strategies}
@@ -203,15 +221,13 @@ Multi-reference rendering typically proceeds iteratively:
   \item Repeat until no glitches remain.
 \end{enumerate}
 
-Because \FractalShark{} uses per-pixel rebasing
-(\cref{sec:perturb-only-rebase}) rather than post-render glitch
-detection, the motivation for multi-reference rendering is
-substantially weaker: rebasing handles individual pixel instabilities
-during iteration, avoiding the need for a separate detection-and-correction
-pass.  Multi-reference strategies are primarily relevant to renderers
-that lack rebasing and must instead rely on choosing a globally
-well-suited reference for each region of the image.  The approach is
-discussed in \cite{HeilandAllen2022DeepZoom}.
+Per-pixel rebasing (\cref{sec:perturb-only-rebase}) reduces the need for
+extra references in \FractalShark{}, but does not remove every possible
+benefit.  A reference nearer a difficult region can reduce delta magnitudes,
+improve approximation applicability, or help investigate numerical disagreement.
+The additional reference computation, memory, and pixel assignment must be
+weighed against that benefit.  The approach is discussed in
+\cite{HeilandAllen2022DeepZoom}.
 
 % -----------------------------------------------------------
 \subsection{Smooth (Continuous) Iteration Count}
@@ -221,61 +237,76 @@ Standard escape-time coloring uses integer iteration counts, producing
 visible banding in the rendered image.  The \emph{smooth iteration
 count} eliminates this artifact by computing a fractional escape count.
 
-For the standard bailout radius $R = 2$ the smooth count is
+One common convention for the smooth count is
 \begin{equation}
   n_{\text{smooth}} = n + 1
     - \frac{\log\!\bigl(\log|z_n|\bigr)}{\log 2},
   \label{eq:smooth-iter}
 \end{equation}
-where $n$ is the integer iteration at escape and $z_n$ is the final
-orbit value.  The derivation rests on the potential function
+where $n$ counts completed recurrence steps and $z_n$ is the corresponding
+escaped orbit value.  The $+1$ and any other additive constant define the
+palette's indexing convention; they do not affect the removal of bands.
+The derivation rests on the potential function
 $G(c) = \lim_{k\to\infty} \log|z_k| / 2^k$, which is continuous across
 the exterior of the Mandelbrot set.  The escape time is related to the
 level set $G(c) = \log R / 2^n$; interpolating between successive
 iterates yields the fractional part.
 
-For a general bailout radius~$R$ (note that \FractalShark{} uses
-different squared-bailout thresholds in different contexts: $|z|^2 > 4$
-in direct rendering kernels, $|z|^2 > 256$ in perturbation and
-reference orbit paths, and $|z|^2 > 4096$ in the Feature Finder),
-the formula generalizes to
+A threshold-aligned convention for a general bailout radius $R>1$ is
 \begin{equation}
-  n_{\text{smooth}} = n + 1
-    - \frac{\log\!\bigl(\log|z_n|\bigr)}{\log 2}
-    + \frac{\log\!\bigl(\log R\bigr)}{\log 2}.
+  n_{\text{smooth},R} = n
+    - \frac{\log\!\bigl(\log|z_n|/\log R\bigr)}{\log 2}.
   \label{eq:smooth-iter-general}
 \end{equation}
 
-This real-valued count can be used directly as a palette index,
-eliminating the modular-integer banding visible in \FractalShark{}'s
-current palette system (\cref{subsec:coloring}).  Implementation would
-require modifying the antialiasing kernel (\cref{subsec:antialiasing})
-to compute the fractional count from the final $|z_n|^2$ (already
-available in the output buffer) and using it for palette lookup.  A
-discussion of smooth coloring and other plotting algorithms appears in
-\cite{WikipediaPlottingAlgorithms}.
+The expression gives $n$ when $|z_n|=R$ and differs from
+\eqref{eq:smooth-iter} by a constant.  To derive it, neglect $c$ after
+escape so that $\log|z_{n+k}|\approx2^k\log|z_n|$, then solve for the
+fractional time at which this growth would cross $R$.
+For $R=2$ and $|z_n|=4$, it gives $n-1$.  One further idealized square
+produces $|z_{n+1}|=16$, giving $(n+1)-2=n-1$ again: the smoothed
+count is approximately independent of which later iterate is sampled.
+Using a larger bailout makes the neglected $c$ term less important.
+
+Fractional counts can drive interpolated palette lookup
+(\cref{subsec:coloring}) and supersampled coloring
+(\cref{subsec:antialiasing}).  The current render output contains iteration
+counts, not each pixel's escaped $|z_n|^2$.  Adding smooth coloring therefore
+requires computing the fractional value in the iteration kernel or extending
+its output to retain the escaped magnitude; it cannot be recovered from the
+existing count alone.  Smooth coloring is discussed in
+\cite{HeilandAllenHybridDistance,WikipediaPlottingAlgorithms}.
 
 % -----------------------------------------------------------
 \subsection{Distance Estimation}
 \label{subsec:distance-estimation}
 
-The exterior distance estimator gives the approximate Euclidean distance
-from a parameter~$c$ in the exterior of the Mandelbrot set to the
-boundary $\partial\mathcal{M}$:
+Exterior distance estimation relates orbit growth to parameter sensitivity,
+providing a useful scale for deciding whether a pixel is near the boundary.
+A commonly used potential-over-gradient distance scale is
 \begin{equation}
   d(c) \;\approx\; \frac{|z_n|\,\log|z_n|}{|z'_n|},
   \label{eq:distance-estimate}
 \end{equation}
-where $z'_n = \partial z_n / \partial c$ is the orbit derivative at the
-escape iteration.
+where $z'_n = \partial z_n / \partial c$ is the \emph{pixel} orbit
+derivative after escape.  Taking $G\approx2^{-n}\log|z_n|$ gives a
+gradient magnitude approximately $2^{-n}|z'_n|/|z_n|$; dividing $G$ by
+that magnitude cancels $2^{-n}$ and yields \eqref{eq:distance-estimate}.
+The scale is not the exact shortest distance.  Other conventions multiply it
+by two to approximate an upper distance bound; rigorous bounds require their
+stated analytic conditions and a sufficiently accurate escaped orbit
+\cite{HeilandAllenExteriorDistance}.
+For $c=1$, $z_3=5$ and $z'_3=13$, giving a scale
+$5\log5/13\approx0.619$ in parameter-plane units.
 
-\FractalShark{} already computes $z'_n$: the perturbation pipeline
-tracks $d_n = \partial z_n / \partial c$ for periodicity detection
-(\cref{subsec:ref-orbit-periodicity}), and the LA~v2 kernel propagates
-\code{dzdz} and \code{dzdc} through approximation steps
-(\cref{sec:la-derivatives}).  The missing piece is the coloring
-integration—mapping the distance $d(c)$ to a color rather than (or in
-addition to) the iteration count.
+\FractalShark{} already implements derivative recurrences for reference
+periodicity (\cref{subsec:ref-orbit-periodicity}) and Feature Finder
+approximation evaluation (\cref{sec:la-derivatives}).  Those are not escaped
+per-pixel derivatives in the normal render output.  Distance rendering would
+need to propagate a derivative along each pixel's accepted approximation and
+perturbation steps, preserve its scaling through rebases, and consume it with
+the escaped magnitude.  The additional arithmetic and output state are part
+of the feature, along with coloring integration.
 
 Applications of the distance estimator include:
 \begin{itemize}
@@ -297,10 +328,13 @@ discussed in \cite{HeilandAllen2013Perturbation}.
 \subsection{Interior Rendering}
 \label{subsec:interior-rendering}
 
-Points inside the Mandelbrot set—orbits that never escape—are
-traditionally rendered as a uniform black.  These points belong to
-\emph{hyperbolic components} (also called \emph{atom domains}), each
-characterized by the period~$p$ of its attracting cycle.
+Pixels that do not escape within the selected iteration budget are
+traditionally rendered as uniform black.  That finite observation does not
+prove membership in the Mandelbrot set.  For parameters whose critical orbit
+converges to an attracting cycle, the cycle's period and multiplier provide
+additional interior structure.  Such parameters belong to hyperbolic
+components; arbitrary bounded orbits, especially boundary orbits, cannot all
+be described that way.
 
 Several interior coloring techniques exploit this structure:
 \begin{itemize}
@@ -315,9 +349,18 @@ Several interior coloring techniques exploit this structure:
         distance estimator (\cref{subsec:distance-estimation}).
 \end{itemize}
 
-Cycle detection during iteration can use Floyd's or Brent's
-cycle-finding algorithms, which detect periodicity with $O(1)$ extra
-memory.
+For a cycle $z_0^*,\ldots,z_{p-1}^*$, the multiplier is
+$\lambda=\prod_{k=0}^{p-1}2z_k^*$.  A small displacement after one
+cycle is approximately multiplied by $\lambda$, so $|\lambda|<1$
+explains attraction.  At $c=0$, the fixed point $0$ has multiplier zero;
+at $c=-1$, the cycle $0,-1$ also has multiplier zero.  Both remain
+unescaped, but period coloring distinguishes them.
+
+Floyd's or Brent's algorithms detect exact repetition in a discrete state
+sequence with $O(1)$ extra memory.  A finite-precision orbit can repeat
+without proving a mathematical cycle; numerical attracting-cycle detection
+needs tolerance and multiplier checks.  Near a neutral cycle, convergence
+can be too slow for a short iteration budget.
 
 \FractalShark{}'s Feature Finder (\cref{sec:feature-finder}) already
 detects periods via Newton's method on the equation $z_p(c) = 0$; the
@@ -337,29 +380,35 @@ counts and flood-fills the interiors.
 
 The procedure for each connected region of constant iteration count is:
 \begin{enumerate}
-  \item Identify a border pixel (one whose neighbour has a different
+  \item Identify a border pixel (one whose neighbor has a different
         iteration count).
   \item Follow the 4- or 8-connected border, recording the contour.
   \item Fill all enclosed pixels with the shared iteration count,
         skipping the per-pixel iteration entirely for interior pixels.
 \end{enumerate}
 
-The speedup depends on the fraction of the image occupied by large
-uniform regions; typical gains range from $10\times$ to $50\times$ for
-views dominated by the main cardioid or period-2 bulb.
+The speedup depends on the fraction of the image occupied by large uniform
+regions and on how much verification is needed.  A uniform outer border does
+not prove a uniform interior: a $3\times3$ grid with every border count equal
+to $5$ can still have center count $20$.  Mandelbrot images can contain
+similarly enclosed filaments or islands.  A reliable implementation therefore
+needs additional interior probes, subdivision, or region-specific bounds
+before filling unsampled pixels.
 
 \paragraph{Trade-offs.}
-Boundary tracing is incompatible with smooth (continuous) coloring
-(\cref{subsec:smooth-coloring}), because smooth coloring produces
-continuously varying values with no discrete boundaries to trace.  The
-technique works well with integer escape-time coloring.
+Flood-filling one constant count suits integer escape-time coloring.
+For smooth coloring (\cref{subsec:smooth-coloring}), equal integer counts
+can still have different fractional values, so the same fill would erase
+those gradients.  Adaptive region methods can be extended to continuous
+values, but require an interpolation error test instead of constant-count
+agreement.
 
 Boundary tracing is orthogonal to perturbation and LA: it is a
 pixel-level optimization applied \emph{after} per-pixel iteration counts
 are available for the border pixels; the per-pixel algorithm
-(perturbation, LA, etc.)\ is unchanged.  Fraktaler-3
-uses boundary tracing to achieve large speedups.  An overview of the
-algorithm is given in \cite{WikipediaPlottingAlgorithms}.
+(perturbation, LA, etc.)\ is unchanged.  Sampling and fill validation remain
+additional responsibilities.  An overview of the algorithm is given in
+\cite{WikipediaPlottingAlgorithms}.
 
 % -----------------------------------------------------------
 \subsection{Histogram Equalization}
@@ -382,15 +431,23 @@ palette according to the actual distribution of iteration counts:
   \item Map each pixel's iteration count~$k$ to the color at palette
         index $\mathrm{CDF}(k)$.
 \end{enumerate}
-The effect is that all colors in the palette are utilized approximately
-equally, maximizing visual contrast in the regions where most detail
-exists.
+For example, four exterior pixels with count $10$, two with count $20$, and
+two with count $50$ give $\mathrm{CDF}(10)=1/2$,
+$\mathrm{CDF}(20)=3/4$, and $\mathrm{CDF}(50)=1$.
+All four pixels tied at $10$ retain the same mapped value: equalization cannot
+split one repeated count across a range of colors without another rule.
+It spreads distinct values according to their observed frequencies rather
+than guaranteeing uniform palette occupancy.  Unescaped pixels normally
+receive a separate interior color and are excluded from this exterior CDF.
 
 \FractalShark{} already computes per-frame iteration statistics
 (minimum, maximum, sum) via the reduction kernel
 (\cref{subsec:reduction}); extending this to a full histogram would
-require a histogram kernel but presents no architectural obstacles.  The
-technique is independent of the iteration algorithm and can be combined
+require histogram collection and a second coloring pass.  Wide iteration
+ranges may require binned or sparse histograms rather than one counter per
+possible count.  A changing per-frame CDF can also change colors during a
+zoom animation, motivating a stable shared distribution.  The technique is
+independent of the iteration algorithm and can be combined
 with smooth coloring (\cref{subsec:smooth-coloring}) for even better
 results.  A general discussion of histogram-based coloring appears in
 \cite{WikipediaPlottingAlgorithms}.
@@ -403,7 +460,9 @@ NTT-based multiplication (over Karatsuba) have directly shaped the
 system's present architecture, as detailed in the preceding chapters.
 The remaining techniques---smooth coloring, distance estimation,
 interior rendering, boundary tracing, and histogram
-equalization---represent practical extensions that could be integrated
-into the existing pipeline without fundamental architectural changes.
+equalization---represent possible extensions with different state,
+verification, and synchronization costs.  Smooth and distance coloring need
+additional per-pixel quantities, whereas boundary tracing must justify filling
+unsampled regions.
 \Cref{sec:conclusion} summarizes the overall design and reflects on the
 decisions that connect these subsystems into a coherent whole.

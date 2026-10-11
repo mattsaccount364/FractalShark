@@ -1,6 +1,14 @@
 \section{Mandelbrot recurrence in real arithmetic}
 \label{sec:real-form}
 
+CUDA arithmetic operates on real scalar components, so the complex recurrence must
+first be expressed as additions and multiplications of real numbers. Expanding the
+square gives
+\[
+  (x+iy)^2=x^2+2ixy+i^2y^2=(x^2-y^2)+i(2xy),
+\]
+because $i^2=-1$. Matching real and imaginary components produces the update below.
+
 Writing \(z = x + i y\) and \(c = x_0 + i y_0\), the iteration becomes:
 
 \begin{align}
@@ -8,11 +16,26 @@ x_{n+1} &= x_n^2 - y_n^2 + x_0, \\
 y_{n+1} &= 2 x_n y_n + y_0.
 \end{align}
 
+Both updates consume $x_n,y_n$ from the same iteration. The new real value must be
+kept in a temporary until the imaginary update has finished using $x_n$.
+
+\paragraph{Worked complex update.}
+For $z_n=1+i$ and $c=-1/2+i/4$, the square is $2i$, so
+$z_{n+1}=-1/2+9i/4$. The real formulas give the same result:
+$1^2-1^2-1/2=-1/2$ and $2\cdot1\cdot1+1/4=9/4$.
+Its squared magnitude is $1/4+81/16=85/16>4$.
+
 The escape test is:
 
 \begin{equation}
-x_n^2 + y_n^2 \ge 4 \quad\Rightarrow\quad \text{escaped.}
+x_n^2 + y_n^2 > 4 \quad\Rightarrow\quad \text{escaped.}
 \end{equation}
+
+The strict inequality is the mathematical escape guarantee. Equality alone is
+insufficient: $c=-2$ generates $0,-2,2,2,\ldots$, a bounded orbit. Rendering kernels
+can use a different comparison or a larger bailout for numerical and counting
+conventions; those choices must be distinguished from the theorem. Reaching an
+iteration limit without escape does not in general prove membership in the set.
 
 Many kernels cache squares:
 \[

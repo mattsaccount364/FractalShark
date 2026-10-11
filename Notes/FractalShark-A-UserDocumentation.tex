@@ -26,6 +26,16 @@ invocation (\textbf{Shift+F10} / \textbf{Menu} key).
 On startup, \FractalShark{} displays a brief splash screen (randomly chosen
 from a set of built-in images) while initializing the renderer.
 
+\paragraph{A first render.}
+Start with \emph{Built-In Views $\to$ Standard View} and leave
+\emph{Choose Render Algorithm $\to$ Auto (Default)} selected. After the image
+appears, drag a rectangle around an interesting part of the boundary to zoom
+in. Press \code{b} to return to the preceding view, and try the mouse wheel
+for smaller changes. If the boundary lacks detail, increase the iteration
+limit through the \emph{Iterations} menu and recalculate. Finally select
+\emph{Save $\to$ Save Bitmap Image} to queue a lossless PNG of the current
+view. The menu retains the historical word ``Bitmap'' for image saves.
+
 The most common interactions are:
 \begin{itemize}
   \item \textbf{Right-click}: Open the popup menu at the mouse cursor.
@@ -94,7 +104,7 @@ choice and triggers any necessary reconfiguration.
       (\code{A}, i.e.\ \code{Shift+a}) (command): See \cref{par:autozoom} for
       details.
       \item \emph{Autozoom Max} (command): Autozoom using the ``Max'' heuristic,
-      which zooms by a factor of~32 each step.  See \cref{par:autozoom} for details.
+      which zooms by a factor of~16 each step. See \cref{par:autozoom} for details.
       \item \emph{Autozoom Filament Tip} (\code{S}, i.e.\ \code{Shift+s}) (command): Autozoom using the
       ``FilamentTip'' heuristic.
       \item \emph{Feature Finder} (submenu): Locates nearby mini-Mandelbrot
@@ -141,14 +151,14 @@ choice and triggers any necessary reconfiguration.
     \end{itemize}
 
   \item \emph{Built-In Views} (submenu): Loads a predefined view/location used
-  for demonstrations, debugging, or performance testing.  Up to 32 views are
-  defined in the source (\code{FractalViewPresets.cpp}).
+  for demonstrations, debugging, or performance testing. There are 34 numbered
+  presets in addition to the standard view.
     \begin{itemize}
       \item \emph{Help} (command): Pops up a message box that simply says this
       submenu contains built-in test views.
       \item \emph{Standard View} (command): Loads the default starting view: the
       classic Mandelbrot.
-      \item \emph{\#1 -- \#32} (commands): Loads a specific predefined
+      \item \emph{\#1 -- \#34} (commands): Loads a specific predefined
       test view. Many entries encode expected precision limits, kernel behavior,
       or known failure cases in their label text.  Several views require intense
       computation and take a long time to render.  View \#27, for example, is a
@@ -215,8 +225,8 @@ choice and triggers any necessary reconfiguration.
     required at deep zooms.
     \item[RC] Reference Compression: the reference orbit is stored in
     compressed form (\cref{sec:ref-compression-zhuoran}).
-    \item[Perturbation / Perturb] Per-pixel perturbation from a
-    reference orbit (\cref{sec:perturbation-concept}).
+    \item[Perturbation / Perturb] Uses a reference orbit to evaluate
+    each pixel (\cref{sec:perturbation-concept}).
     \item[BLA] Bilinear Approximation v1 (\cref{sec:bilinear-approx}),
     the original approximation method retained for comparison and use.
     \item[LA~v2] Linear Approximation v2 (\cref{sec:la-v2-perturb}),
@@ -413,12 +423,6 @@ choice and triggers any necessary reconfiguration.
           \item \emph{HDRx64 GPU -- LA~v2} (radio)
         \end{itemize}
 
-      \item \emph{Tests} (submenu): Development and diagnostic test actions.
-        \begin{itemize}
-          \item \emph{Run Basic Test (saves files in local dir)} (command)
-          \item \emph{Run View \#27 test} (command)
-        \end{itemize}
-
     \end{itemize}
 
   \item \emph{Iterations} (submenu): Adjusts the iteration limit and iteration counter width.
@@ -481,8 +485,8 @@ choice and triggers any necessary reconfiguration.
     palette bit depth, and optional palette rotation.  Some entries may be
     enabled only when palette rotation support is available.
     \begin{itemize}
-      \item \emph{Basic} (radio): Placeholder palette type; not currently
-      generated.  Selecting it produces a black image.
+      \item \emph{Basic} (radio): Grayscale coloring derived directly from
+      iteration counts, without a generated palette lookup table.
       \item \emph{Default} (radio): Rainbow palette cycling through
       red, yellow, green, cyan, blue, magenta, and black.
       \item \emph{Patriotic} (radio): Red-and-blue palette.
@@ -673,9 +677,9 @@ additional work for correctness or a ``clean'' run.
 \begin{itemize}
   \item \code{a}: Autozoom using the ``Feature'' heuristic with checkpoint
         saving enabled.  The command forces the
-        \code{GpuHDRx32PerturbedLAv2} render algorithm, centers on the
-        perturbation reference point, computes a target zoom depth from the
-        reference orbit's maximum radius, and zooms in incrementally while
+        \code{GpuHDRx32PerturbedLAv2} render algorithm, selects the already
+        found feature nearest the mouse position, refines it, and computes
+        a target zoom depth. It zooms in incrementally while
         linearly interpolating the iteration count toward the reference orbit's
         target.
   \item \code{A} (\code{Shift+a}): Autozoom using the same ``Feature''
@@ -817,20 +821,33 @@ about though.
 
 The \code{AutoZoomer} class provides three heuristic strategies for
 automated zoom animation.  The Feature strategy has checkpoint-saving and
-checkpoint-preserving command variants.  Each heuristic repeats until a
-termination condition is met (all pixels at the iteration limit, user abort,
-or target reached).  The render pipeline depth of
-$4 \times \text{NumRenderers}$ keeps several frames in flight for smooth
-playback.
+checkpoint-preserving command variants. Max and FilamentTip analyze each
+completed image before choosing the next view; Feature constructs a sequence
+toward a known target. Feature's render pipeline depth of
+$4 \times \text{NumRenderers}$ keeps several frames in flight for smooth playback.
+
+\paragraph{Feature-autozoom walkthrough.}
+First run Direct, PT, or LA Feature Finder near a visible mini-Mandelbrot,
+using the backend suitable for the current depth. Wait for its line or circle
+overlay, then place the cursor near the found feature and press \code{a}
+to refine and animate toward it, saving a refinement checkpoint. Use
+\code{Shift+a} to preserve the existing checkpoint instead. Autozoom selects
+among features already found; it reports failure when none are available.
+GPU reference preparation can take time before the first animated frame.
+Hold \code{Ctrl+Alt} for approximately three seconds to abort.
 
 \begin{description}
   \item[Max (zoom divisor~32)]
-    The first pixel that attains the maximum iteration count is selected,
-    and the view zooms aggressively---32$\times$ per step.  The sequence
-    terminates when every pixel reaches the iteration limit.
+    The first pixel with the largest computed iteration count is selected,
+    and the view zooms aggressively---16$\times$ per step. The new horizontal
+    bounds are the selected center plus or minus the old width divided by~32,
+    so the new width is $2/32$ of the old width. The sequence stops when all
+    samples have the same count, when more than 500 samples reach the iteration
+    limit, or when the user aborts.
 
   \item[FilamentTip (zoom divisor~8)]
-    A multi-stage scoring function targets isolated filament tips.  For
+    A multi-stage scoring function targets isolated filament tips and zooms
+    by $8/2=4$ per step. For
     each candidate pixel whose iteration count exceeds the image
     average, the heuristic samples eight compass directions at a radius
     of 12~pixels and counts high-iteration neighbors.  A composite
@@ -838,9 +855,9 @@ playback.
     elevation above the average, and distance from the screen center.
     The pixel with the highest score becomes the zoom target.
 
-  \item[Feature (zoom divisor~3)]
+  \item[Feature (approximately $1.1\times$ per frame)]
     A GPU-driven strategy that forces \code{GpuHDRx32PerturbedLAv2},
-    locates the nearest periodic point via the feature finder
+    refines the already found periodic point nearest the cursor
     (\cref{sec:feature-finder}), and pre-computes the reference orbit
     at the target zoom depth.  An animated sequence is then generated
     with a $1.1\times$ zoom factor per frame.  Iteration counts are
@@ -856,7 +873,7 @@ playback.
 
 \code{FractalTray} is a companion utility that renders zoom-sequence
 animations in batch, writing each frame to a network share or local
-directory as a BMP file.  The application runs as a system-tray icon
+directory as a PNG file. The application runs as a system-tray icon
 and is designed for unattended overnight rendering.
 
 \subsubsection*{Coordinate format}
@@ -888,12 +905,19 @@ each frame updates the current bounding box:
 \[
   C \;\leftarrow\; C + \frac{D - C}{f}
 \]
-This geometric approach progressively halves the remaining distance
-to the destination at a rate governed by $f$.  Larger values of $f$
+For $f>1$, the remaining coordinate difference is multiplied by $1-1/f$
+at each step. Larger values of $f$
 produce a slower, smoother zoom with more frames; smaller values
 produce a faster zoom with fewer frames.  The iteration count is
 linearly interpolated from the source to the destination value
 across the total number of frames.
+
+For example, let one horizontal bound start at $0$ and finish at $1$, with
+$f=4$. The first generated bound is $0+(1-0)/4=0.25$; the next is
+$0.25+(1-0.25)/4=0.4375$. Its remaining distance is multiplied by $3/4$
+each time. All four bounds follow this recurrence, so changing the center and
+changing the width happen together. The default $f=75$ instead retains
+$74/75$ of the remaining distance per step.
 
 The frame count is determined by repeating the zoom step until the
 destination bounding-box area exceeds $90\%$ of the current area,
@@ -922,7 +946,7 @@ For each line in the location file, the renderer:
         skip-if-exists behavior allows the process to be interrupted
         and restarted without re-rendering completed frames.
   \item Computes the required MPIR precision from the bounding box
-        using \code{PrecisionCalculator}.
+        using \code{Precision\-Calculator}.
   \item Configures the \code{Fractal} object with the frame's
         dimensions, iteration count, precision, coordinates, and
         palette.
@@ -946,8 +970,18 @@ the token at the start of each frame.
     is $3840 \times 1600$.
   \item[Output directory] Controlled by the \code{FilePrefix}
     constant, currently a UNC network path.  Each frame is saved as
-    \code{<prefix>output-NNNNNN.bmp}.
+    \code{<prefix>output-NNNNNN.png}. Existing BMP files are also recognized
+    when deciding whether to skip a frame.
 \end{description}
+
+\paragraph{Batch walkthrough.}
+Copy source and destination bounding boxes into the dialog, choose a modest
+resolution for a trial run, and click \emph{Generate}. Inspect
+\code{locations.txt}: each generated record includes its output basename
+after the coordinate fields. Configure \code{FilePrefix} for a writable
+directory before running the batch. Rendering starts with the deepest frame
+and proceeds outward; inspect the first completed PNG before leaving a long
+sequence unattended. Restarting skips frames whose output already exists.
 
 % -----------------------------------------------------------------
 \subsection{FractalSharkCli: Headless Renderer}
@@ -977,6 +1011,17 @@ FractalSharkCli --help
 
 At least one output mode is required. \code{-{}-out} may be omitted when
 \code{-{}-console} or \code{-{}-color} is selected.
+
+\paragraph{A single-render walkthrough.}
+With \code{FractalSharkCli} on the executable search path, this command renders the
+standard view on the CPU and waits for the PNG to finish:
+\begin{lstlisting}[language={},upquote=true]
+FractalSharkCli --builtin-view 0 --render-algorithm Cpu64 --width 800 --height 600 --out first.png
+\end{lstlisting}
+Open \code{first.png}, then try \code{-{}-center-x -0.75 -{}-center-y 0
+-{}-zoom 1000} in place of \code{-{}-builtin-view 0}. Run
+\code{-{}-list-render-algorithms} before selecting another algorithm; these
+API names differ from the descriptive labels in the graphical menu.
 
 \subsubsection*{View sources (mutually exclusive)}
 
@@ -1064,12 +1109,11 @@ are resolved from the server's working directory.
 
 The client prints the server's output and returns its status as an exit code.
 It also prints a frame time covering the request and response. For server
-renders using a CPU algorithm, PNG encoding runs in the save thread pool and
-can continue after the client returns; a successful response does not guarantee
-that the PNG is complete. GPU algorithms use the CUDA PNG encoder on the calling
-thread, and finish encoding and writing the PNG before returning a successful
-response. AUTO follows the backend of the resolved algorithm. The shutdown
-command waits for outstanding CPU PNG saves before the server exits. The full PowerShell batch example is
+renders, both CPU and GPU PNG encoding run through the background save queue
+and can continue after the client returns; a successful response does not
+guarantee that the PNG is complete. AUTO follows the backend of the resolved
+algorithm. The shutdown command waits for outstanding PNG saves before the
+server exits. The full PowerShell batch example is
 \code{tools/run\_cli\_server\_example.ps1}.
 
 After each successful non-quiet render, the CLI prints the same rendering
@@ -1077,9 +1121,9 @@ details shown by the GUI's Show Rendering Details command, without the GUI's
 clipboard notice. The report includes the selected algorithm, render settings,
 reference-orbit details, and benchmark timings. Its Overall time measures
 fractal calculation; the client's frame time also covers the local request and
-response, including GPU PNG encoding and writing. Overall time excludes PNG
-saving. A CPU PNG encode that continues after a server response is excluded
-from the client's frame time.
+response through save submission. Overall time excludes PNG saving. Background
+CPU or GPU encoding that continues after a response is excluded from the
+client's frame time.
 
 \subsubsection*{Batch rendering}
 
@@ -1128,10 +1172,9 @@ Every image prints a named status line with \code{overall\_ms},
 The reference-orbit time belongs to the selected orbit, so reuse can report its
 original generation time. The line also includes \code{cli\_image\_ms}, actual
 dimensions, iteration count, and output path when available. This CLI image time
-includes the overall rendering time and request setup through PNG saving. For
-CPU algorithms, the interval ends at save submission and excludes background
-encoding. For GPU algorithms, the interval includes completed PNG encoding and
-writing. The line remains visible with
+includes the overall rendering time and request setup through PNG save
+submission. For both CPU and GPU algorithms, background encoding and writing
+may continue afterward. The line remains visible with
 \code{-{}-quiet} in the batch file. The batch command also prints elapsed time
 and success/failure counts. The server shutdown command drains outstanding PNG
 writes. \code{tools/run\_cli\_server\_example.ps1} runs the same six scenes
@@ -1155,20 +1198,21 @@ the view and algorithm, then uses the direct rendering path
 (\cref{subsec:two-render-paths}): \code{Drain()} followed by
 \code{CalcFractal(true)} and, when PNG output is requested,
 \code{SaveCurrentFractal}. Single-shot mode waits for PNG completion; server
-mode queues CPU PNG encoding in the background so it can overlap a later render.
-GPU PNG encoding and writing run synchronously on the calling thread in both modes.
+mode queues CPU and GPU PNG encoding in the background so it can overlap a later
+render. Single-shot completion waits for either backend's queued encode and write.
 
 The encoder architecture, compression stages, and measured costs are
 described in \cref{subsec:png-output}. Focused CPU/GPU validation and
 benchmark commands appear in \cref{subsec:png-validation}.
 
 The same \code{RenderToPng} helper is used by
-\code{TestRenderGoldens} (\cref{subsec:crummy-test}) to produce
+render-golden cases in \code{FractalSharkTest} (\cref{subsec:crummy-test}) to produce
 golden-CRC regression images, ensuring that the headless path stays
 exercised automatically.
 
 \subsection{Render Regression Tests and Golden Updates}
 \label{subsec:render-regression-goldens}
+\label{sec:render-regression-tests}
 
 \code{FractalSharkTest} compares rendered images and reference artifacts
 against the shared Windows Release golden checksums. Every platform and build

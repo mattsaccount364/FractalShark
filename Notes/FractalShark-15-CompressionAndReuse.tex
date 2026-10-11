@@ -1,7 +1,11 @@
 \section{Compression and Reference Orbit Reuse Modes}
 \label{subsec:ref-orbit-compression-reuse}
 
-Two orthogonal storage decisions are made while iterating:
+A reference is useful only if its samples can be stored and retrieved within
+the available memory.  Compression saves space by replaying omitted samples;
+reuse saves arithmetic by constructing a nearby reference from an existing
+one.  The mechanisms can be combined, but solve different problems.  Two
+orthogonal storage decisions are made while iterating:
 
 \begin{enumerate}
   \item \textbf{Orbit storage} for perturbation use (\code{PExtras}):
@@ -99,8 +103,10 @@ An intermediate precision reference orbit is defined at a parameter
 \[
 c_1 = c_0 + \Delta c_1,
 \]
-where $\Delta c_1$ is chosen such that the perturbation $\Delta z^{(1)}_n$ remains bounded within a fixed target accuracy
-(e.g.\ absolute error $\lesssim 10^{-100}$) when represented in a chosen intermediate precision arithmetic.
+where the implementation selects an intermediate precision and tests whether
+the available reference is suitable for the new view.  A small $\Delta c_1$
+helps, but does not alone bound the accumulated error: orbit sensitivity may
+amplify small perturbations and rounding errors over many iterations.
 
 The intermediate reference orbit is defined by
 \[
@@ -118,17 +124,20 @@ in the intermediate precision format.
 
 The cost of evaluating~\eqref{eq:intermediate_perturbation} is substantially lower than that of recomputing
 the authoritative orbit~\eqref{eq:authoritative_orbit}.
-As a result, once an intermediate reference orbit has been established, it may be reused across many subsequent zoom
-or pan operations, as long as the view parameter remains within its validity radius.
-Only when accumulated drift causes the perturbation to exceed the fixed accuracy envelope does a new authoritative
-orbit need to be computed.
+A nearby view can therefore reuse existing data rather than restarting the
+highest-precision recurrence.  Continued reuse depends on the requested
+precision and the implementation's view-suitability checks; a new authoritative
+orbit is needed when the available data no longer serves the requested view.
+These selection policies are not a certified fixed error envelope.
 
 In the single-thread execution path (beginning at
 \code{Add\-Perturbation\-Reference\-Point\-ST}), this construction is performed
 sequentially using the cached authoritative
 orbit samples $\{z^{(0)}_n\}$ as coefficients.
-No approximation beyond finite-precision rounding is introduced; the intermediate orbit is mathematically equivalent
-to directly iterating $f_{c_1}$, subject only to the chosen precision bound.
+The perturbation identity retains its quadratic term; it does not introduce
+BLA-style truncation.  Stored-reference rounding, compression, and intermediate
+arithmetic still contribute numerical error, so algebraic equivalence does
+not imply bitwise equality with a direct finite-precision iteration.
 
 \subsubsection{Per-Pixel Perturbation from an Intermediate Orbit}
 
@@ -148,8 +157,24 @@ where $\delta z_n$ satisfies
   + \delta c.
 \label{eq:pixel_perturbation}
 \end{equation}
-Because $|\delta c|$ is small, $\delta z_n$ remains well within the same fixed precision envelope used for the
-intermediate reference orbit.
+Small $|\delta c|$ makes inexpensive pixel arithmetic useful near the
+intermediate reference, subject to the same sensitivity and applicability
+checks required by ordinary perturbation rendering.
+
+\paragraph{A two-level example.}
+Take $c_0=-1$, $c_1=-0.999$, and $\Delta c_1=0.001$.  The authoritative
+samples are $z^{(0)}_1=-1$, $z^{(0)}_2=0$.  Starting from
+$\Delta z^{(1)}_0=0$, the first two perturbation steps give
+\[
+\Delta z^{(1)}_1=0.001,\qquad
+\Delta z^{(1)}_2=2(-1)(0.001)+(0.001)^2+0.001=-0.000999.
+\]
+Reconstruction gives $z^{(1)}_1=-0.999$ and $z^{(1)}_2=-0.000999$,
+agreeing with $(-0.999)^2-0.999$.  A pixel at
+$c_{\text{px}}=-0.9989$ has $\delta c=0.0001$.  Its second relative state is
+$\delta z_2=2(-0.999)(0.0001)+(0.0001)^2+0.0001=-0.00009979$.
+Thus $z_2(c_{\text{px}})=-0.00109879$.  The first perturbation moves the
+reference; the second moves one pixel relative to that new reference.
 
 From a performance perspective, this two-level perturbation hierarchy is
 beneficial when interacting with the Mandelbrot. The expensive high-precision
@@ -210,8 +235,8 @@ Two final-orbit formats must be distinguished.  \code{Simple\allowbreak Compress
 \code{Runtime\allowbreak Decompressor}: it stores reduced values of type~\code{T}, supports
 binary-search anchoring for random access, and maintains two cached states for
 sequential access.  \code{Max\allowbreak Compression} uses \code{CompressMax}: it begins in
-absolute mode, can switch to perturbation/rebase mode, fully materializes the
-orbit during decompression, and then applies backward corrections.  The latter
+absolute mode, can switch to perturbation/rebase mode, and builds a materialized
+orbit while correcting previously built segments at waypoint encounters.  The latter
 is therefore not streamable in the same sense as the simple decompressor.
 
 \subsubsection{High-precision reference and low-precision surrogate}
@@ -226,9 +251,9 @@ During compression and decompression, the implementation also maintains a low-pr
 \)
 computed by iterating the same recurrence in a cheaper numeric type.
 
-Because the dynamics are initially stable to rounding and only later amplify
-numerical differences, \(\hat z_n\) typically tracks \(z_n^{\mathrm{HP}}\) for
-many iterations before diverging.  This observation enables a streaming scheme:
+Where rounding errors grow slowly, \(\hat z_n\) can track the selected
+reference for many iterations.  Sensitive stretches instead require frequent
+resets.  That variation enables a streaming scheme:
 store occasional reduced anchors (waypoints) and recover omitted states by
 recomputing them in low precision between anchors.
 
@@ -237,7 +262,9 @@ A \emph{waypoint} stores the iteration index and a corrective payload.
 In the simple mode, the payload is the stored reduced value of type~\code{T} at
 iteration \(n_k\), not an exact high-precision anchor.
 Waypoints are chosen by simulating \(\hat z_n\) in low precision while comparing
-against \(z_n^{\mathrm{HP}}\).
+against $z_n=\operatorname{reduce}_T(z_n^{\mathrm{HP}})$, the incoming
+reference sample already converted to type~\code{T}.  The simple compressor
+does not compare its replay directly with an unrounded MPIR sample.
 
 The implemented simple-compression test is
 
@@ -248,7 +275,10 @@ The implemented simple-compression test is
   \label{eq:relerr-test}
 \end{equation}
 
-where $e_n=z_n-\hat z_n$.  Whenever the test succeeds, the compressor emits a
+where $e_n=z_n-\hat z_n$.  If $C=\code{CompressionError}>0$, the test
+is $|e_n|\ge |z_n|/\sqrt C$.  With a configured decimal exponent~$q$,
+$C=10^q$ and the nominal relative tolerance is $10^{-q/2}$, rather than
+$10^{-q}$.  Whenever the test succeeds, the compressor emits a
 waypoint at \(n\) and resets the replay state to the stored reduced value:
 
 \begin{equation}
@@ -258,6 +288,14 @@ waypoint at \(n\) and resets the replay state to the stored reduced value:
 
 Between waypoints, the compressor stores nothing, relying on \(\hat z\)-iteration
 to reconstruct the missing values later.
+
+For $q=8$ and a real reduced sample $z_n=0.5$, the reset threshold is
+$5\times10^{-5}$.  A replay error $4\times10^{-5}$ gives
+$C|e_n|^2=0.16<0.25$, so no waypoint is needed; an error
+$6\times10^{-5}$ gives $0.36\ge0.25$, so the sample is stored.
+At $z_n=0$, the implemented non-strict comparison requests a waypoint even
+when the replay is also zero.  These are local placement decisions, not an
+error guarantee for the complete rendered image.
 
 \paragraph{Compressed representation.}
 The compressed reference is thus a sparse, ordered list
@@ -304,20 +342,22 @@ anchors.  Compression improves substantially by switching to a perturbation form
 once the orbit becomes suitable.
 
 \paragraph{Self-referenced perturbation.}
-Choose a \emph{base} (reference) iteration \(r\) and represent subsequent states as
+Use an \emph{advancing} reference index~$j$ and represent the current state
+at index~$i$ as
 
 \begin{equation}
-  z_n = z_r + \Delta z_n, \qquad n \ge r,
+  z_i = z_j + \Delta z,\qquad
+  \Delta z^{+}=2z_j\Delta z+(\Delta z)^2,
+  \quad (i,j)\leftarrow(i+1,j+1),
   \label{eq:self-ref-perturbation}
 \end{equation}
 
-where \(z_r\) is treated as a reference and \(\Delta z_n\) is (ideally) small.
-In standard perturbation rendering, \(\Delta z\) is evolved using derivatives
-around a known reference orbit.  For \emph{reference compression}, the only
-available reference is the reference itself, so the scheme starts in the
-absolute waypoint mode (previous sections) and transitions to perturbation only
-when \(\lVert \Delta z \rVert\) is sufficiently small that perturbation yields
-meaningful extra precision in the reduced type.
+where both samples belong to the same reference parameter.  Subtracting
+$z_{j+1}=z_j^2+c$ from $z_{i+1}=(z_j+\Delta z)^2+c$ cancels $c$,
+which explains the absence of a $\Delta c$ term.  The reference value is
+not a fixed $z_r$: it advances at every replay step.  The already
+reconstructed prefix supplies those advancing samples.  Waypoints prevent
+the replay from depending on an insufficiently corrected part of that prefix.
 
 \paragraph{Switch criterion.}
 When the implemented Chebyshev norm satisfies
@@ -331,44 +371,63 @@ payload becomes
 \end{equation}
 
 \paragraph{Rebasing synchronization.}
-Perturbation implementations commonly \emph{rebase} to prevent \(\Delta z\) from
-growing too large: at some iteration \(b\), the reference is updated so that
-\(\Delta z_b \leftarrow 0\) and the base index becomes \(r \leftarrow b\).
-During decompression, if rebases occur at different iterations than during
-compression, the decompressor will interpret stored \(\Delta z\) against the
-wrong base \(z_r\), producing catastrophic corruption.
+Rebasing changes the representation while preserving the current state:
+$\Delta z\leftarrow z_i$ and $j\leftarrow0$, since $z_0=0$.
+It does not set the delta to zero.  After the next recurrence, $j$ advances
+to one.  If compression and decompression reset $j$ at different iterations,
+the same stored delta is added to different reference samples.
 
-A robust compressed format therefore must encode enough information to keep
-rebases in lockstep.  One approach is to include a single \emph{rebase flag} per
-waypoint indicating whether a rebase occurs at that iteration; if a rebase
-occurs at an iteration where no waypoint would otherwise be required, the
-compressor must still record the iteration (e.g., by forcing a waypoint or
-storing an index) so the decompressor can rebase at the same \(b\).
+The implemented format records rebases in waypoint flags or a separate ordered
+rebase-index stream.  Both tell decompression when to reset $j$.
+For a simple arithmetic illustration, let $c=-1/2$ and rebase at $i=2$,
+where $z_2=-1/4$.  Then $(j,\Delta z)=(0,-1/4)$.  One step gives
+$(j,\Delta z)=(1,1/16)$ and reconstructs
+$z_3=-1/2+1/16=-7/16$.  The following step gives
+$\Delta z=2(-1/2)(1/16)+(1/16)^2=-15/256$ and
+$z_4=-1/4-15/256=-79/256$.  The example illustrates replay after a
+rebase, independently of the separate $1/16$ switch criterion.
 
 \subsubsection{Error propagation and correction}
 
-\code{CompressMax} decompression first materializes the full reconstructed orbit.
-The implementation then calls \code{CorrectOrbit} over waypoint-delimited
-segments.  That routine walks backward while accumulating the complex derivative
+\code{CompressMax} decompression builds the reconstructed orbit in index order.
+When it encounters a waypoint, the implementation calls \code{CorrectOrbit}
+on the already materialized preceding segment, then appends the current endpoint.
+Backward correction is interleaved with reconstruction rather than performed as
+one final pass after the complete orbit is built.  The routine walks backward
+while accumulating the complex derivative
 of the iterated map, forms the complex difference between the stored waypoint
 and the reconstructed endpoint, divides that difference by the accumulated
 derivative, and applies the resulting correction to the earlier sample.  This
 is the implemented backward correction; the code is not a literal recurrence
-$e_n=e_{n+1}/(2z_n)$ at every sample.  Because correction requires later
-waypoints and materialized earlier samples, maximal decompression cannot provide
+$e_n=e_{n+1}/(2z_n)$ at every sample.  Earlier samples must remain available
+until their segment's endpoint waypoint supplies the correction, and the
+advancing perturbation reference also reads the retained prefix.  Because those
+samples can change after their initial reconstruction, maximal decompression cannot provide
 the simple format's one-pass random/sequential runtime interface.
+
+The linearized sensitivity of a segment from $t$ to endpoint~$b$ is
+$D_{t,b}=\prod_{k=t}^{b-1}2\hat z_k$.  An endpoint discrepancy $\eta$
+suggests an earlier correction $\eta/D_{t,b}$.  For factors $2$ and $3$,
+an endpoint discrepancy $0.006$ gives corrections $0.002$ at the last
+preceding sample and $0.001$ at the sample before it.  The same division
+becomes ill-conditioned when $D_{t,b}$ is small, and undefined when it is
+zero.  The implemented backward procedure uses reduced samples and this
+first-order sensitivity; it is not an exact inverse of the quadratic orbit.
 
 \subsubsection{Algorithm sketch}
 
-The following high-level procedure summarizes the method.
+The following high-level procedure summarizes maximal compression; its
+Chebyshev-norm test uses $\sqrt{10^q}$ as its multiplier, whereas the
+simple format uses the squared Euclidean test in \eqref{eq:relerr-test}.
 
 \begin{enumerate}
   \item \textbf{Compression pass:}
     \begin{enumerate}
       \item Initialize low-precision \(\hat z_0 \leftarrow 0\); iterate forward.
-      \item At each \(n\), evaluate relative error \eqref{eq:relerr-test}.
-      \item If error too large, emit waypoint \((n, z_n^{\mathrm{HP}})\) (or \((n,\Delta z_n)\) after perturbation switch),
-            set \(\hat z_n \leftarrow z_n^{\mathrm{HP}}\) (or reset perturbation state), and continue.
+      \item At each index, compare replay and incoming reduced samples with the
+            maximal format's configured norm test.
+      \item If the test requests a reset, emit a reduced absolute or delta
+            waypoint, reset the corresponding replay state, and continue.
       \item If in perturbation mode, record/synchronize any rebase events (bit flag or forced waypoint).
       \item Insert additional waypoints before an uncorrected state would be
             reused as a perturbation base.
@@ -378,8 +437,9 @@ The following high-level procedure summarizes the method.
     \begin{enumerate}
       \item Replay the same low-precision recurrence, applying waypoints as resets.
       \item In perturbation mode, rebase exactly when signaled by the compressed stream.
-      \item After materializing the orbit, call \code{CorrectOrbit} to apply
-            derivative-based backward corrections over waypoint-delimited segments.
+      \item At each waypoint, call \code{CorrectOrbit} on the already built
+            preceding segment before appending the endpoint; retain prior samples
+            for corrections and advancing-reference lookups.
     \end{enumerate}
 \end{enumerate}
 
@@ -440,7 +500,7 @@ low-precision recurrence forward from that anchor for
   \label{eq:replay-recurrence}
 \end{equation}
 with the same reduction/normalization operations used during compression.  This
-provides efficient, bounded-cost random access suitable for linear approximation
+provides random access suitable for linear approximation
 and analysis routines that must probe isolated iteration indices.
 
 \paragraph{Sequential access via cached linear scans.}
@@ -476,6 +536,16 @@ reference representations or specializing the data structure to a single access
 pattern.
 
 \paragraph{Example usage.}
+Suppose waypoints have indices $0,4,10$.  A request for index~$6$ anchors at
+$4$ and performs two steps.  A following request for~$7$ performs one
+cached step; a jump to~$3$ anchors at~$0$ instead.  In an illustrative
+four-decimal replay with $c=-0.5$ and $w_4=-0.3086$, the reconstructed
+values are $\hat z_5=-0.4048$ and $\hat z_6=-0.3361$.  A saved waypoint
+at~$10$ replaces the replay regardless of the value it would otherwise
+produce.  The actual formats use binary arithmetic, but the same reset and
+cache rules apply.  Random-request cost depends on the gap to the preceding
+waypoint; compression does not impose a universal small maximum gap.
+
 See \cref{fig:view27-1-quadrillion} for an example of a deep-zoom render
 that requires reference compression to complete.
 
@@ -484,9 +554,9 @@ that requires reference compression to complete.
   \includegraphics[width=0.9\linewidth]{view27-1-quadrillion.png}
   \caption[View \#27 at 1 quadrillion iterations]{View \#27, a period ~28-billion point rendered at 1 quadrillion
   iterations per pixel, requires reference compression to render on most
-  hardware because of its memory requirements.  This render takes ~6h with an
+  hardware because of its memory requirements.  The recorded render took approximately 6 hours with an
   RTX 4090 and AMD 5950X and 128GB RAM with the multithreaded reference orbit
-  backend and is effectively the hardest point \FractalShark{} has likely ever
-  rendered.}
+  backend.  The measurement illustrates the memory and runtime demands of a
+  long reference rather than a general performance expectation.}
   \label{fig:view27-1-quadrillion}
 \end{figure}

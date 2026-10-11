@@ -36,13 +36,20 @@ Every base kernel follows the same algorithmic template:
   \item Initialize \(x = y = 0\) (or equivalently \(z_0 = 0\)).
   \item Iterate the real-arithmetic Mandelbrot recurrence (\cref{sec:real-form}):
         \[
-          x \leftarrow x^2 - y^2 + x_0,\qquad y \leftarrow 2xy + y_0.
+          x_{n+1}=x_n^2-y_n^2+x_0,\qquad y_{n+1}=2x_ny_n+y_0.
         \]
   \item After each iteration (or chunk of iterations), test \(x^2 + y^2 \ge 4\).
   \item Store the escape iteration count into the output buffer.
 \end{enumerate}
 The only variation across the seven kernel variants is the numeric type used for
 all arithmetic and the associated precision--performance tradeoff.
+
+Both right-hand sides use the old components $x_n,y_n$. A temporary holds the new
+real component until the imaginary update has consumed the old one. For example,
+with $z_n=1+i$ and $c=-1/2+i/4$, the updates give $x_{n+1}=-1/2$ and
+$y_{n+1}=9/4$. Reusing the newly assigned real component would produce a different
+orbit. An iteration limit bounds the computation; a pixel that reaches it is
+classified as not escaped during this calculation, without proving membership.
 
 \subsection{Kernel variants}
 
@@ -119,8 +126,10 @@ xtemp2 = 2.0f * x;
 y = __fmaf_rd(xtemp2, y, y0);     // 2xy + y0
 x = xtemp;
 \end{lstlisting}
-The \code{\_rd} suffix selects round-downward; \code{\_rn} (round-to-nearest)
-or plain \code{fmaf} may be substituted when strict rounding mode is not required.
+The \code{\_rd} suffix selects round-downward. Round-to-nearest \code{\_rn}
+has a different finite-precision contract even though the underlying real-arithmetic
+formula is the same. Fused multiply-add rounds a product-plus-sum once, rather than
+rounding the product and sum separately.
 
 \paragraph{Leading-component escape test.}
 The two-limb expansion kernels (\code{mandel\_2x\_float},

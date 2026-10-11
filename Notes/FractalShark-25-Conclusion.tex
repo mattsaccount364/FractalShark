@@ -5,7 +5,7 @@
 \section{Conclusion}%
 \label{sec:conclusion}
 
-This document has presented the algorithms, data structures, and
+The preceding sections have presented the algorithms, data structures, and
 engineering decisions underlying \FractalShark{}, a GPU-accelerated
 Mandelbrot set renderer capable of interactive exploration at zoom
 depths exceeding $10^{10000}$.  \Cref{fig:system-architecture}
@@ -16,38 +16,36 @@ provides a high-level view of the pipeline.
 \begin{tikzpicture}[
   every node/.style={font=\small},
   block/.style={draw, rounded corners, minimum height=0.65cm,
-                minimum width=2.2cm, align=center},
+                minimum width=2.1cm, align=center},
   comp/.style={block, fill=blue!10},
   io/.style={block, fill=orange!10},
   infra/.style={block, fill=gray!12, dashed},
-  arr/.style={-{Stealth[length=5pt]}, thick},
-  label/.style={font=\scriptsize\bfseries, anchor=north west},
-  grp/.style={draw, dashed, rounded corners, inner sep=6pt, gray!70}
+  arr/.style={-{Stealth[length=5pt]}, thick}
 ]
 
 % --- Row 1: Input ---
 \node[io] (params) {View Parameters};
-\node[comp, right=0.6cm of params] (pzbb) {PointZoom-\\BBConverter};
-\node[comp, right=0.6cm of pzbb] (deltas) {Per-pixel\\deltas};
+\node[comp, right=0.5cm of params] (pzbb) {PointZoom-\\BBConverter};
+\node[comp, right=0.5cm of pzbb] (deltas) {Per-pixel\\deltas};
 
 \draw[arr] (params) -- (pzbb);
 \draw[arr] (pzbb) -- (deltas);
 
 % --- Row 2: Core computation ---
 \node[comp, below=1.0cm of params] (reforbit) {Reference Orbit\\(RefOrbitCalc)};
-\node[comp, right=0.6cm of reforbit] (la) {LA Setup\\(LAReference)};
-\node[comp, right=0.6cm of la] (perturb) {Perturbation\\Kernels};
+\node[comp, right=0.5cm of reforbit] (la) {LA Setup\\(LAReference)};
+\node[comp, right=0.5cm of la] (perturb) {Perturbation\\Kernels};
 
-\draw[arr] (deltas) -- ++(0,-0.45) -| (perturb.north);
+\draw[arr] (deltas.south) -- ++(0,-0.45) -| (perturb.north);
 \draw[arr] (reforbit) -- (la);
 \draw[arr] (la) -- (perturb);
 
 % --- Row 3: Output ---
-\node[comp, below=1.0cm of reforbit] (aa) {Antialiasing};
-\node[comp, right=0.6cm of aa] (color) {Palette\\Coloring};
-\node[io, right=0.6cm of color] (gl) {GL Display};
+\node[comp, below=1.0cm of reforbit] (aa) {Palette\\Coloring};
+\node[comp, right=0.5cm of aa] (color) {Supersample\\Averaging};
+\node[io, right=0.5cm of color] (gl) {GL Display};
 
-\draw[arr] (perturb) -- ++(0,-0.45) -| (aa.north);
+\draw[arr] (perturb.south) -- ++(0,-0.45) -| (aa.north);
 \draw[arr] (aa) -- (color);
 \draw[arr] (color) -- (gl);
 
@@ -63,18 +61,10 @@ provides a high-level view of the pipeline.
 \node[infra, below=0.35cm of ff] (mem) {Growable-\\Vector};
 \draw[arr, dashed] (mem.east) -- ++(0.6,0) |- ([yshift=2pt]reforbit.south);
 
-% --- Group labels ---
-\begin{scope}[on background layer]
-  \node[grp, fit=(pzbb)(deltas)(perturb), label={[label]above left:Rendering}] {};
-  \node[grp, fit=(reforbit)(la), label={[label]above left:Ref.\ Orbit}] {};
-  \node[grp, fit=(gpu)(ff)(mem), label={[label]above left:Infrastructure}] {};
-\end{scope}
-
 \end{tikzpicture}
 \caption[End-to-end rendering pipeline]{High-level architecture of the
   \FractalShark{} rendering pipeline.  Solid arrows denote the primary
-  data flow; dashed arrows indicate supporting subsystems.  Grouped
-  regions correspond to the document's Part structure.}
+  data flow; dashed arrows indicate supporting subsystems.}
 \label{fig:system-architecture}
 \end{figure}
 
@@ -103,10 +93,16 @@ vectors that manage large reference orbits
 (\cref{sec:disk_backed_growable_vectors})---completes the rendering
 pipeline.
 
-Several design decisions merit emphasis.  \FractalShark{} adopts
-\emph{rebasing} rather than glitch correction to handle loss of
-significance during perturbation iteration, avoiding the need for
-post-hoc detection and re-rendering of glitched pixels.  Linear
+The main techniques address different costs. Perturbation reduces the precision
+required for a pixel update; BLA and LA reduce how many updates must be executed.
+Parallel reference arithmetic reduces the cost of constructing their shared input.
+The resulting speed depends on the view, the validity of accepted skips, and the
+balance between reference construction and pixel work.
+
+Several design decisions merit emphasis. \FractalShark{} uses \emph{rebasing}
+to change a perturbation's reference index while retaining its reconstructed state.
+Rebasing reduces some cancellation problems, but does not certify the accuracy of
+every subsequent operation or eliminate every possible rendering artifact.  Linear
 approximation version~2 (LA~v2) was chosen over series approximation
 for its adaptive staged skip structure, which can enable longer
 effective jumps at deep zooms. Compared with BLA~v1, nonlinear
@@ -122,10 +118,15 @@ generic.
 
 Taken together, these techniques form a layered architecture in which
 each subsystem can be understood, tested, and tuned independently.
-\cref{sec:future-directions} surveyed several alternative and
-complementary techniques---including series approximation, BLA,
-smooth coloring, distance estimation, and histogram-based coloring---that represent
-natural extensions of the current design.
+\Cref{sec:future-directions} surveyed several alternative and
+complementary techniques---including series approximation,
+smooth coloring, distance estimation, and histogram-based coloring---that provide
+context for possible extensions of the current design.
+
+The final appendix (\cref{sec:gpu-png-encoding}) illustrates a supporting application
+of GPU parallelism: reversible filtering and compression of the completed image.
+Its role is output efficiency; the Mandelbrot and approximation mathematics do not
+depend on the encoder.
 
 \FractalShark{} remains under active development.  As new algorithmic
 ideas emerge from the deep-zoom rendering community and as GPU

@@ -2349,6 +2349,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                                         HighPrecision cx,
                                                         HighPrecision cy)
 {
+    // Experiment: skip sample certification but retain error tracking and final diagnostics if false
+    constexpr bool EnablePrecisionCertification = true;
+
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     auto *results = newArray.get();
@@ -2429,7 +2432,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             // Peel iteration zero: capture Z1=c and advance once without publishing a sample
             // or updating the periodicity derivative. The steady loop has a preceding sample, so
             // its publication and periodicity work need no per-iteration startup condition.
-            if constexpr (DynamicPrecision) {
+            if constexpr (DynamicPrecision && EnablePrecisionCertification) {
                 if (!schedule->Certify(zx.backend(),
                                        zy.backend(),
                                        std::is_same_v<T, double> || std::is_same_v<T, float>)) {
@@ -2485,7 +2488,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                     AbortMonitor::GetStopCalculatingGlobal()) {
                     break;
                 }
-                if constexpr (DynamicPrecision) {
+                if constexpr (DynamicPrecision && EnablePrecisionCertification) {
                     if (!schedule->Certify(zx.backend(),
                                            zy.backend(),
                                            std::is_same_v<T, double> || std::is_same_v<T, float>)) {
@@ -2622,6 +2625,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             << m_LastDynamicPrecisionStats->GenerationNumber
             << " steps=" << m_LastDynamicPrecisionStats->Steps
             << " reduced_steps=" << m_LastDynamicPrecisionStats->ReducedSteps
+            << " certification_enabled=" << static_cast<int>(EnablePrecisionCertification)
             << " certification_fast_components=" << m_LastDynamicPrecisionStats->FastCertifiedComponents
             << " certification_regular_components="
             << m_LastDynamicPrecisionStats->RegularCertificationComponents

@@ -22,6 +22,10 @@ struct RefOrbitDynamicPrecisionStats {
     uint64_t MinimumBits{};
     uint64_t Steps{};
     uint64_t ReducedSteps{};
+    // Routes count real/imaginary component checks, not iterations or MPIR calls.
+    // Structural real-axis skips and on-demand diagnostic replay do not count.
+    uint64_t FastCertifiedComponents{};
+    uint64_t RegularCertificationComponents{};
     double MeanBits{};
     uint64_t ElapsedMilliseconds{};
     RefOrbitPrecisionFailure Failure{RefOrbitPrecisionFailure::None};

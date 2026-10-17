@@ -2241,6 +2241,16 @@ AppendMT9Coordinate(std::ostream &message, const char *name, mpf_srcptr value)
     message << std::dec << " * 2^" << (static_cast<int64_t>(value->_mp_exp) - limbs) * GMP_NUMB_BITS;
 }
 
+double
+MT9FastCertificationPercent(const FractalShark::RefOrbitDynamicPrecisionStats &stats)
+{
+    // Convert before adding so even very long attempts cannot overflow the
+    // integer denominator. This formatting-only calculation never enters a step.
+    const double fast = static_cast<double>(stats.FastCertifiedComponents);
+    const double total = fast + static_cast<double>(stats.RegularCertificationComponents);
+    return total == 0.0 ? 0.0 : 100.0 * fast / total;
+}
+
 [[noreturn]] void
 ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
                              FractalShark::RefOrbitDynamicPrecisionStats &stats,
@@ -2286,6 +2296,9 @@ ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
     message << std::setprecision(std::numeric_limits<double>::max_digits10) << summary.str()
             << ", generation=" << stats.GenerationNumber << ", min_bits=" << stats.MinimumBits
             << ", mean_bits=" << stats.MeanBits << ", reduced_steps=" << stats.ReducedSteps
+            << ", certification_fast_components=" << stats.FastCertifiedComponents
+            << ", certification_regular_components=" << stats.RegularCertificationComponents
+            << ", certification_fast_percent=" << MT9FastCertificationPercent(stats)
             << ", elapsed_ms=" << stats.ElapsedMilliseconds << ", sample_type=" << sampleType
             << ", accumulated_error_bound_log2=" << margin.AccumulatedErrorBoundLog2
             << ", limiting_component=" << margin.Component << ", limiting_boundary=" << margin.Boundary
@@ -2609,7 +2622,11 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             << m_LastDynamicPrecisionStats->GenerationNumber
             << " steps=" << m_LastDynamicPrecisionStats->Steps
             << " reduced_steps=" << m_LastDynamicPrecisionStats->ReducedSteps
-            << " final_computed_state_Z="
+            << " certification_fast_components=" << m_LastDynamicPrecisionStats->FastCertifiedComponents
+            << " certification_regular_components="
+            << m_LastDynamicPrecisionStats->RegularCertificationComponents
+            << " certification_fast_percent="
+            << MT9FastCertificationPercent(*m_LastDynamicPrecisionStats) << " final_computed_state_Z="
             << (m_LastDynamicPrecisionStats->Steps == 0 ? 0 : m_LastDynamicPrecisionStats->Steps + 1)
             << " accumulated_error_bound_log2=" << certification.AccumulatedErrorBoundLog2
             << " limiting_component=" << certification.Component

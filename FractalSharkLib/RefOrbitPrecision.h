@@ -103,6 +103,9 @@ public:
 private:
     static RefOrbitErrorBound AccumulateRoundingErrors(std::span<const int64_t> quanta);
     bool CertifyComponent(mpf_srcptr value, bool nativeDouble);
+    // A false fast result is inconclusive; only the regular certificate may reject.
+    bool TryCertifyComponentFast(mpf_srcptr value, bool nativeDouble) const;
+    bool CertifyComponentSlow(mpf_srcptr value, bool nativeDouble);
     bool CheckGap(mpf_srcptr larger, mpf_srcptr smaller);
 
     mp_bitcnt_t m_FullBits;

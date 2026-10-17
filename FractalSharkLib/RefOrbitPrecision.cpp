@@ -19,6 +19,8 @@ constexpr double ScheduleGuardBits = 112.0;
 constexpr mp_bitcnt_t ScheduleTierCount = 64;
 constexpr mp_bitcnt_t CertificationBits = 256;
 constexpr mp_bitcnt_t GapGuardLimbs = 2;
+constexpr int FastCertificateTailBits = 32;
+constexpr int DoubleSignificandBits = std::numeric_limits<double>::digits;
 // Reserve ample headroom for exponent additions and conversion to limb units. An
 // out-of-range bound rejects the attempt rather than wrapping or underflowing to zero.
 constexpr int64_t BoundExponentLimit = std::numeric_limits<int64_t>::max() / 8;
@@ -511,6 +513,80 @@ RefOrbitPrecisionSchedule::CheckGap(mpf_srcptr larger, mpf_srcptr smaller)
 
 bool
 RefOrbitPrecisionSchedule::CertifyComponent(mpf_srcptr value, bool nativeDouble)
+{
+    if (TryCertifyComponentFast(value, nativeDouble)) {
+        ++m_Stats.FastCertifiedComponents;
+        return true;
+    }
+    ++m_Stats.RegularCertificationComponents;
+    return CertifyComponentSlow(value, nativeDouble);
+}
+
+bool
+RefOrbitPrecisionSchedule::TryCertifyComponentFast(mpf_srcptr value, bool nativeDouble) const
+{
+    // The bit layout below is deliberately restricted to the supported x64 limb
+    // representation. Other layouts retain the original MPIR conversion certificate.
+    if constexpr (GMP_NUMB_BITS != 64 || GMP_NAIL_BITS != 0) {
+        return false;
+    } else {
+        if (!HasBoundableExponent(value)) {
+            return false;
+        }
+        constexpr int WordBits = std::numeric_limits<uint64_t>::digits;
+        const mp_size_t size = MagnitudeSize(value);
+        const uint64_t high = size == 0 ? 0 : static_cast<uint64_t>(value->_mp_d[size - 1]);
+        const int shift = size == 0 ? 0 : std::countl_zero(high);
+        // HasBoundableExponent leaves enough int64_t room for normalization and
+        // the additional 85-bit shift, even at the supported exponent endpoints.
+        const int64_t exponent = size == 0 ? 0 : static_cast<int64_t>(value->_mp_exp) * WordBits - shift;
+        if ((nativeDouble && size != 0 &&
+             (exponent < std::numeric_limits<double>::min_exponent ||
+              exponent > std::numeric_limits<double>::max_exponent)) ||
+            exponent < std::numeric_limits<int32_t>::min() ||
+            exponent > std::numeric_limits<int32_t>::max()) {
+            return false;
+        }
+        // Preserve conversion restrictions even when the state has exact zero
+        // error. Such supported checks need neither gap extraction nor MPIR calls.
+        if (m_Error.IsZero()) {
+            return true;
+        }
+        if (size == 0) {
+            return false;
+        }
+        const uint64_t middle = size > 1 ? static_cast<uint64_t>(value->_mp_d[size - 2]) : 0;
+        const uint64_t low = size > 2 ? static_cast<uint64_t>(value->_mp_d[size - 3]) : 0;
+        uint64_t normalizedHigh = high;
+        uint64_t normalizedLow = middle;
+        if (shift != 0) {
+            normalizedHigh = (high << shift) | (middle >> (WordBits - shift));
+            normalizedLow = (middle << shift) | (low >> (WordBits - shift));
+        }
+        // After normalization, 11 discarded bits remain in the first word and
+        // 21 more come from the second. The cast discards the retained 53 bits.
+        constexpr int TailBitsInHigh = WordBits - DoubleSignificandBits;
+        constexpr int TailBitsInLow = FastCertificateTailBits - TailBitsInHigh;
+        const auto tail = static_cast<uint32_t>((normalizedHigh << TailBitsInLow) |
+                                                (normalizedLow >> (WordBits - TailBitsInLow)));
+        const uint32_t coefficient = std::min(tail, std::numeric_limits<uint32_t>::max() - tail);
+        if (coefficient == 0) {
+            return false;
+        }
+        // If U=2^(exponent-53), q=U/2^32, and t is the extracted prefix, the
+        // unread tail gives t*q <= |v|-B0 < (t+1)*q. Both boundary distances
+        // therefore exceed or equal min(t,2^32-1-t)*q. Its 32-bit coefficient
+        // converts to double exactly; HDR normalization preserves the exact dyadic
+        // lower bound. Upward-rounded multiplication would be unsound here.
+        const auto gap =
+            RefOrbitErrorBound::Normalize(static_cast<double>(coefficient),
+                                          exponent - DoubleSignificandBits - FastCertificateTailBits);
+        return RefOrbitErrorBound::Less(m_Error, gap);
+    }
+}
+
+bool
+RefOrbitPrecisionSchedule::CertifyComponentSlow(mpf_srcptr value, bool nativeDouble)
 {
     if (!HasBoundableExponent(value)) {
         m_Stats.Failure = RefOrbitPrecisionFailure::UnsupportedConversion;

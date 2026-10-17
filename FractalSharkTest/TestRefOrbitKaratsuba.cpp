@@ -20,6 +20,7 @@
 
 #include <algorithm>
 #include <array>
+#include <bit>
 #include <charconv>
 #include <chrono>
 #include <cmath>
@@ -28,6 +29,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <random>
 #include <sstream>
@@ -133,6 +135,37 @@ CheckLoggedCoordinate(const std::string &message, const char *name, mpf_srcptr e
         mpf_mul_2exp(reconstructed.Get(), reconstructed.Get(), static_cast<mp_bitcnt_t>(exponent));
     }
     ASSERT_EQ(mpf_cmp(reconstructed.Get(), expected), 0);
+}
+
+void
+CheckCertificationReport(const std::string &message,
+                         const FractalShark::RefOrbitDynamicPrecisionStats &stats)
+{
+    const size_t start = message.find("MT9 dynamic precision ");
+    ASSERT_TRUE(start != std::string::npos);
+    const size_t end = message.find('\n', start);
+    const std::string_view report{message.data() + start,
+                                  (end == std::string::npos ? message.size() : end) - start};
+    const auto read = [&](std::string_view field) {
+        const size_t position = report.find(field);
+        ASSERT_TRUE(position != std::string_view::npos);
+        double value{};
+        const auto parsed = std::from_chars(
+            report.data() + position + field.size(), report.data() + report.size(), value);
+        ASSERT_TRUE(parsed.ec == std::errc{});
+        return value;
+    };
+    const double fast = static_cast<double>(stats.FastCertifiedComponents);
+    const double regular = static_cast<double>(stats.RegularCertificationComponents);
+    ASSERT_EQ(read("certification_fast_components="), fast);
+    ASSERT_EQ(read("certification_regular_components="), regular);
+    ASSERT_NEAR(read("certification_fast_percent="),
+                fast + regular == 0.0 ? 0.0 : 100.0 * fast / (fast + regular),
+                1e-12);
+    // Require route statistics and the numerical margin on the same report line.
+    ASSERT_TRUE(report.find("accumulated_error_bound_log2=") != std::string_view::npos);
+    ASSERT_TRUE(report.find("comparison_error_bound_log2=") != std::string_view::npos);
+    ASSERT_TRUE(report.find("certification_headroom_bits=") != std::string_view::npos);
 }
 
 mp_size_t
@@ -1496,6 +1529,191 @@ TEST(RefOrbitDynamicPrecision_ConversionCertificates)
     ASSERT_TRUE(hdr.Certify(x.Get(), y.Get(), false));
 }
 
+TEST(RefOrbitDynamicPrecision_FastCertificateMpirOracle)
+{
+    constexpr mp_bitcnt_t Bits = 1024;
+    constexpr mp_bitcnt_t OracleBits = Bits + 256;
+    constexpr int ErrorOffsetBits = 100;
+    MpfValue value(Bits), zero(Bits), magnitude(OracleBits), boundary(OracleBits), lowerGap(OracleBits),
+        upperGap(OracleBits);
+    std::mt19937_64 random{0x8bd03461};
+    uint64_t fastChecks = 0;
+    uint64_t regularChecks = 0;
+    // Vary every leading-zero alignment and occupied width, including one-limb
+    // states whose missing trailing limbs must not be read from spare capacity.
+    for (int leadingZeros = 0; leadingZeros < GMP_NUMB_BITS; ++leadingZeros) {
+        for (mp_size_t occupied = 1; occupied <= 4; ++occupied) {
+            for (const bool negative : {false, true}) {
+                Randomize(value.Get(), occupied, negative, random);
+                const mp_limb_t leadingBit = mp_limb_t{1} << (GMP_NUMB_BITS - 1 - leadingZeros);
+                value.Get()->_mp_d[occupied - 1] =
+                    (value.Get()->_mp_d[occupied - 1] >> leadingZeros) | leadingBit;
+                double mantissa;
+                const int64_t exponent = mpf_get_2exp_d(&mantissa, value.Get());
+                FractalShark::RefOrbitPrecisionSchedule schedule(
+                    Bits, value.Get(), zero.Get(), value.Get(), zero.Get());
+                schedule.AddStateTruncation(
+                    FractalShark::RefOrbitErrorBound::PowerOfTwo(exponent - ErrorOffsetBits), {});
+                mpf_abs(magnitude.Get(), value.Get());
+                const auto setBoundary = [&](double endpoint) {
+                    mpf_set_d(boundary.Get(), endpoint);
+                    if (exponent < 0) {
+                        mpf_div_2exp(
+                            boundary.Get(), boundary.Get(), static_cast<mp_bitcnt_t>(-exponent));
+                    } else {
+                        mpf_mul_2exp(boundary.Get(), boundary.Get(), static_cast<mp_bitcnt_t>(exponent));
+                    }
+                };
+                // Independently subtract the complete state from both exact
+                // dyadic boundaries; this oracle never extracts the fast prefix.
+                setBoundary(std::abs(mantissa));
+                mpf_sub(lowerGap.Get(), magnitude.Get(), boundary.Get());
+                setBoundary(std::nextafter(std::abs(mantissa), std::numeric_limits<double>::infinity()));
+                mpf_sub(upperGap.Get(), boundary.Get(), magnitude.Get());
+                const bool expected =
+                    mpf_sgn(lowerGap.Get()) > 0 && mpf_sgn(upperGap.Get()) > 0 &&
+                    FractalShark::RefOrbitErrorBound::Less(
+                        schedule.GetError(),
+                        FractalShark::RefOrbitErrorBound::FromMpfLower(lowerGap.Get())) &&
+                    FractalShark::RefOrbitErrorBound::Less(
+                        schedule.GetError(),
+                        FractalShark::RefOrbitErrorBound::FromMpfLower(upperGap.Get()));
+                const auto diagnostic = schedule.DescribeCertification(value.Get(), zero.Get(), false);
+                ASSERT_EQ(diagnostic.Failure == FractalShark::RefOrbitPrecisionFailure::None, expected);
+                ASSERT_EQ(schedule.GetStats().FastCertifiedComponents, uint64_t{0});
+                ASSERT_EQ(schedule.GetStats().RegularCertificationComponents, uint64_t{0});
+                ASSERT_EQ(schedule.Certify(value.Get(), zero.Get(), false), expected);
+                const auto &stats = schedule.GetStats();
+                ASSERT_EQ(stats.FastCertifiedComponents + stats.RegularCertificationComponents,
+                          uint64_t{1});
+                fastChecks += stats.FastCertifiedComponents;
+                regularChecks += stats.RegularCertificationComponents;
+            }
+        }
+    }
+    if constexpr (GMP_NUMB_BITS == 64 && GMP_NAIL_BITS == 0) {
+        ASSERT_TRUE(fastChecks > 0);
+    } else {
+        ASSERT_EQ(fastChecks, uint64_t{0});
+    }
+    ASSERT_TRUE(regularChecks > 0);
+}
+
+TEST(RefOrbitDynamicPrecision_FastCertificateRoutesAndThresholds)
+{
+    constexpr mp_bitcnt_t Bits = 1024;
+    MpfValue x(Bits), y(Bits), zero(Bits), offset(Bits), ulp(Bits);
+    mpf_set_ui(offset.Get(), 1);
+    mpf_div_2exp(offset.Get(), offset.Get(), 60);
+    mpf_add_ui(x.Get(), offset.Get(), 1);
+    mpf_set_ui(offset.Get(), 1);
+    mpf_div_2exp(offset.Get(), offset.Get(), 900);
+    mpf_add_ui(y.Get(), offset.Get(), 1);
+    FractalShark::RefOrbitPrecisionSchedule mixed(Bits, x.Get(), y.Get(), x.Get(), y.Get());
+    mixed.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(-960), {});
+    ASSERT_TRUE(mixed.Certify(x.Get(), y.Get(), false));
+    const uint64_t expectedFast = GMP_NUMB_BITS == 64 && GMP_NAIL_BITS == 0 ? 1 : 0;
+    ASSERT_EQ(mixed.GetStats().FastCertifiedComponents, expectedFast);
+    ASSERT_EQ(mixed.GetStats().RegularCertificationComponents, uint64_t{2} - expectedFast);
+    const auto before = mixed.GetStats();
+    const auto margin = mixed.DescribeCertification(x.Get(), y.Get(), false);
+    ASSERT_NEAR(margin.HeadroomBits, 60.0, 1e-9);
+    ASSERT_EQ(mixed.GetStats().FastCertifiedComponents, before.FastCertifiedComponents);
+    ASSERT_EQ(mixed.GetStats().RegularCertificationComponents, before.RegularCertificationComponents);
+    ASSERT_TRUE(mixed.Certify(x.Get(), y.Get(), false));
+    ASSERT_EQ(mixed.GetStats().FastCertifiedComponents, 2 * expectedFast);
+    ASSERT_EQ(mixed.GetStats().RegularCertificationComponents, 2 * (uint64_t{2} - expectedFast));
+    FractalShark::RefOrbitPrecisionSchedule fresh(Bits, x.Get(), y.Get(), x.Get(), y.Get());
+    ASSERT_EQ(fresh.GetStats().FastCertifiedComponents, uint64_t{0});
+    ASSERT_EQ(fresh.GetStats().RegularCertificationComponents, uint64_t{0});
+
+    mpf_set_ui(ulp.Get(), 1);
+    mpf_div_2exp(ulp.Get(), ulp.Get(), std::numeric_limits<double>::digits - 1);
+    mpf_set_ui(offset.Get(), 1);
+    mpf_div_2exp(offset.Get(), offset.Get(), 80);
+    for (const bool nearUpper : {false, true}) {
+        for (const bool negative : {false, true}) {
+            mpf_set_ui(x.Get(), 1);
+            if (nearUpper) {
+                mpf_add(x.Get(), x.Get(), ulp.Get());
+                mpf_sub(x.Get(), x.Get(), offset.Get());
+            } else {
+                mpf_add(x.Get(), x.Get(), offset.Get());
+            }
+            if (negative) {
+                mpf_neg(x.Get(), x.Get());
+            }
+            for (const int64_t errorExponent : {-81, -80, -79}) {
+                FractalShark::RefOrbitPrecisionSchedule threshold(
+                    Bits, x.Get(), zero.Get(), x.Get(), zero.Get());
+                threshold.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(errorExponent),
+                                             {});
+                const bool expected = errorExponent < -80;
+                ASSERT_EQ(threshold.Certify(x.Get(), zero.Get(), false), expected);
+                ASSERT_EQ(threshold.GetStats().FastCertifiedComponents, expected ? expectedFast : 0);
+                ASSERT_EQ(threshold.GetStats().RegularCertificationComponents,
+                          uint64_t{1} - (expected ? expectedFast : 0));
+            }
+        }
+    }
+    // Supported zero-error states are fast even on a conversion boundary; a
+    // nonzero enclosure at that same boundary must still reach regular rejection.
+    mpf_set_ui(x.Get(), 1);
+    FractalShark::RefOrbitPrecisionSchedule exact(Bits, x.Get(), zero.Get(), x.Get(), zero.Get());
+    ASSERT_TRUE(exact.Certify(x.Get(), zero.Get(), false));
+    ASSERT_EQ(exact.GetStats().FastCertifiedComponents, expectedFast);
+    FractalShark::RefOrbitPrecisionSchedule rejected(Bits, x.Get(), y.Get(), x.Get(), y.Get());
+    rejected.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(-960), {});
+    ASSERT_FALSE(rejected.Certify(x.Get(), y.Get(), false));
+    ASSERT_EQ(rejected.GetStats().FastCertifiedComponents, uint64_t{0});
+    ASSERT_EQ(rejected.GetStats().RegularCertificationComponents, uint64_t{1});
+    ASSERT_TRUE(rejected.GetStats().Failure == FractalShark::RefOrbitPrecisionFailure::AmbiguousSample);
+}
+
+TEST(RefOrbitDynamicPrecision_FastCertificateExponentLimits)
+{
+    constexpr mp_bitcnt_t Bits = 1024;
+    MpfValue base(Bits), value(Bits), zero(Bits), offset(Bits);
+    mpf_set_ui(offset.Get(), 1);
+    mpf_div_2exp(offset.Get(), offset.Get(), 60);
+    mpf_add_ui(base.Get(), offset.Get(), 1);
+    const std::array<int64_t, 8> exponents{
+        -1022,
+        -1021,
+        1024,
+        1025,
+        static_cast<int64_t>(std::numeric_limits<int32_t>::min()) - 1,
+        std::numeric_limits<int32_t>::min(),
+        std::numeric_limits<int32_t>::max(),
+        static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1};
+    for (const int64_t exponent : exponents) {
+        mpf_set(value.Get(), base.Get());
+        if (exponent < 1) {
+            mpf_div_2exp(value.Get(), value.Get(), static_cast<mp_bitcnt_t>(1 - exponent));
+        } else {
+            mpf_mul_2exp(value.Get(), value.Get(), static_cast<mp_bitcnt_t>(exponent - 1));
+        }
+        for (const bool nativeDouble : {false, true}) {
+            FractalShark::RefOrbitPrecisionSchedule schedule(
+                Bits, value.Get(), zero.Get(), value.Get(), zero.Get());
+            schedule.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(exponent - 100),
+                                        {});
+            const bool supported =
+                exponent >= std::numeric_limits<int32_t>::min() &&
+                exponent <= std::numeric_limits<int32_t>::max() &&
+                (!nativeDouble || (exponent >= std::numeric_limits<double>::min_exponent &&
+                                   exponent <= std::numeric_limits<double>::max_exponent));
+            ASSERT_EQ(schedule.Certify(value.Get(), zero.Get(), nativeDouble), supported);
+            ASSERT_EQ(schedule.DescribeCertification(value.Get(), zero.Get(), nativeDouble).Failure ==
+                          FractalShark::RefOrbitPrecisionFailure::None,
+                      supported);
+            ASSERT_TRUE(schedule.GetStats().Failure ==
+                        (supported ? FractalShark::RefOrbitPrecisionFailure::None
+                                   : FractalShark::RefOrbitPrecisionFailure::UnsupportedConversion));
+        }
+    }
+}
+
 TEST(RefOrbitDynamicPrecision_CertificationHeadroom)
 {
     constexpr mp_bitcnt_t bits = 1024;
@@ -1531,6 +1749,8 @@ TEST(RefOrbitDynamicPrecision_CertificationHeadroom)
             ASSERT_NEAR(margin.HeadroomBits, 60.0, 1e-9);
             ASSERT_NEAR(margin.ComparisonErrorBoundLog2, -static_cast<double>(SafeErrorBits), 1e-9);
             ASSERT_TRUE(safe.Certify(x.Get(), y.Get(), true));
+            ASSERT_EQ(safe.GetStats().FastCertifiedComponents, uint64_t{0});
+            ASSERT_EQ(safe.GetStats().RegularCertificationComponents, uint64_t{1});
 
             FractalShark::RefOrbitPrecisionSchedule rejected(bits, x.Get(), y.Get(), x.Get(), y.Get());
             rejected.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(
@@ -1734,6 +1954,9 @@ TEST(RefOrbitDynamicPrecision_RejectionLogsAndThrows)
             CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);
             const auto stats = calculator.GetLastDynamicPrecisionStats();
             ASSERT_TRUE(stats.has_value());
+            CheckCertificationReport(diagnostic, *stats);
+            ASSERT_EQ(stats->FastCertifiedComponents, uint64_t{0});
+            ASSERT_EQ(stats->RegularCertificationComponents, uint64_t{1});
             ASSERT_TRUE(stats->Failure ==
                         (unsupportedNative
                              ? FractalShark::RefOrbitPrecisionFailure::UnsupportedConversion
@@ -1793,14 +2016,27 @@ TEST(RefOrbitDynamicPrecision_StartupStorageAndPeriodicity)
         fractal.SetNumIterations<uint64_t>(limit);
         abort.SetStopCalculating(cancelled);
         const auto countersBefore = RefOrbitCalc::GetDynamicPrecisionCounters();
-        calculator.AddPerturbationReferencePoint<uint64_t,
-                                                 HDRFloat<double>,
-                                                 double,
-                                                 extras,
-                                                 RefOrbitCalc::BenchmarkMode::Disable>(fractal.GetPtz());
+        std::string diagnostic;
+        {
+            ScopedConsoleLogCapture capture;
+            calculator.AddPerturbationReferencePoint<uint64_t,
+                                                     HDRFloat<double>,
+                                                     double,
+                                                     extras,
+                                                     RefOrbitCalc::BenchmarkMode::Disable>(
+                fractal.GetPtz());
+            diagnostic = capture.GetMessage();
+        }
         abort.ResetStopCalculating();
+        const auto stats = calculator.GetLastDynamicPrecisionStats();
+        ASSERT_TRUE(stats.has_value());
+        CheckCertificationReport(diagnostic, *stats);
+        ASSERT_EQ(stats->FastCertifiedComponents + stats->RegularCertificationComponents,
+                  2 * stats->Steps);
         if (cancelled || limit == 0) {
             CheckDynamicPrecisionCounterDelta(countersBefore, 0, 0);
+            ASSERT_EQ(stats->FastCertifiedComponents, uint64_t{0});
+            ASSERT_EQ(stats->RegularCertificationComponents, uint64_t{0});
         }
         const auto *results = calculator.GetLast<uint64_t, HDRFloat<double>, extras>();
         ASSERT_EQ(results->GetCountOrbitEntries(),
@@ -1874,6 +2110,8 @@ TEST(RefOrbitDynamicPrecision_ActiveCancellation)
     ASSERT_TRUE(results->GetCountOrbitEntries() < iterationLimit);
     ASSERT_TRUE(calculator.GetLastDynamicPrecisionStats()->Failure ==
                 FractalShark::RefOrbitPrecisionFailure::None);
+    const auto stats = calculator.GetLastDynamicPrecisionStats();
+    ASSERT_EQ(stats->FastCertifiedComponents + stats->RegularCertificationComponents, stats->Steps);
 }
 
 TEST(RefOrbitDynamicPrecision_ManualMenuAndAutoExclusion)
@@ -2014,6 +2252,79 @@ TEST(RefOrbitDynamicPrecision_NearReturnOperandScale)
 namespace {
 
 void
+ProfileConversionCertificates(mp_bitcnt_t bits)
+{
+    // Prebuild a small working set so the timed loop measures certification alone,
+    // with neither MPIR allocation nor random-number generation in its hot path.
+    constexpr size_t SampleCount = 16;
+    constexpr uint64_t Iterations = ProfileDefaultIterations * 4;
+    constexpr mp_bitcnt_t DeepTailGuardBits = 128;
+    constexpr int64_t ErrorGuardBits = 96;
+    std::mt19937_64 random{0x71b46e09};
+    for (const bool deepBoundary : {false, true}) {
+        std::vector<std::unique_ptr<MpfValue>> values;
+        MpfValue offset(bits), ulp(bits);
+        mpf_set_ui(offset.Get(), 1);
+        mpf_div_2exp(offset.Get(), offset.Get(), bits - DeepTailGuardBits);
+        mpf_set_ui(ulp.Get(), 1);
+        mpf_div_2exp(ulp.Get(), ulp.Get(), std::numeric_limits<double>::digits - 1);
+        for (size_t index = 0; index < 2 * SampleCount; ++index) {
+            auto value = std::make_unique<MpfValue>(bits);
+            if (deepBoundary) {
+                mpf_set_ui(value->Get(), 1);
+                if ((index & 1) != 0) {
+                    mpf_add(value->Get(), value->Get(), ulp.Get());
+                    mpf_sub(value->Get(), value->Get(), offset.Get());
+                } else {
+                    mpf_add(value->Get(), value->Get(), offset.Get());
+                }
+                if ((index & 2) != 0) {
+                    mpf_neg(value->Get(), value->Get());
+                }
+            } else {
+                Randomize(value->Get(), value->Get()->_mp_prec, (index & 1) != 0, random);
+            }
+            values.push_back(std::move(value));
+        }
+        FractalShark::RefOrbitPrecisionSchedule schedule(
+            bits, values[0]->Get(), values[1]->Get(), values[0]->Get(), values[1]->Get());
+        schedule.AddStateTruncation(
+            FractalShark::RefOrbitErrorBound::PowerOfTwo(-static_cast<int64_t>(bits) + ErrorGuardBits),
+            {});
+        for (uint64_t iteration = 0; iteration < ProfileWarmupIterations; ++iteration) {
+            const size_t sample = 2 * (iteration % SampleCount);
+            ASSERT_TRUE(schedule.Certify(values[sample]->Get(), values[sample + 1]->Get(), false));
+        }
+        const auto start = std::chrono::steady_clock::now();
+        for (uint64_t iteration = 0; iteration < Iterations; ++iteration) {
+            const size_t sample = 2 * (iteration % SampleCount);
+            ASSERT_TRUE(schedule.Certify(values[sample]->Get(), values[sample + 1]->Get(), false));
+        }
+        const auto elapsed = std::chrono::steady_clock::now() - start;
+        PrintProfile(deepBoundary ? "CertificatesDeepBoundary" : "CertificatesOrdinary",
+                     bits,
+                     Iterations,
+                     elapsed);
+        ASSERT_TRUE(schedule.DescribeCertification(values[0]->Get(), values[1]->Get(), false).Failure ==
+                    FractalShark::RefOrbitPrecisionFailure::None);
+        const auto &stats = schedule.GetStats();
+        const uint64_t checks = 2 * (Iterations + ProfileWarmupIterations);
+        ASSERT_EQ(stats.FastCertifiedComponents + stats.RegularCertificationComponents, checks);
+        if constexpr (GMP_NUMB_BITS == 64 && GMP_NAIL_BITS == 0) {
+            ASSERT_EQ(stats.FastCertifiedComponents, deepBoundary ? uint64_t{0} : checks);
+        } else {
+            ASSERT_EQ(stats.FastCertifiedComponents, uint64_t{0});
+        }
+        FractalSharkLog::LogLine(__FILE__, __LINE__)
+            << "CERTIFICATION_PROFILE bits=" << bits << " deep_boundary=" << deepBoundary
+            << " certification_fast_components=" << stats.FastCertifiedComponents
+            << " certification_regular_components=" << stats.RegularCertificationComponents
+            << " certification_fast_percent="
+            << 100.0 * static_cast<double>(stats.FastCertifiedComponents) / static_cast<double>(checks);
+    }
+}
+
+void
 ProfileDynamicPrecision(mp_bitcnt_t bits)
 {
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
@@ -2071,7 +2382,15 @@ ProfileDynamicPrecision(mp_bitcnt_t bits)
                 << "DYNAMIC_PRECISION_PROFILE steps=" << stats->Steps
                 << " min_bits=" << stats->MinimumBits << " mean_bits=" << stats->MeanBits
                 << " reduced_steps=" << stats->ReducedSteps
+                << " certification_fast_components=" << stats->FastCertifiedComponents
+                << " certification_regular_components=" << stats->RegularCertificationComponents
+                << " certification_fast_percent="
+                << 100.0 * static_cast<double>(stats->FastCertifiedComponents) /
+                       (static_cast<double>(stats->FastCertifiedComponents) +
+                        static_cast<double>(stats->RegularCertificationComponents))
                 << " failure=" << static_cast<int>(stats->Failure);
+            ASSERT_EQ(stats->FastCertifiedComponents + stats->RegularCertificationComponents,
+                      2 * stats->Steps);
             ASSERT_TRUE(stats->Failure == FractalShark::RefOrbitPrecisionFailure::None);
             ASSERT_TRUE(stats->MinimumBits < bits / 2);
             ASSERT_TRUE(stats->ReducedSteps > iterations / 2);
@@ -2081,6 +2400,9 @@ ProfileDynamicPrecision(mp_bitcnt_t bits)
 
 } // namespace
 
+TEST(RefOrbitDynamicPrecision_ProfileCertificates_16384) { ProfileConversionCertificates(16'384); }
+TEST(RefOrbitDynamicPrecision_ProfileCertificates_33344) { ProfileConversionCertificates(33'344); }
+TEST(RefOrbitDynamicPrecision_ProfileCertificates_100096) { ProfileConversionCertificates(100'096); }
 TEST(RefOrbitDynamicPrecision_ProfileGrowing_16384) { ProfileDynamicPrecision(16'384); }
 TEST(RefOrbitDynamicPrecision_ProfileGrowing_33344) { ProfileDynamicPrecision(33'344); }
 TEST(RefOrbitDynamicPrecision_ProfileGrowing_100096) { ProfileDynamicPrecision(100'096); }

@@ -136,6 +136,7 @@ private:
     void OnPerturbationSinglethreadPeriodicity();
     void OnPerturbationMultithread2Periodicity();
     void OnPerturbationMultithread9KaratsubaPeriodicity();
+    void OnPerturbationMultithread9KaratsubaDynamicPrecision();
     void OnPerturbationMt2PerturbMthighStmed();
     void OnPerturbationMt2PerturbMthighMtmed1();
     void OnPerturbationMt2PerturbMthighMtmed2();

@@ -131,7 +131,7 @@ orbit is needed when the available data no longer serves the requested view.
 These selection policies are not a certified fixed error envelope.
 
 In the single-thread execution path (beginning at
-\code{Add\-Perturbation\-Reference\-Point\-ST}), this construction is performed
+\code{Add\-Perturbation\-Reference\-Point\-STReuse}), this construction is performed
 sequentially using the cached authoritative
 orbit samples $\{z^{(0)}_n\}$ as coefficients.
 The perturbation identity retains its quadratic term; it does not introduce
@@ -218,6 +218,132 @@ identity guarantee.  \code{SaveForReuse3} instead uses the simple intermediate
 MPIR compressor at a fixed extra precision and preserves monotone decompression
 semantics.  \code{SaveForReuse4} is broken and must not be presented as an
 available maximal intermediate compressor.
+
+\subsubsection{CPU execution phases and thread ownership}
+\label{subsec:ref-orbit-reuse-execution}
+
+Authoritative generation and medium-precision regeneration are separate phases.
+Their thread counts must not be added together. A suitable cached authoritative
+reference allows regeneration directly; otherwise the selected authoritative
+backend constructs a new one. Eligibility includes precision and view-radius
+checks, and the current reuse path declines references whose detected period
+is below five. Those policies retain the existing numerical contract rather
+than providing the dynamic-MT9 sample certificate.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption[CPU reuse phases and thread counts]{CPU reuse phases, counting the caller
+  as one thread. The selection suffixes refer to the catalog in
+  \cref{tab:reference-backends}.}
+\label{tab:reference-reuse-threads}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.17\textwidth}
+  >{\raggedright\arraybackslash}X >{\raggedright\arraybackslash}X}
+\hline
+\textbf{Suffix} & \textbf{Authoritative phase} & \textbf{Medium phase} \\
+\hline
+\code{STMed} & 1: factored ST; caller captures compressed reuse entries (mode 3).
+  & 1: caller evaluates both perturbation components. \\
+\code{MTMed1} & 3: two square workers and caller; caller captures uncompressed entries.
+  & 3: real worker, imaginary worker, caller. \\
+\code{MTMed2} & 4: MT3 plus an uncompressed reuse-entry worker.
+  & 3: same component-worker recurrence as mode 1. \\
+\code{MTMed3} & 4: MT3 plus an intermediate-compression worker.
+  & 3: component workers read the compressed authoritative stream. \\
+\code{MTMed4} & Unsupported broken reuse-v4 path.
+  & No supported mode-4 execution contract. \\
+\hline
+\end{tabularx}
+\end{table}
+
+Despite its legacy \code{PerturbMTHighSTMed} spelling, the \code{STMed}
+selection dispatches to single-threaded authoritative generation. The active
+mode-2 and mode-3 capture workers own their MPIR temporaries and, for mode 3,
+the intermediate compressor. The caller copies the old authoritative state
+into a capture job only after the preceding capture has completed. It then
+overlaps capture with the square/cross-product schedule of
+\cref{subsec:ref-orbit-mt3}. Retained reuse entries and compressed storage can
+allocate or grow; avoiding general heap traffic in the arithmetic loop does
+not imply that retaining an entire reference requires no allocations.
+
+\paragraph{Component recurrence and independent indices.}
+Let the authoritative coefficient at index $r$ be
+$z_r^{(0)}=X_r+iY_r$, the current relative state be
+$\Delta z_n=u_n+i v_n$, and the parameter offset be
+$\Delta c=\Delta c_x+i\Delta c_y$. Away from a rebase, $r$ advances with
+the output index $n$. The factored complex perturbation update is
+\begin{equation}
+ \Delta z_{n+1}=\Delta z_n(2z_r^{(0)}+\Delta z_n)+\Delta c.
+ \label{eq:reuse-factored-complex}
+\end{equation}
+The actual real arithmetic forms $A=2X_r+u_n$ and $B=2Y_r+v_n$, then evaluates
+\begin{align}
+ u_{n+1}&=u_n A-v_n B+\Delta c_x, \label{eq:reuse-component-real}\\
+ v_{n+1}&=u_n B+v_n A+\Delta c_y. \label{eq:reuse-component-imag}
+\end{align}
+The quadratic perturbation term is retained: it is already contained in the products
+with $u_n$ and $v_n$. These four component products differ from the two-product
+authoritative ST schedule. The reuse code forms doubled coefficients with
+MPIR multiplication by a stored value of two, rather than using the
+authoritative ST path's power-of-two shift call.
+
+Reconstruction uses the \emph{next} coefficient:
+\begin{equation}
+ z_{n+1}^{(1)}=z_{r+1}^{(0)}+u_{n+1}+i v_{n+1}.
+ \label{eq:reuse-reconstruct-next}
+\end{equation}
+The implementation compares low-precision full-state and relative-state
+magnitudes to decide whether to rebase; the ST and MT comparison timings are
+specified below. A smaller full-state magnitude, or reaching the end of the
+available coefficient stream, triggers a rebase:
+it copies the reconstructed state into the relative state and resets $r$ to
+zero. The output index $n$ continues to advance. Since $z_0^{(0)}=0$, the new
+representation describes the same current point relative to coefficient zero.
+The magnitude test is an implementation heuristic for choosing that
+representation, not an additional accuracy proof.
+
+\paragraph{Single-threaded medium reference.}
+\code{Add\-Perturbation\-Reference\-Point\-STReuse} initializes its MPIR
+temporaries once, computes $\Delta c$ at authoritative precision before
+lowering the working precision, and owns one intermediate decompressor.
+The caller snapshots both old relative components before evaluating
+\eqref{eq:reuse-component-real} and \eqref{eq:reuse-component-imag} into their
+destinations. It retrieves coefficients $r$ and $r+1$, reconstructs the full
+state, manages sample/compression output and periodicity/escape checks, and
+performs any rebase. No worker is added for coefficient replay or storage.
+More precisely, it extracts the new relative state but the preceding full
+state before reconstructing the next full state. Its magnitude comparison and
+escape test therefore use that preceding full-state shadow; a rebase still
+copies the newly reconstructed MPIR state. Sample output follows reconstruction
+and the stopping checks. These are the existing loop timings, not a claim
+that both implementations test the same iteration or produce identical rounded
+results.
+
+\paragraph{Multithreaded medium reference.}
+\code{Add\-Perturbation\-Reference\-Point\-MT3Reuse} creates two persistent
+workers. Each has private MPIR scratch space and its own runtime decompressor,
+so decompression caches are not mutated concurrently. The real worker evaluates
+\eqref{eq:reuse-component-real} and reconstructs the real coordinate with
+$X_{r+1}$. The imaginary worker evaluates \eqref{eq:reuse-component-imag} and
+reconstructs the imaginary coordinate with $Y_{r+1}$. Their legacy square-worker
+names do not describe their work: neither worker merely squares a coordinate.
+
+The caller publishes jobs with the same stable old relative-state operands
+and coefficient index. While both workers run, it can publish the preceding
+completed low-precision sample and perform the corresponding periodicity
+checks; the first dispatch has no preceding sample. It retrieves each full
+coordinate as that worker finishes, then waits for both completions before
+replacing the shared relative-state inputs. Escape/rebase tests use the newly
+completed low-precision full and relative values. The caller also advances $r$,
+emits output, and checks cancellation. There is no fourth capture worker in this medium phase,
+including when its authoritative source used mode 2 or 3.
+
+Both reuse implementations keep recurrence temporaries alive across iterations.
+On threaded exit, stop messages and joins precede destruction of job buffers
+and worker-local arithmetic objects. Allocator shutdown follows destruction of
+the MPIR objects that depend on it. The shared synchronization and allocation
+principles in \cref{subsec:ref-orbit-cpu-principles} apply to these workers as
+well as to direct authoritative generation.
 
 \subsection{Reference Compression}
 \label{sec:ref-compression-zhuoran}

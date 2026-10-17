@@ -29,6 +29,7 @@ target_sources(FractalSharkLib PRIVATE
     RecommendedSettings.cpp
     RefOrbitCalc.cpp
     RefOrbitKaratsuba.cpp
+    RefOrbitPrecision.cpp
     RenderAlgorithm.cpp
     RenderThreadPool.cpp
     RenderToPng.cpp
@@ -62,4 +63,11 @@ if(TARGET OpenGL::GLU)
 else()
     find_library(GLU_LIBRARY GLU REQUIRED)
     target_link_libraries(FractalSharkLib PUBLIC ${GLU_LIBRARY})
+endif()
+
+# Outward error bounds require binary64 operation ordering without fast-math rewrites.
+if(MSVC)
+    set_source_files_properties(RefOrbitPrecision.cpp PROPERTIES COMPILE_OPTIONS "/fp:strict")
+else()
+    set_source_files_properties(RefOrbitPrecision.cpp PROPERTIES COMPILE_OPTIONS "-fno-fast-math;-ffp-contract=off")
 endif()

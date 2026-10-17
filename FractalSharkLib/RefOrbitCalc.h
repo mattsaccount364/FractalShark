@@ -1,8 +1,10 @@
 #pragma once
 
 #include "HDRFloat.h"
+#include "RefOrbitPrecisionStats.h"
 #include "Vectors.h"
 #include <mutex>
+#include <optional>
 #include <type_traits>
 #include <variant>
 #include <vector>
@@ -151,7 +153,8 @@ public:
         MTPeriodicity5,
         GPU,
         Auto,
-        MTPeriodicity9Karatsuba
+        MTPeriodicity9Karatsuba,
+        MTPeriodicity9KaratsubaDynamicPrecision
     };
 
     enum class PerturbationResultType { None, LAOnly, MediumRes, HighRes, All };
@@ -165,6 +168,10 @@ public:
     void SetPerturbationAlg(PerturbationAlg alg);
     PerturbationAlg GetPerturbationAlg() const;
     std::string GetPerturbationAlgStr() const;
+    std::optional<FractalShark::RefOrbitDynamicPrecisionStats> GetLastDynamicPrecisionStats() const;
+    // Independent atomic totals, shared across instances and template specializations.
+    // Returns no snapshot when the compile-time MT9 instrumentation is disabled.
+    static std::optional<FractalShark::RefOrbitDynamicPrecisionCounters> GetDynamicPrecisionCounters();
 
     // Resolve Auto from the view's bit estimate without reuse padding. GPU eligibility
     // uses an already resolved renderer and runtime state; no CUDA probe is performed here.
@@ -325,7 +332,8 @@ private:
               class T,
               class SubType,
               BenchmarkMode BenchmarkState,
-              PerturbExtras PExtras>
+              PerturbExtras PExtras,
+              bool DynamicPrecision>
     void AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConverter &ptz,
                                                    HighPrecision initX,
                                                    HighPrecision initY);
@@ -405,6 +413,7 @@ private:
     };
 
     PerturbationAlg m_PerturbationAlg;
+    std::optional<FractalShark::RefOrbitDynamicPrecisionStats> m_LastDynamicPrecisionStats;
     const Fractal &m_Fractal;
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;

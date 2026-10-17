@@ -5,7 +5,10 @@ Reference-orbit construction can dominate the cost of
 deep-zoom Mandelbrot rendering.  Perturbation theory
 (\cref{sec:perturbation-concept}) allows every pixel to be rendered at
 low precision, but it requires one orbit---the \emph{reference
-orbit}---to be computed at the full precision of the zoom depth.  At
+orbit}---whose accuracy resolves the zoom depth. The usual fixed backends
+compute that orbit at the full configured precision. An optional dynamic MT9
+variant reduces working precision when independently certified sample
+conversions permit it (\cref{subsec:ref-orbit-dynamic-precision}). At
 extreme magnifications this requirement means iterating
 \begin{equation}
   z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
@@ -55,13 +58,14 @@ Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, 
         \code{Auto}, the estimated precision selects \code{STPeriodicity}
         below $640$ bits, \code{MTPeriodicity3} from $640$ through $6{,}783$ bits,
         \code{MTPeriodicity3PerturbMTHighMTMed3} from $6{,}784$ through
-        $16{,}383$ bits, and \code{MTPeriodicity9Karatsuba} from $16{,}384$
+        $16{,}383$ bits, and dynamic MT9 from $16{,}384$
         through $32{,}767$ bits. At $32{,}768$ bits and above, \code{GPU} is
         selected when CUDA is available and the effective render algorithm
         supports GPU reference generation within its precision capacity;
-        otherwise, MT9 is selected. The estimate includes the minimum precision
+        otherwise, dynamic MT9 is selected. The estimate includes the minimum precision
         margin, excludes reuse padding, and does not depend on hardware concurrency.
-        Explicit selections bypass Auto.
+        Explicit selections bypass Auto. Explicit fixed MT9 disables dynamic
+        precision even at depths where Auto selects it.
   \item Allocates a new \code{PerturbationResults} slot, initializes
         metadata and bounds, and runs the chosen orbit kernel until escape,
         periodicity detection, or the maximum iteration count is reached.
@@ -78,6 +82,9 @@ medium-precision reference construction, rather than selecting the per-pixel
 render algorithm. Reuse storage is described in \cref{subsec:ref-orbit-reuse}.
 The legacy menu label ``MT2'' counts the two square workers; the implementation
 name MT3 also counts the calling thread. Explicit selections bypass Auto.
+The dynamic MT9 enum has a GUI selection and is selected by Auto, but has no
+accepted explicit CLI name; the
+remaining names in the catalog are accepted by \code{-{}-perturbation-alg}.
 
 \begin{table}[!htbp]
 \centering
@@ -87,7 +94,7 @@ name MT3 also counts the calling thread. Explicit selections bypass Auto.
 \label{tab:reference-backends}
 \begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}p{0.48\textwidth}X}
 \hline
-\textbf{Enum / CLI name} & \textbf{Actual behavior} \\
+\textbf{Selection name} & \textbf{Actual behavior} \\
 \hline
 \code{ST} & Factored MPIR recurrence, no periodicity. \\
 \code{MT} & MT3 expanded recurrence, no periodicity. \\
@@ -106,9 +113,12 @@ name MT3 also counts the calling thread. Explicit selections bypass Auto.
 \code{MTPeriodicity5} & Disabled MT5 entry point delegates to periodic MT3. \\
 \code{GPU} & Fused CUDA Ref2/v2 recurrence; explicit or automatic selection. \\
 \code{Auto} & Bit thresholds above; compatible GPU generation from
-  $32{,}768$ bits, with MT9 fallback. \\
+  $32{,}768$ bits, with dynamic MT9 as the CPU alternative. \\
 \code{MTPeriodicity9\-Karatsuba} & Eight workers plus caller; exact split products,
   full-precision recurrence additions and subtractions, with periodicity. \\
+\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} & GUI/internal or Auto selection;
+  variable working precision with sample certificates and fixed-MT9 restart.
+  No explicit CLI algorithm name. \\
 \hline
 \end{tabularx}
 \end{table}
@@ -118,8 +128,8 @@ CUDA runtime state. Supported HDR reference consumers include CPU renderers when
 CUDA is available; reference generation and per-pixel rendering remain separate
 choices. Scaled HDR rendering requires diagnostic reference bookkeeping, and
 compressed double-float rendering lacks the required plain-to-compressed
-materialization before conversion. Those formats retain MT9 in Auto. Requested
-precision above $16{,}777{,}216$ bits also retains MT9 because the largest GPU
+materialization before conversion. Those formats use dynamic MT9 in Auto. Requested
+precision above $16{,}777{,}216$ bits also uses dynamic MT9 because the largest GPU
 bucket contains $524{,}288$ 32-bit limbs. Auto therefore avoids selecting a GPU
 bucket that would cap the requested precision. The lower thresholds round the
 former $10^{150}$ and $10^{2000}$ zoom rules to 64-bit limb boundaries.
@@ -150,23 +160,37 @@ Given a selected reference parameter \(c = c_x + i c_y\), the implementation:
 \end{itemize}
 
 \paragraph{Recurrence.}
-Writing \(z_n = x_n + i y_n\), one iteration evaluates
+Writing \(z_n = x_n + i y_n\), the actual single-threaded schedule evaluates
 \begin{align}
-  x_{n+1} &= x_n^2 - y_n^2 + c_x, \label{eq:st-recurrence-real} \\
-  y_{n+1} &= 2 x_n y_n + c_y. \label{eq:st-recurrence-imag}
+  y_{n+1} &= (2x_n)y_n + c_y, \label{eq:st-recurrence-imag} \\
+  x_{n+1} &= (x_n+y_n)(x_n-y_n) + c_x. \label{eq:st-recurrence-real}
 \end{align}
-The equations follow from
-$(x_n+i y_n)^2=x_n^2-y_n^2+2i x_ny_n$.
-The single-threaded implementation evaluates the real expression as
-$(x_n-y_n)(x_n+y_n)$, using ordinary MPIR \code{mpf\_mul} for both
-high-precision products.  It computes $2x_ny_n+c_y$ into a temporary before
-overwriting $x_n$, then publishes the new imaginary value by swapping buffers.
-Both component updates therefore use the same old state.  The implementation also uses:
-\begin{itemize}
-  \item MPIR addition, subtraction, and power-of-two scaling around the products.
-  \item A low-precision snapshot \((\hat{x}_n,\hat{y}_n)\) acquired once per iteration for storage/compression,
-        periodicity heuristics, and bailout checks.
-\end{itemize}
+The identity $(x_n+y_n)(x_n-y_n)=x_n^2-y_n^2$ gives the same complex
+polynomial as \eqref{eq:mandelbrot-recurrence}. It removes one large product
+from the serial instruction sequence: two ordinary MPIR \code{mpf\_mul}
+calls replace two squares and a cross product. Forming the sum, difference,
+and doubled operand still costs linear work in the limb count.
+
+One calling thread owns every operation; \code{STPeriodicity} adds derivative
+tracking to that same thread, not another worker. Its ordered loop body is:
+\begin{enumerate}
+  \item Form $2x_n$ with \code{mpf\_mul\_2exp}. Extract the old-state shadow
+        $(\hat{x}_n,\hat{y}_n)$, emit its sample or compression input, and,
+        when requested, capture the authoritative reuse entry and test periodicity.
+  \item Multiply $(2x_n)y_n$ and add $c_y$ into a scratch destination.
+        The live $y$ buffer still holds $y_n$.
+  \item Form $x_n+y_n$ and $x_n-y_n$ in separate temporaries.
+  \item Multiply those factors into the live $x$ destination and add $c_x$.
+  \item Swap the live $y$ buffer with the completed imaginary scratch buffer.
+        The swap changes buffer ownership without copying all its limbs.
+  \item Apply the low-precision bailout test and the loop's stopping checks.
+\end{enumerate}
+An early periodicity return can terminate the body before the arithmetic update.
+Otherwise both coordinates use the same old state, even though $x$ is overwritten
+before the new $y$ is installed. Persistent MPIR temporaries are initialized
+before the loop; result storage can grow separately. On exit, MPIR objects
+allocated under a thread-local allocator are destroyed before its shutdown.
+\Cref{fig:cpu-reference-dependencies} compares this serial schedule with MT3.
 
 \paragraph{Bailout.}
 
@@ -256,6 +280,7 @@ certify every pixel's accuracy.  The stored ``maybe periodic'' status retains
 that distinction.
 
 \subsection{Expanded versus factored evaluation of the reference orbit}
+\label{subsec:ref-orbit-expanded-factored}
 
 The high-precision reference orbit evaluates the quadratic map
 
@@ -304,12 +329,15 @@ $x_n^2 - y_n^2$ explicit. This closely mirrors the mathematical definition
 of the Mandelbrot polynomial and exercises the full squaring and
 multiplication paths of the high-precision arithmetic.
 
-The factored form reduces the number of full-precision squares by replacing
-$x_n^2 - y_n^2$ with a single multiplication of the shared intermediates
-$(x_n \pm y_n)$. This factoring can reduce computational cost when multiplication and
-squaring have similar expense, but it introduces stronger coupling between
-terms and alters the way cancellation and rounding effects manifest in
-finite-precision arithmetic.
+For serial evaluation, factoring shortens the straight-line arithmetic sequence
+from three large products to two. The saving is one product, not a shorter
+Mandelbrot orbit or a reduction in required precision. Its value depends on
+the relative costs of a specialized square, a general multiplication, and the
+extra sum/difference formation. The independent expanded squares instead
+expose parallel tasks, which explains why the CPU backends use different
+schedules. Factoring also changes where cancellation and rounding occur;
+exact polynomial equality is not an equality of finite-precision instruction
+sequences. \Cref{subsec:ref-orbit-mt-tradeoff} accounts for these distinct costs.
 
 For $x_n=3/4$, $y_n=1/2$, and $c=0$, the expanded real update is
 $9/16-1/4=5/16$.  The factored update is

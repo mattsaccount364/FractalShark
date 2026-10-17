@@ -87,12 +87,24 @@ commands, and functional tests.  The principal flows appear in
 
 CPU reference arithmetic is selected independently of the per-pixel renderer.
 The complete enum-to-backend contract appears in \cref{tab:reference-backends}.
-\code{RefOrbitKaratsubaProducts} owns MT9's eight persistent arithmetic workers,
-fixed-width snapshots, and exact integer assembly buffers
-(\cref{subsec:ref-orbit-mt9}). Its lifetime remains inside the caller's MPIR
-allocator/TLS scope; workers and every MPIR object must be destroyed before
-their associated TLS arena is shut down. GPU reference generation instead
-uses the fused \code{HpSharkFloat} recurrence.
+\code{RefOrbit\allowbreak Karatsuba\allowbreak ProductsT<\allowbreak DynamicPrecision>}
+owns MT9's eight persistent
+arithmetic workers, operand snapshots, and exact integer assembly buffers
+(\cref{subsec:ref-orbit-mt9}). Fixed and dynamic MT9 are separate compile-time
+specializations. Both allocate maximum capacity once; the dynamic specialization
+publishes active limb lengths with each batch, after the preceding batch joins.
+\code{RefOrbitPrecisionSchedule} proposes precision and maintains the independent
+error disk and conversion certificate. \code{RefOrbitRawPrecisionGuard} clips
+the state explicitly and restores allocation precision before destruction.
+Its lifetime, together with that of the product workers, remains inside the
+caller's MPIR allocator/TLS scope; workers and every MPIR object must be destroyed before
+their associated TLS arena is shut down. A dynamic attempt enters the reference
+cache only after completion; a failed certificate unwinds all attempt-owned
+arithmetic before fixed MT9 restarts. Entering or leaving the manually selected
+dynamic variant invalidates cached reference state. The enclosure argument and
+conversion contract appear in
+\cref{subsec:ref-orbit-dynamic-enclosure,subsec:ref-orbit-dynamic-certificate}.
+GPU reference generation instead uses the fused \code{HpSharkFloat} recurrence.
 
 \paragraph{\code{FractalSharkGpuLib}.}
 The rendering CUDA library owns the per-pixel launch surface and kernels for

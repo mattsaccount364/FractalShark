@@ -452,10 +452,11 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Auto (default)} (radio): Automatically selects the perturbation
       algorithm using estimated precision bits. It selects ST below 640 bits,
       MT3 from 640 through 6,783 bits, MT3 with compressed reference reuse from
-      6,784 through 16,383 bits, and MT9 from 16,384 through 32,767 bits.
+      6,784 through 16,383 bits, and dynamic MT9 from 16,384 through 32,767 bits.
       At 32,768 bits and above it selects GPU reference generation when CUDA
       and the reference format and precision are supported; otherwise it uses
-      MT9. See \cref{subsec:ref-orbit-pipeline} for eligibility details.
+      dynamic MT9. Explicitly select fixed MT9 to disable dynamic precision.
+      See \cref{subsec:ref-orbit-pipeline} for eligibility details.
       Recommended for most use.
       \item \emph{Single Thread (ST)} (radio): Uses a single-threaded
       reference-orbit computation with no periodicity checking.
@@ -479,6 +480,18 @@ choice and triggers any necessary reconfiguration.
       \item \emph{MT9 + Periodicity + Karatsuba} (radio): Eight workers plus
       the caller compute exact split products, with full-precision recurrence
       add/subtract operations. See \cref{subsec:ref-orbit-mt9}.
+
+      \item \emph{MT9 + Periodicity + Karatsuba + Dynamic Precision} (radio):
+      Optional MT9 strategy that proposes fewer working bits as the parameter
+      derivative grows. An independent accumulated-error bound certifies sample
+      conversions. If certification fails, the unpublished attempt is discarded
+      and fixed MT9 restarts from the original coordinates. Certification and
+      restart can outweigh the arithmetic savings. Auto selects this variant
+      in its MT9 range and when GPU reference generation is ineligible.
+      There is no explicit name for it in \code{-{}-perturbation-alg}; the
+      CLI's \code{Auto} selection can use it. See
+      \cref{subsec:ref-orbit-dynamic-precision} for the mathematical argument
+      and the certificate's precise scope.
 
       \item \emph{GPU-Accelerated (see README)} (radio): Selects the fused
       Ref2/v2 implementation, which evaluates the complete high-precision

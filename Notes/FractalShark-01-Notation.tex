@@ -149,6 +149,15 @@ $z_r$            & simple-compression waypoint value
                  & stored sample from which intermediate iterations are replayed;
                    maximal compression separately advances its reference index \\
 $R_{\max}$       & maximum perturbation radius    & stored in \code{PerturbationResults} \\
+$\widetilde z_n^\star$ & dynamic working orbit & distinct from the compression shadow
+                  $\hat z_n$; \cref{subsec:ref-orbit-dynamic-precision} \\
+$\varepsilon_n,\;E_n$ & working-orbit error / disk radius
+                  & $\varepsilon_n=\widetilde z_n^\star-z_n^\star$,
+                    $|\varepsilon_n|\le E_n$; distinct from replay error $e_n$ \\
+$\rho_n,\;\tau_n$ & local residual / magnitude bound
+                  & $|\rho_n|\le\tau_n$, including coordinate-copy error \\
+$P_{\mathrm{full}},\;P_n,\;Q$ & full / active bits / tier quantum
+                  & optional dynamic MT9; period retains the symbol $p$ \\
 \hline
 \end{tabularx}
 \end{table}

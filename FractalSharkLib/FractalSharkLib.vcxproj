@@ -68,6 +68,8 @@
     <ClInclude Include="RecommendedSettings.h" />
     <ClInclude Include="RefOrbitCalc.h" />
     <ClInclude Include="RefOrbitKaratsuba.h" />
+    <ClInclude Include="RefOrbitPrecision.h" />
+    <ClInclude Include="RefOrbitPrecisionStats.h" />
     <ClInclude Include="RefOrbitCalcTemplates.h" />
     <ClInclude Include="RefOrbitDetails.h" />
     <ClInclude Include="RenderAlgorithm.h" />
@@ -109,6 +111,9 @@
     <ClCompile Include="RecommendedSettings.cpp" />
     <ClCompile Include="RefOrbitCalc.cpp" />
     <ClCompile Include="RefOrbitKaratsuba.cpp" />
+    <ClCompile Include="RefOrbitPrecision.cpp">
+      <FloatingPointModel>Strict</FloatingPointModel>
+    </ClCompile>
     <ClCompile Include="RenderAlgorithm.cpp" />
     <ClCompile Include="RenderToPng.cpp" />
     <ClCompile Include="RenderToConsole.cpp" />

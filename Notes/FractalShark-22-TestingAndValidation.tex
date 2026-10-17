@@ -135,6 +135,45 @@ Paired Release measurements alternate baseline and candidate order and retain
 MT3 as a control. Timing results describe the tested machine and workload,
 not a hardware-independent speedup or an end-to-end accuracy certificate.
 
+\paragraph{Dynamic-precision validation.}
+The \code{RefOrbit\allowbreak DynamicPrecision\_*} cases exercise the optional strategy in
+\cref{subsec:ref-orbit-dynamic-precision}. They provide evidence for the
+implementation's arithmetic hypotheses and integration behavior; the enclosure
+and accepted-sample arguments are established separately by the derivation.
+\begin{itemize}
+  \item \code{Local\allowbreak RoundingBounds}, \code{Combined\allowbreak StepBounds},
+        \code{Bound\allowbreak Arithmetic}, and \code{Finite\allowbreak Recurrence} check primitive
+        bounds, the complete update against exact dyadic arithmetic, and outward
+        disk propagation against wide MPIR calculations. Invalid and
+        out-of-range bounds must propagate to rejection.
+  \item \code{Conversion\allowbreak Certificates} covers strict conversion-bin gaps,
+        signs, real-axis zero, and unsupported native exponents.
+        \code{ReducedOrbit\allowbreak MatchesOracle} compares successful reduced attempts
+        with fixed MT9 and a higher-precision oracle.
+  \item \code{PrecisionRestoration\allowbreak AndDerivativeReset} checks that restoring
+        capacity preserves the error already incurred and that the derivative
+        recovers after cancellation. \code{NearReturn\allowbreak OperandScale} covers the
+        small-result/large-operand precision regression.
+  \item \code{Fallback\allowbreak MatchesFixed} and \code{Structured\allowbreak DeepFallback} cover
+        rejection and restart. \code{StartupStorage\allowbreak AndPeriodicity},
+        \code{Active\allowbreak Cancellation}, \code{ManualMenu\allowbreak AndAutoExclusion}, and
+        \code{RenderAnd\allowbreak CompressionRoundtrip} cover publication, cancellation,
+        selection, rendering, and Imagina interchange.
+\end{itemize}
+The names above omit the common \code{RefOrbit\allowbreak DynamicPrecision\_} prefix.
+The existing \code{ManualMenu\allowbreak AndAutoExclusion} case encodes the
+earlier manual-only selection policy; its Auto assertions require alignment
+with the current dynamic-MT9 dispatch before they validate that policy.
+For example, the existing focused Windows selection is:
+\begin{lstlisting}[language={}]
+Debug\FractalSharkTest.exe --filter "RefOrbitDynamicPrecision_*"
+\end{lstlisting}
+The selection also includes three growing-derivative profiling fixtures.
+Their sample comparisons and precision statistics complement the correctness
+fixtures; elapsed times do not establish a universal speedup. Agreement on
+tested inputs does not replace the enclosure proof or extend its certificate
+to compression and final-image arithmetic.
+
 The tiered allocation strategy introduced earlier in this chapter addresses one aspect of memory
 pressure.  The next chapter examines a complementary mechanism---disk-backed
 growable vectors---that manages the large reference-orbit buffers whose size

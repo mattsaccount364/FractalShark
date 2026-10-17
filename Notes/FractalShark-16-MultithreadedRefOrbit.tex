@@ -1,17 +1,75 @@
 \section{Multithreaded Reference Orbit Acceleration}
 \label{subsec:ref-orbit-mt}
 
-The \code{MT3} reference-orbit path accelerates the high-cost MPIR arithmetic
-of the single-threaded authoritative orbit (\cref{subsec:ref-orbit-st}) by
-decomposing each iteration across multiple CPU threads.  The design targets
-independent, high-latency big-integer operations within one reference
-recurrence, while minimizing synchronization overhead.  Iterations themselves
-remain sequential, but squaring the next imaginary component can begin before
-the current real update finishes. Two
-recurring implementation patterns characterize this approach.
+The CPU threaded backends distribute independent, high-latency MPIR operations
+within one reference recurrence. MT3 overlaps two squares with a caller-owned
+cross product; MT9 splits each of those products among three arithmetic roles.
+Medium-reference reuse instead assigns the real and imaginary perturbation
+updates to separate workers (\cref{subsec:ref-orbit-reuse-execution}). Iterations
+retain their mathematical dependencies. Performance depends on keeping the
+handoff cost small relative to the large-integer work.
 
 The \code{MT5} entry point is currently disabled and falls back to \code{MT3};
 it is not a distinct active backend.
+
+\subsection{Shared CPU implementation principles}
+\label{subsec:ref-orbit-cpu-principles}
+
+\paragraph{Persistent workers and atomic polling.}
+Workers are created once for an orbit calculation and reused for its arithmetic
+batches. A job does not create a new thread, block on a condition variable, or
+require a scheduler wakeup. Atomic mailboxes or per-worker state flags publish
+work and completion; waiting loops use \code{\_mm\_pause}. The processor pause
+is a spin-wait hint, not a scheduler yield. Keeping a worker active avoids
+repeated blocking/wakeup context switches and makes short handoffs practical
+when products are large enough to amortize polling. The operating system can
+still preempt a thread, and spinning consumes execution resources.
+
+The implementation separates frequently polled fields with cache-line alignment
+and padding. Stable job operands and private result buffers prevent a producer
+from overwriting values still in use. Legacy MT3 and reuse workers use pointer
+mailboxes; MT9 uses a distinct acquire/release state protocol. Their actual
+protocols are described separately below rather than assigning the same memory
+ordering to all CPU backends.
+
+\paragraph{Arithmetic storage and allocation.}
+MPIR temporaries, job descriptors, operand snapshots, and product destinations
+are constructed before the repeated arithmetic. MT9 also reserves its largest
+split and assembly buffers before starting workers, then varies active lengths
+without resizing them. The arithmetic loop consequently avoids repeated
+construction of owned buffers and general heap allocations for each job.
+Thread-local MPIR allocators service arithmetic scratch requests where installed;
+such a request is distinct from an operating-system or general heap allocation.
+The bounded allocator recycles its preallocated blocks, while retained reuse
+data uses bump-backed storage that may grow. Output vectors, decompression
+storage, and compressed or uncompressed reuse entries have separate storage
+costs. The allocation claim concerns the recurring arithmetic, not a guarantee
+that an entire reference calculation performs no allocations.
+
+\paragraph{Small helpers and fixed roles.}
+Small hot-path helpers are inline where practical, and template specialization
+keeps backend and arithmetic-role choices out of repeated dispatch. MT9 binds
+each worker's square/multiply and high/low/sum role when starting the thread;
+its fixed-width variant also binds operand widths once. Dynamic MT9 reads the
+new active widths after acquiring each job. These choices reduce call and
+dispatch overhead without assuming that every MPIR call is inlined. Inlining,
+preallocation, stable ownership, and atomic polling are common performance
+principles across the threaded CPU algorithms, including reuse capture and
+medium-reference regeneration.
+
+\subsection{MT3 authoritative recurrence and thread roles}
+\label{subsec:ref-orbit-mt3}
+
+\code{MT} and \code{MTPeriodicity3} use the same three arithmetic roles;
+the latter enables the caller's low-precision derivative and periodicity work.
+All MPIR states and mailbox jobs are initialized before the loop, starting
+from $z_1=c$. The X worker squares a stable snapshot of the old real coordinate;
+the Y worker squares a stable snapshot of the old imaginary coordinate. Each also
+extracts its coordinate's low-precision shadow. The caller owns the cross
+product, component assembly, sample/compression output, stopping checks, and
+optional caller-side reuse capture. Mode-2 and mode-3 authoritative reuse add
+the capture worker detailed in \cref{tab:reference-reuse-threads}; that worker
+does not compute a fourth recurrence product.
 
 \paragraph{Asynchronous squaring.}
 During authoritative orbit evaluation, two worker threads compute the squared
@@ -48,6 +106,44 @@ The schedule evaluates the same polynomial as the single-threaded factored
 path, but its separately rounded squares need not give bitwise-identical
 results at finite precision.
 
+\begin{figure}[!htbp]
+\centering
+\begin{tikzpicture}[
+  font=\small,
+  task/.style={draw, rounded corners=2pt, align=center, minimum height=9mm,
+    text width=29mm, inner sep=3pt},
+  flow/.style={-{Latex[length=2mm]}, thick}]
+  \node[anchor=west, font=\bfseries] at (0,1.0) {ST: one caller, two serial products};
+  \node[task] (stold) at (1.5,0) {old $x_n,y_n$};
+  \node[task] (sty) at (5.1,0) {$(2x_n)y_n+c_y$\\in scratch};
+  \node[task] (stx) at (8.7,0) {$s=x_n+y_n$\\$t=x_n-y_n$\\$st+c_x$};
+  \node[task] (stswap) at (12.3,0) {install $x_{n+1}$;\\swap in $y_{n+1}$};
+  \draw[flow] (stold) -- (sty);
+  \draw[flow] (sty) -- (stx);
+  \draw[flow] (stx) -- (stswap);
+  \node[anchor=west, font=\bfseries] at (0,-1.25) {MT3: stable old operands feed three concurrent roles};
+  \node[task] (mtold) at (1.5,-3.6) {old $x_n,y_n$\\snapshots};
+  \node[task] (mtxsq) at (5.1,-2.0) {X worker: $x_n^2$};
+  \node[task] (mtysq) at (5.1,-3.6) {Y worker: $y_n^2$};
+  \node[task] (mty) at (5.1,-5.2) {caller: $2x_ny_n+c_y$\\gives $y_{n+1}$};
+  \node[task] (mtx) at (10.5,-2.8) {caller: $x_n^2-y_n^2$\\${}+c_x$};
+  \node[task] (nexty) at (10.5,-5.2) {Y lookahead:\\$y_{n+1}^2$};
+  \draw[flow] (mtold) -- (mtxsq);
+  \draw[flow] (mtold) -- (mtysq);
+  \draw[flow] (mtold.east) -- (mty.west);
+  \draw[flow] (mtxsq) -- (mtx);
+  \draw[flow] (mtysq) -- (mtx);
+  \draw[flow] (mty) -- (nexty);
+  \draw[flow, dashed] (mtysq.east) -| (nexty.north);
+\end{tikzpicture}
+\caption[CPU reference recurrence dependencies]{CPU arithmetic schedules.
+  ST preserves the old coordinates until both factored products have consumed
+  them. MT3 joins both squares before real assembly. The dashed edge requires
+  the previous Y-square result to be saved before the Y worker accepts its
+  lookahead job. The diagram omits storage and low-precision checks.}
+\label{fig:cpu-reference-dependencies}
+\end{figure}
+
 \paragraph{Lock-free handoff with prefetch.}
 Inter-thread communication is implemented using a minimal lock-free mailbox
 (\code{ThreadPtrs<T>}) consisting of atomic \code{In} and \code{Out}
@@ -63,12 +159,28 @@ pointers.  The protocol proceeds as follows:
         buffers may be reused.  A published pointer is a handoff, not permission
         for both threads to mutate the same operands concurrently.
 \end{enumerate}
+The legacy worker claims \code{In} with an acquire compare/exchange after
+relaxed polling. Completion and retrieval use their existing pointer
+compare/exchange operations; some stores are relaxed. This protocol is not
+the per-worker acquire/release state machine used by MT9. Polling loops use
+the processor pause hint described in \cref{subsec:ref-orbit-cpu-principles}.
 To reduce cache-miss latency, \code{PrefetchHighPrec} touches MPIR metadata
 and limb data using a fixed 64-byte stride.  In authoritative \code{MT3},
 the main thread prefetches completed square results; the explicit square-worker
 operand-prefetch calls are inactive.  The reuse perturbation workers also
 prefetch their operands.  Prefetching can hide some memory latency, but its
 benefit depends on the precision and cache traffic.
+
+\paragraph{Publication and shutdown.}
+The caller publishes the preceding low-precision sample after the first
+iteration, while workers operate on stable current inputs. It retains the
+completed current Y-square separately before dispatching lookahead, and waits
+for an earlier capture before overwriting a reuse job. Escape, periodicity,
+iteration limits, or cancellation can leave a lookahead job outstanding.
+Stop sentinels request shutdown after any current job; joins ensure completion
+before shared job buffers are destroyed. Worker-local MPIR objects are
+destroyed before their thread-local allocator shutdown. The same lifetime
+ordering applies to an additional authoritative reuse worker.
 
 \subsection{Precision-dependent single-thread versus multi-thread trade-offs}
 \label{subsec:ref-orbit-mt-tradeoff}
@@ -101,10 +213,10 @@ the minimum precision margin and excluding reuse padding. It selects
 \code{STPeriodicity} below $640$ bits, \code{MTPeriodicity3} from $640$ through
 $6{,}783$ bits, and \code{MTPeriodicity3\-PerturbMTHigh\-MTMed3} from $6{,}784$
 through $16{,}383$ bits. At $16{,}384$ through $32{,}767$ bits it selects
-\code{MTPeriodicity9\-Karatsuba}, without a hardware-concurrency test.
+\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision}, without a hardware-concurrency test.
 At $32{,}768$ bits and above it selects GPU reference generation when CUDA,
 the effective renderer's reference format, and the supported precision capacity
-permit it; otherwise it retains MT9. These are fixed policy thresholds rather
+permit it; otherwise it uses dynamic MT9. These are fixed policy thresholds rather
 than a hardware benchmark. Eligibility and precision limits are described in
 \cref{subsec:ref-orbit-pipeline}.
 
@@ -112,23 +224,31 @@ than a hardware benchmark. Eligibility and precision limits are described in
 Let $C_{\mathrm{mul}}$ be one full-precision multiplication's cost,
 $C_{\mathrm{sq}}$ a square's cost, $C_{\mathrm{low}}$ the main thread's
 reduced-precision work, $C_{\mathrm{join}}$ the handoff and waiting overhead,
-and $C_{\mathrm{assemble}}$ the final additions and publication.  Ignoring
+and $C_{\mathrm{assemble}}$ the final additions and publication. Let
+$C_{\mathrm{form}}$ cover ST's sum, difference, and doubled-operand formation.
+The factored ST path must be compared with its actual two products, rather
+than a hypothetical serial execution of all three expanded products. Ignoring
 memory contention and optional reuse work, the critical paths are approximately
 \begin{align}
 T_{\mathrm{ST}} &\approx 2C_{\mathrm{mul}}+C_{\mathrm{low}}
-                  +C_{\mathrm{assemble}}, \\
+                  +C_{\mathrm{form}}+C_{\mathrm{assemble}}, \\
+T_{\mathrm{expanded,serial}} &\approx 2C_{\mathrm{sq}}+C_{\mathrm{mul}}
+                  +C_{\mathrm{low}}+C_{\mathrm{assemble}}, \\
 T_{\mathrm{MT3}} &\approx
   \max(C_{\mathrm{sq}},C_{\mathrm{mul}}+C_{\mathrm{low}})
   +C_{\mathrm{join}}+C_{\mathrm{assemble}}.
 \end{align}
 The maximum appears because the three product tasks overlap; the final
 assembly waits for the slowest.  As an illustrative calculation, costs of
-$12$, $10$, $1$, $2$, and $1$ time units respectively give
-$T_{\mathrm{ST}}\approx26$ and $T_{\mathrm{MT3}}\approx16$.
+$12$, $10$, $1$, $2$, and $1$ time units for multiplication, square, reduced
+work, join, and assembly, with $C_{\mathrm{form}}=1$, give
+$T_{\mathrm{ST}}\approx27$, $T_{\mathrm{expanded,serial}}\approx34$, and
+$T_{\mathrm{MT3}}\approx16$.
 If multiplication and squaring each cost only $0.05$ units but joining still
-costs $0.2$, with $0.01$ each for reduced work and assembly, the corresponding
-costs are $0.12$ and $0.27$.  These are examples of the model, not measured
-benchmarks.  More cores cannot eliminate the join, and shared memory bandwidth
+costs $0.2$, with $0.01$ each for reduced work, formation, and assembly, ST and
+MT3 cost $0.13$ and $0.27$. These are examples of the model, not measured
+benchmarks. It is a per-batch approximation, not an exact steady-state model
+of Y-square lookahead. More cores cannot eliminate the join, and shared memory bandwidth
 can make the parallel products slower than isolated ones.
 
 Overall, single-threaded and multithreaded reference-orbit evaluation are
@@ -152,9 +272,12 @@ Both implementations reconstruct the split integer products exactly.
 Fractadyne additionally uses a derivative-driven adaptive working-precision
 schedule: when the schedule lowers precision, its recurrence products,
 additions, and subtractions round at that reduced precision. FractalShark's
-MT9 backend keeps recurrence addition and subtraction at the full configured
-MPIR precision throughout the orbit. Its derivative remains a reduced-precision
-periodicity estimate; it does not lower the arithmetic precision. In particular,
+fixed \code{MTPeriodicity9Karatsuba} backend keeps recurrence addition and
+subtraction at the full configured MPIR precision throughout the orbit. Its
+derivative remains a reduced-precision periodicity estimate. The dynamic
+variant described in \cref{subsec:ref-orbit-dynamic-precision}
+also adjusts the arithmetic precision and independently certifies its samples.
+In particular,
 ``half-width'' describes integer multiplication operands, not a reduction of
 the recurrence's configured precision. The comparison refers to the inspected
 Fractadyne revision identified in the bibliography.
@@ -199,6 +322,40 @@ benchmark mode, while derivative calculations and escape termination remain acti
 Each square has high, low, and sum workers; its high worker assembles the
 product after its two followers complete. The caller computes the cross
 product's high part, while two workers compute its low and sum parts.
+\Cref{tab:mt9-worker-roles} accounts for every arithmetic thread. $X$ and $Y$
+are the unsigned mantissas; signs and exponents are restored when the complete
+products are installed in their MPIR destinations.
+
+\begin{table}[!htbp]
+\centering
+\small
+\caption[MT9 thread ownership]{All nine MT9 arithmetic roles. Fixed and dynamic
+  precision use the same worker graph; certification does not add a tenth thread.}
+\label{tab:mt9-worker-roles}
+\begin{tabularx}{\textwidth}{l l X}
+\hline
+\textbf{Thread} & \textbf{Integer product} & \textbf{Additional responsibility} \\
+\hline
+Worker 0 & $X_H^2$ & Wait for workers 1 and 2; assemble $X^2$. \\
+Worker 1 & $X_L^2$ & Return the low square to worker 0. \\
+Worker 2 & $(X_H+X_L)^2$ & Return the sum square to worker 0. \\
+Worker 3 & $Y_H^2$ & Wait for workers 4 and 5; assemble $Y^2$. \\
+Worker 4 & $Y_L^2$ & Return the low square to worker 3. \\
+Worker 5 & $(Y_H+Y_L)^2$ & Return the sum square to worker 3. \\
+Worker 6 & $X_LY_L$ & Return the low cross product to the caller. \\
+Worker 7 & $(X_H+X_L)(Y_H+Y_L)$ & Return the sum cross product to the caller. \\
+Caller & $X_HY_H$ & Assemble $XY$, join both square leads, update both
+  coordinates, sample, check termination, and manage dynamic precision. \\
+\hline
+\end{tabularx}
+\end{table}
+
+After product completion, the caller forms $y_{n+1}=2x_ny_n+c_y$ and
+$x_{n+1}=x_n^2-y_n^2+c_x$ from the same old-state batch. Low-precision
+derivative tracking, scheduling, accumulated-error enclosure, and conversion
+certification all run on the caller. The last three activities are present
+only in the dynamic variant; no worker independently chooses a precision.
+
 Iteration zero is handled by a separate prologue, which captures $z_1=c$ and
 advances the recurrence without publishing a sample or updating the derivative.
 The steady loop begins at index one and publishes the preceding sampled state,
@@ -213,3 +370,384 @@ preventing a lead from treating the previous Idle state as new completion.
 There is at most one outstanding job per worker, so generation counters and
 a shared completion counter are unnecessary. Pending arithmetic must finish
 before snapshots are overwritten or workers are stopped.
+Each worker's MPIR scratch lifetime is scoped inside its thread. On normal
+exit, cancellation, or a dynamic restart, outstanding batches complete before
+Stop is published; all eight workers are joined before their owned buffers
+are destroyed. A rejected dynamic attempt is discarded before fixed MT9
+restarts. The heuristic schedule can therefore affect cost and acceptance,
+but cannot bypass the accepted-sample certificate derived next. The fallback
+does not inherit a certificate from the rejected attempt.
+
+\subsection{Optional dynamic working precision}
+\label{subsec:ref-orbit-dynamic-precision}
+
+\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} is an optional alternative
+to fixed MT9. It uses the same exact split-product algebra, with a variable
+active limb count for the recurrence. The current \code{Auto} policy selects
+the dynamic variant in the MT9 range and when GPU reference generation is
+ineligible. Explicitly selecting fixed MT9 disables dynamic precision.
+The dynamic variant does not alter the other CPU backends, CUDA reference
+generation, or authoritative reuse modes.
+The option appears in the GUI as \emph{MT9 + Periodicity + Karatsuba + Dynamic
+Precision}; it is not currently an accepted explicit CLI algorithm name,
+although the CLI's \code{Auto} selection can resolve to this backend.
+
+Two mathematical arguments have different roles. Parameter sensitivity predicts
+a working precision likely to be economical. An independent enclosure of the
+accumulated orbit error certifies the conversions actually consumed downstream.
+The precision proposal is heuristic; the acceptance condition has a proof under
+the arithmetic assumptions stated below. In particular, the proof applies to
+any permitted sequence of working precisions, including one selected with an
+inaccurate derivative.
+
+\subsubsection{Why derivative growth can permit fewer bits}
+\label{subsec:ref-orbit-dynamic-sensitivity}
+
+Let $c_\star$ denote the finite coordinates supplied to reference generation,
+treated as an exact complex number, and let $z_n^\star$ denote their exact
+mathematical orbit. These coordinates need not equal an unrounded decimal
+location originally entered by a user. Differentiating the recurrence gives
+\begin{equation}
+ d_{n+1}^\star=2z_n^\star d_n^\star+1,
+ \qquad d_0^\star=0,\quad d_1^\star=1.
+ \label{eq:dynamic-derivative}
+\end{equation}
+Locally, $z_n^\star(c_\star+\Delta c)-z_n^\star(c_\star)
+=d_n^\star\Delta c+O(|\Delta c|^2)$. Thus a large $|d_n^\star|$ magnifies
+the displacement corresponding to a fixed fraction of a pixel. A small error
+in the orbit can then represent a still smaller displacement in parameter
+space. The backward-error viewpoint also appears in earlier perturbation
+error analyses~\cite{Knighty2016Accuracy,MandelbrotNotes2018}.
+
+For a step evaluated at $P$ bits, a useful model for its local rounding residual
+is $C S_n2^{-P}$, where $C$ accounts for the arithmetic operations and
+\begin{equation}
+ S_n=\max(|z_n^\star|^2,|c_\star|).
+ \label{eq:dynamic-operand-scale}
+\end{equation}
+The scale concerns the operands. If $(z_n^\star)^2$ nearly cancels
+$c_\star$, the small result does not undo rounding already incurred in the
+products. Requiring the local parameter-normalized residual to be about
+$C2^{-P_{\mathrm{full}}-g}$ motivates the proposal
+\begin{equation}
+ P_{n+1}^{\mathrm{proposal}}
+ =P_{\mathrm{full}}+\log_2 S_n-\log_2|d_{n+1}^\star|+g,
+ \qquad g=112.
+ \label{eq:dynamic-precision-proposal}
+\end{equation}
+Here $P_{\mathrm{full}}$ is the configured working precision, including its
+existing coordinate-precision margin; $2^{-P_{\mathrm{full}}}$ is a budget
+scale, not an exact identity for pixel spacing. The constant $g$ supplies a
+safety margin for the proposal, rather than an accumulated-error theorem.
+
+The quadratic recurrence supplies explicit conditions for derivative growth.
+Complex multiplication preserves magnitudes multiplicatively, so rotation
+alone introduces no extra amplification in a Euclidean disk. The triangle
+inequalities applied to \eqref{eq:dynamic-derivative} give
+\begin{equation}
+ \bigl|2|z_n^\star||d_n^\star|-1\bigr|
+ \le |d_{n+1}^\star|
+ \le 2|z_n^\star||d_n^\star|+1.
+ \label{eq:dynamic-derivative-growth}
+\end{equation}
+For example, $|z_n^\star|\ge1$ and $|d_n^\star|\ge2$ imply
+$|d_{n+1}^\star|\ge\tfrac32|d_n^\star|$. If the orbit continues to satisfy
+the magnitude condition, the derivative grows at least geometrically.
+The condition is sufficient and need not hold along every useful orbit.
+Cancellation against the additive $1$ remains possible: at $c_\star=-1/2$,
+$z_1^\star=-1/2$, $d_1^\star=1$, and $d_2^\star=0$.
+A near-return makes the next derivative close to $1$ when
+$|2z_n^\star d_n^\star|$ is small; small $|z_n^\star|$ alone does not
+establish that condition.
+
+\subsubsection{Accumulation and the limits of the precision proposal}
+
+Write $\widetilde z_n^\star$ for the working state and
+$\varepsilon_n=\widetilde z_n^\star-z_n^\star$ for its error. A complete
+computed step has a residual $\rho_n$ defined by
+\begin{equation}
+ \widetilde z_{n+1}^\star=(\widetilde z_n^\star)^2+c_\star+\rho_n.
+ \label{eq:dynamic-local-residual}
+\end{equation}
+The difference of squares gives two equivalent \emph{exact} identities:
+\begin{align}
+ \varepsilon_{n+1}
+ &=2z_n^\star\varepsilon_n+\varepsilon_n^2+\rho_n \notag\\
+ &=2\widetilde z_n^\star\varepsilon_n-\varepsilon_n^2+\rho_n.
+ \label{eq:dynamic-exact-error}
+\end{align}
+There is no omitted Taylor remainder: the complete nonlinear contribution is
+the explicit quadratic term. Its magnitude can be bounded at each
+step, including near a return to zero.
+
+Where the relevant derivatives are nonzero, define the parameter-normalized
+error $q_n=\varepsilon_n/d_n^\star$. Substitution into the first identity gives
+\begin{equation}
+ q_{n+1}=\left(1-\frac{1}{d_{n+1}^\star}\right)q_n
+       +\frac{\varepsilon_n^2+\rho_n}{d_{n+1}^\star}.
+ \label{eq:dynamic-normalized-error}
+\end{equation}
+The transport factor is close to $1$ when $|d_{n+1}^\star|$ is large.
+Let $N$ be the final iteration index for the following estimates.
+For the \emph{linearized model}, start with zero error at $z_0^\star=0$
+and include any initialization error in $\rho_0$. If
+$|\rho_{k-1}/d_k^\star|\le\eta$ for $1\le k\le N$ and these derivatives
+are nonzero, repeated substitution yields
+\begin{equation}
+ |q_N|\le\eta\sum_{k=1}^{N}
+       \prod_{j=k+1}^{N}\left|1-\frac{1}{d_j^\star}\right|.
+ \label{eq:dynamic-linearized-accumulation}
+\end{equation}
+An empty product equals $1$. Since $|1-u|\le1+|u|\le\exp(|u|)$,
+\begin{equation}
+ \prod_{j=k+1}^{N}\left|1-\frac{1}{d_j^\star}\right|
+ \le\exp\left(\sum_{j=k+1}^{N}\frac{1}{|d_j^\star|}\right).
+ \label{eq:dynamic-transport-bound}
+\end{equation}
+Sustained geometric growth makes the reciprocal-derivative sum bounded.
+If each transport product is at most $K$, the linearized accumulated error
+is at most $KN\eta$. Consequently, a margin $g$ absorbs that factor only
+when its size, together with the local arithmetic constants, fits the
+budget. The full argument must also account for the quadratic terms.
+
+Equations~\eqref{eq:dynamic-normalized-error}--\eqref{eq:dynamic-transport-bound}
+explain why reducing precision can work in a growing-derivative regime.
+They also identify the assumptions needed for a predictive bound. The state
+transport product $\prod 2z_j^\star$ is not generally a ratio of parameter
+derivatives because \eqref{eq:dynamic-derivative} injects $1$ at every step.
+At $c_\star=-1/2$, an existing state perturbation is transported from step
+$1$ to step $2$ with linear factor $-1$, while $d_2^\star/d_1^\star=0$.
+An arbitrary sequence of rounding residuals therefore cannot be identified
+with one common parameter displacement throughout the orbit.
+
+\paragraph{The implemented schedule.}
+\code{RefOrbitPrecisionSchedule} advances a separate approximate complex
+derivative using binary64 components and one shared wide exponent. It proposes
+work using the component norm $\|\widetilde d\|_\infty$ and an upper estimate
+of the operand scale. For a given complex value, replacing its Euclidean norm
+by the component norm asks for at most $\log_2\sqrt2=1/2$ additional bit;
+that norm comparison does not bound the derivative tracker's arithmetic error.
+The periodicity derivative remains separate.
+
+With $w=\code{GMP\_NUMB\_BITS}$, the tier quantum is
+\begin{equation}
+ Q=\max\left(w,\;w\left\lfloor\frac{P_{\mathrm{full}}}{64w}\right\rfloor\right).
+ \label{eq:dynamic-tier-quantum}
+\end{equation}
+For a finite proposal $a$, the requested precision is
+$\min(P_{\mathrm{full}},Q\lceil\max(w,a)/Q\rceil)$.
+The startup step stays at full precision, as do nonfinite proposals.
+Later requests can decrease or increase. As an illustrative calculation,
+$P_{\mathrm{full}}=16{,}384$, $w=64$, unit operand scale, and derivative norm
+$2^{8192}$ give $Q=256$ and $a=8304$, hence a request of $8448$ bits.
+These values illustrate tier rounding rather than a measured orbit.
+Raising a subsequent request restores arithmetic capacity; it does not
+restore discarded state or reduce the accumulated-error enclosure.
+
+\subsubsection{A schedule-independent enclosure proof}
+\label{subsec:ref-orbit-dynamic-enclosure}
+
+Let $E_n\ge|\varepsilon_n|$, let $R_n\ge|\widetilde z_n^\star|$, and let
+$\tau_n\ge|\rho_n|$ bound the complete local residual. The second identity in
+\eqref{eq:dynamic-exact-error} implies
+\begin{equation}
+ |\varepsilon_{n+1}|\le2R_nE_n+E_n^2+\tau_n.
+ \label{eq:dynamic-disk-inequality}
+\end{equation}
+Choosing
+\begin{equation}
+ E_{n+1}=\operatorname{up}(2R_nE_n+E_n^2+\tau_n)
+ \label{eq:dynamic-disk-update}
+\end{equation}
+therefore preserves the enclosure. Here $\operatorname{up}$ means evaluating
+the nonnegative bound with outward rounding at each operation. A Euclidean
+disk respects complex rotation; independent component boxes can instead
+introduce artificial growth under repeated rotations. Disk propagation for
+the Mandelbrot polynomial also appears in~\cite{MandelbrotNotes2018}.
+
+The initialization and precision changes require explicit accounting. The
+working coordinates $\widetilde c$ are copied once at full working precision.
+Their copy-error norm $C_{\mathrm{copy}}\ge|\widetilde c-c_\star|$ initializes
+$E_1$, since the prologue starts from $\widetilde z_1^\star=\widetilde c$.
+The same coordinate error contributes to $\tau_n$ on every later addition.
+If changing precision clips the state to $\overline z_n^\star$, first set
+\[
+ \overline E_n=\operatorname{up}
+   (E_n+|\overline z_n^\star-\widetilde z_n^\star|_{\mathrm{upper}}).
+\]
+Apply \eqref{eq:dynamic-disk-update} to the clipped state and enlarged radius.
+Componentwise truncation toward zero cannot increase the state magnitude, so
+the magnitude upper bound captured before clipping remains valid. Subsequent
+uses of $\widetilde z_n^\star,E_n$ refer to that current state and enclosure.
+
+\paragraph{Bounding the complete local residual.}
+The implementation uses the actual MPIR limb representation, rather than
+assuming each operation has a relative error measured against its result
+\cite{GMPFloatManual,MPIR_Library}. Write $\pi=\code{\_mp\_prec}$ for a
+destination's internal limb precision, distinct from the bit count $P$.
+The estimates consumed by \code{ComputeStep} are as follows:
+\begin{itemize}
+ \item Split-product assembly is exact over all stored input limbs.
+       Final retention of $q$ leading limbs at limb exponent $e$ has the
+       error bound \eqref{eq:mt9-local-truncation}; a product shorter than
+       the retention capacity has no discarded product tail.
+ \item Copying an operand has zero error if its occupied limbs fit the
+       destination's $\pi+1$ retained limbs. Otherwise its discarded tail
+       is less than $\beta^{e-(\pi+1)}$. The same rule bounds explicit
+       state clipping.
+ \item For addition/subtraction, let $e_{\max}$ be the larger operand
+       exponent and let $e_{\min}$ be the lowest occupied operand-limb
+       position. If $e_{\max}-e_{\min}\le\pi$, the occupied span fits and
+       the operation is exact. Otherwise $4\beta^{e_{\max}-\pi}$ bounds
+       aligned operand tails and final truncation. Cancellation does not
+       reduce those operand-tail bounds.
+ \item Doubling is exact when the occupied source fits $\pi$ limbs.
+       Otherwise $4\beta^{e-\pi}$ conservatively bounds guard-limb clipping.
+\end{itemize}
+For the real update, sum the two square-product bounds and the following
+subtraction and coordinate-addition bounds to obtain $a_n$. For the imaginary
+update, sum twice the cross-product bound, the doubling bound, and the
+coordinate-addition bound to obtain $b_n$. Then use
+\[
+ \tau_n=\operatorname{up}\left(\sqrt{a_n^2+b_n^2}+C_{\mathrm{copy}}\right).
+\]
+Rounding metadata is captured before its operands are overwritten. Each
+primitive estimate is zero or a power of two; the four real and three
+imaginary terms are accumulated outward before updating the disk.
+
+Nonnegative bounds use normalized binary64 significands with checked
+64-bit exponents, separately from the renderer's HDR arithmetic. The bound
+operations round outward, including when a small aligned addend is lost.
+The implementation assumes IEEE binary64, precise floating-point evaluation,
+and the supported x64 square-root rounding behavior. Exponents outside the
+supported range and invalid bounds reject an attempt; they cannot silently
+turn into zero. These arithmetic hypotheses are part of the certificate.
+
+\paragraph{Enclosure proposition and proof.}
+For any permitted sequence of working precisions, suppose that coordinate
+copying and state clipping are enclosed as above, every local residual bound
+is sound, and every bound operation rounds outward without an undetected
+range failure. Then $|\widetilde z_n^\star-z_n^\star|\le E_n$ at every
+certified state. The coordinate-copy bound proves the base case. The triangle
+inequality preserves it during state clipping. Equation~\eqref{eq:dynamic-disk-inequality}
+and outward evaluation prove the induction step. Neither derivative accuracy,
+monotonic derivative growth, nor omission of the nonlinear term is needed.
+The result is an arithmetic enclosure theorem, conditional on the stated
+primitive bounds and floating-point behavior; it is not a claim of formal
+verification of the machine code.
+
+\subsubsection{Conversion certificates and fixed restart}
+\label{subsec:ref-orbit-dynamic-certificate}
+
+A small error bound alone does not establish identical stored conversions.
+The recurrence itself supplies an exact counterexample to uniform boundary
+separation:
+\begin{equation}
+ c_\star=-\tfrac12+t
+ \quad\Longrightarrow\quad
+ z_2^\star=-\tfrac14+t^2.
+ \label{eq:dynamic-boundary-example}
+\end{equation}
+A sufficiently small dyadic $t=2^{-m}$ places the exact result arbitrarily
+close to the representable boundary $-1/4$. No orbit-independent positive
+distance from conversion boundaries follows from the quadratic structure.
+The implemented acceptance test measures that distance for each sampled state.
+
+MPIR's conversion to a normalized binary64 significand truncates toward zero
+\cite{GMPFloatManual}. For a nonzero working component $v$, let $d$ be the
+positive truncated normalized significand and let $s$ be its returned binary
+exponent. Its positive-magnitude conversion bin is
+\begin{equation}
+ [B_0,B_1)=
+ [d\,2^s,\operatorname{nextafter}(d,+\infty)\,2^s).
+ \label{eq:dynamic-conversion-bin}
+\end{equation}
+Every exact value of the same sign whose magnitude lies in that bin has the
+same normalized conversion. Since the complex error disk bounds each
+component error, the strict test
+\begin{equation}
+ E_n<\min(|v|-B_0,\;B_1-|v|)
+ \label{eq:dynamic-conversion-test}
+\end{equation}
+places the entire component enclosure inside the bin and preserves its sign.
+It therefore certifies the conversion. Zero error certifies equality directly;
+strict inequalities otherwise conservatively reject inclusive bin endpoints.
+
+For example, with $s=0$, let $d=3/4$ and $v=3/4+2^{-55}$. The bin width is
+$2^{-53}$, so the two gaps are $2^{-55}$ and $3\cdot2^{-55}$.
+An error radius $2^{-56}$ passes; $2^{-54}$ fails. The comparison concerns
+the bin gaps, rather than the working precision alone.
+
+The bin boundaries are exact dyadics. Boundary scratch has $256$ bits;
+gap scratch has the full working precision plus two limbs, allowing exact
+subtraction even for a gap far below the leading limb. A defensive subtraction
+bound is added to $E_n$ before comparison with a lower bound for the gap.
+Native subnormal/overflow cases and unsupported HDR exponents use fixed
+fallback. For exactly real $c_\star$, the imaginary orbit remains exactly
+zero by the recurrence, independently of the real-component error radius;
+the implementation preserves that structural exception.
+
+\paragraph{Accepted-sample theorem.}
+Under the enclosure proposition's hypotheses and the supported conversion
+semantics, every component accepted by the conversion test equals the
+conversion of the exact orbit for the finite input coordinates. The proof is
+enclosure containment in one conversion bin, with the exact-zero cases above.
+Certifying the normalized binary64/exponent pair also certifies the existing
+deterministic casts to the renderer's sample types. This theorem holds for
+any allowed precision schedule. An approximate derivative can affect the
+amount of work or the likelihood of restart, but cannot invalidate an
+accepted sample when the theorem's hypotheses hold.
+
+Each sampled state is certified before it supplies input to the existing
+publication, periodicity, or escape pipeline. A dynamic attempt remains private
+until completion. An ambiguous conversion or invalid bound rejects the attempt;
+after workers, precision guards, and TLS-owned arithmetic objects unwind,
+fixed MT9 restarts from the original coordinates. Cancellation publishes only
+the already certified prefix and does not start another attempt.
+
+The certificate applies to samples entering storage/compression. Compression
+retains its established error contract. The periodicity test remains a
+termination heuristic, and downstream pixel arithmetic has its own errors.
+Fixed fallback retains fixed MT9's existing numerical contract; its output
+does not inherit the dynamic attempt's certificate. Likewise, agreement with
+fixed MT9 in regression fixtures is evidence about those fixtures, rather
+than a universal identity between two finite-precision algorithms.
+
+\subsubsection{Allocation, cost, and provenance}
+
+The dynamic specialization allocates its maximum operand, worker, and assembly
+capacity once, then publishes active limb lengths with each joined batch.
+\code{mpf\_set\_prec\_raw} changes arithmetic capacity without reallocating or
+truncating an existing value. Explicit self-assignment clips the state before
+workers snapshot it, and its error is added to the disk. A precision guard
+restores the original allocation precision before destruction, as required
+by the MPIR/GMP interface~\cite{GMPFloatManual}. Workers and all arithmetic
+objects are destroyed before allocator TLS shutdown. Fixed MT9 is a separate
+compile-time specialization and does not perform the dynamic certification work.
+
+If $C_{\mathrm{step}}(P)$ denotes the arithmetic cost at $P$ bits, the dynamic
+attempt costs approximately
+$\sum_n C_{\mathrm{step}}(P_n)$ plus certification and scheduling overhead,
+instead of $N C_{\mathrm{step}}(P_{\mathrm{full}})$. Reduced limb counts can
+save substantial product work in a favorable growth regime. Conservative
+enclosures or conversion boundaries can instead cause an attempt followed by
+a full fixed restart. The strategy therefore offers a workload-dependent
+trade-off, with no universal speedup implied by derivative growth.
+
+Fractadyne supplies the immediate precision-schedule model~\cite{Fractadyne}.
+An earlier derivative-driven implementation is present in
+\code{gcollombet/mandelbrot} at the June 30, 2026 commit
+\cite{Collombet2026Precision}; the linked design note was added at the July 1
+commit~\cite{Collombet2026PrecisionDesign}. Its target-depth budget and
+precision representation differ from FractalShark's. The derivation above
+uses the exact normalized-error identity rather than assuming that a
+parameter-derivative ratio equals a state-transport product.
+
+Related numerical-analysis work includes conditioning-driven precision in
+homotopy path tracking~\cite{Bates2008AdaptivePrecision}, decreasing working
+precision in self-adaptive simulation of chaotic differential equations
+\cite{QinLiao2023AdaptiveCNS}, and parameter shadowing for families of real
+maps~\cite{NusseYorke1988Shadowing}. Those results provide context with
+different hypotheses; the sample certificate here follows from the explicit
+quadratic enclosure and conversion-bin proof. The cited sources establish
+precedents without asserting universal priority for the rendering strategy.

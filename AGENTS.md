@@ -87,6 +87,10 @@ import names. Spell out the namespace path at each use site for names from other
 aliases whose only purpose is shortening a qualified name; keep type aliases that define intentional
 domain or API types. Unqualified names remain valid inside their owning namespace.
 
+Use `FractalSharkSeriousException` by default for explicit application exceptions. Use another
+exception type only when a specific API or external contract requires it; do not catch and translate
+exceptions solely to change their type.
+
 Do not add catch/except handlers by default, including in scripts and CI. Use RAII or language-native
 cleanup for resources, and propagate errors to an existing boundary. Add a narrow handler only where
 the code can recover, preserve a defined error contract, or keep exceptions from escaping a thread,
@@ -106,8 +110,12 @@ When modifying a function, rename legacy `snake_case` identifiers within that fu
 whole-file naming sweeps. Use forward slashes in include paths. Use `std::unique_ptr` for ownership and
 raw pointers for non-owning references; do not introduce `std::shared_ptr`. Define `NOMINMAX` and
 `WIN32_LEAN_AND_MEAN` before including `<Windows.h>`. Wrap warning suppressions in
-`#pragma warning(push)`/`pop`; never suppress warnings project-wide. Use `std::cout` for ordinary
-diagnostics and reserve `OutputDebugStringA` for heap or panic paths.
+`#pragma warning(push)`/`pop`; never suppress warnings project-wide.
+
+Route application diagnostics and errors through `FractalSharkLog::Write` for prebuilt messages or
+`FractalSharkLog::LogLine` for streamed messages. Use `FractalSharkLog::WriteException` to report an
+exception at an existing handling boundary. Do not write application diagnostics directly through
+`std::cout`, `std::cerr`, or `printf`. Reserve `OutputDebugStringA` for existing heap or panic paths.
 
 Never add local arrays to CUDA code. Always pass parameters one at a time so they can be allocated in
 registers.

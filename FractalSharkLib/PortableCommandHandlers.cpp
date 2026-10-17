@@ -295,6 +295,9 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
         case FractalCommand::PerturbationMultithread9KaratsubaPeriodicity:
             OnPerturbationMultithread9KaratsubaPeriodicity();
             return;
+        case FractalCommand::PerturbationMultithread9KaratsubaDynamicPrecision:
+            OnPerturbationMultithread9KaratsubaDynamicPrecision();
+            return;
         case FractalCommand::PerturbationMultithread2PeriodicityPerturbMthighStmed:
             OnPerturbationMt2PerturbMthighStmed();
             return;
@@ -999,8 +1002,16 @@ PortableCommandHandlers::OnPerturbationSinglethreadPeriodicity()
 void
 PortableCommandHandlers::OnPerturbationMultithread9KaratsubaPeriodicity()
 {
-    GetFractal().EnqueueMutation("set perturbation algorithm MT9 Karatsuba periodicity", [](Fractal &f) {
+    GetFractal().EnqueueCommand("set perturbation algorithm MT9 Karatsuba periodicity", [](Fractal &f) {
         f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+    });
+}
+
+void
+PortableCommandHandlers::OnPerturbationMultithread9KaratsubaDynamicPrecision()
+{
+    GetFractal().EnqueueCommand("set perturbation algorithm MT9 dynamic precision", [](Fractal &f) {
+        f.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
     });
 }
 

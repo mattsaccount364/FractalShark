@@ -45,8 +45,8 @@ MagnitudeSize(mpf_srcptr value)
 
 // During constructor unwinding, publish Stop before the worker array's destructors
 // join any threads that started successfully. No batch has been dispatched yet.
-struct RefOrbitKaratsubaProducts::StartupGuard {
-    RefOrbitKaratsubaProducts &Owner;
+template <bool DynamicPrecision> struct RefOrbitKaratsubaProductsT<DynamicPrecision>::StartupGuard {
+    RefOrbitKaratsubaProductsT<DynamicPrecision> &Owner;
     bool Active{true};
     ~StartupGuard()
     {
@@ -56,7 +56,8 @@ struct RefOrbitKaratsubaProducts::StartupGuard {
     }
 };
 
-RefOrbitKaratsubaProducts::RefOrbitKaratsubaProducts(mp_bitcnt_t precisionBits)
+template <bool DynamicPrecision>
+RefOrbitKaratsubaProductsT<DynamicPrecision>::RefOrbitKaratsubaProductsT(mp_bitcnt_t precisionBits)
 {
     static_assert(GMP_NAIL_BITS == 0, "Reference Karatsuba requires nail-free limbs");
     // Ask MPIR for the actual mantissa capacity, including its guard limb. Both
@@ -96,7 +97,8 @@ RefOrbitKaratsubaProducts::RefOrbitKaratsubaProducts(mp_bitcnt_t precisionBits)
     startup.Active = false;
 }
 
-RefOrbitKaratsubaProducts::~RefOrbitKaratsubaProducts()
+template <bool DynamicPrecision>
+RefOrbitKaratsubaProductsT<DynamicPrecision>::~RefOrbitKaratsubaProductsT()
 {
     StopWorkers();
     for (auto &worker : m_Workers) {
@@ -104,10 +106,22 @@ RefOrbitKaratsubaProducts::~RefOrbitKaratsubaProducts()
     }
 }
 
+template <bool DynamicPrecision>
 void
-RefOrbitKaratsubaProducts::Compute(
+RefOrbitKaratsubaProductsT<DynamicPrecision>::Compute(
     mpf_ptr xSquared, mpf_ptr ySquared, mpf_ptr cross, mpf_srcptr x, mpf_srcptr y)
 {
+    if constexpr (DynamicPrecision) {
+        // The previous Compute joined every batch. Publishing Run below releases these
+        // active lengths along with the snapshots, while buffer addresses stay fixed.
+        assert(xSquared->_mp_prec == ySquared->_mp_prec && xSquared->_mp_prec == cross->_mp_prec);
+        const mp_size_t width =
+            std::max(MinimumSplitWidth, static_cast<mp_size_t>(xSquared->_mp_prec) + 1);
+        m_LowWidth = width / 2;
+        m_HighWidth = width - m_LowWidth;
+        assert(m_HighWidth <= static_cast<mp_size_t>(m_X.High.size()));
+        m_CallerJob.Width = m_HighWidth;
+    }
     Prepare(m_X, x);
     Prepare(m_Y, y);
 
@@ -136,9 +150,10 @@ RefOrbitKaratsubaProducts::Compute(
     Store(cross, m_Products[2], m_X, m_Y);
 }
 
-template <RefOrbitKaratsubaProducts::PartKind part, class Parts>
+template <bool DynamicPrecision>
+template <RefOrbitKaratsubaProductsT<DynamicPrecision>::PartKind part, class Parts>
 auto &
-RefOrbitKaratsubaProducts::SelectPart(Parts &parts)
+RefOrbitKaratsubaProductsT<DynamicPrecision>::SelectPart(Parts &parts)
 {
     if constexpr (part == PartKind::High) {
         return parts.High;
@@ -149,9 +164,10 @@ RefOrbitKaratsubaProducts::SelectPart(Parts &parts)
     }
 }
 
-template <RefOrbitKaratsubaProducts::ProductKind kind, bool right>
-RefOrbitKaratsubaProducts::Operand &
-RefOrbitKaratsubaProducts::SelectOperand()
+template <bool DynamicPrecision>
+template <RefOrbitKaratsubaProductsT<DynamicPrecision>::ProductKind kind, bool right>
+typename RefOrbitKaratsubaProductsT<DynamicPrecision>::Operand &
+RefOrbitKaratsubaProductsT<DynamicPrecision>::SelectOperand()
 {
     if constexpr (kind == ProductKind::YSquare || (kind == ProductKind::Cross && right)) {
         return m_Y;
@@ -160,9 +176,11 @@ RefOrbitKaratsubaProducts::SelectOperand()
     }
 }
 
-template <RefOrbitKaratsubaProducts::ProductKind kind, RefOrbitKaratsubaProducts::PartKind part>
-RefOrbitKaratsubaProducts::ArithmeticJob
-RefOrbitKaratsubaProducts::BindJob()
+template <bool DynamicPrecision>
+template <RefOrbitKaratsubaProductsT<DynamicPrecision>::ProductKind kind,
+          RefOrbitKaratsubaProductsT<DynamicPrecision>::PartKind part>
+typename RefOrbitKaratsubaProductsT<DynamicPrecision>::ArithmeticJob
+RefOrbitKaratsubaProductsT<DynamicPrecision>::BindJob()
 {
     auto &left = SelectPart<part>(SelectOperand<kind, false>());
     auto &right = SelectPart<part>(SelectOperand<kind, true>());
@@ -170,9 +188,10 @@ RefOrbitKaratsubaProducts::BindJob()
     return {result.data(), left.data(), right.data(), static_cast<mp_size_t>(left.size())};
 }
 
-template <RefOrbitKaratsubaProducts::ProductKind kind>
+template <bool DynamicPrecision>
+template <RefOrbitKaratsubaProductsT<DynamicPrecision>::ProductKind kind>
 void
-RefOrbitKaratsubaProducts::Multiply(const ArithmeticJob &job) noexcept
+RefOrbitKaratsubaProductsT<DynamicPrecision>::Multiply(const ArithmeticJob &job) noexcept
 {
     // Fixed square/multiply roles remove all task decoding and operand selection
     // from the hot loop. Cross-product operands always have the same padded width.
@@ -183,31 +202,35 @@ RefOrbitKaratsubaProducts::Multiply(const ArithmeticJob &job) noexcept
     }
 }
 
+template <bool DynamicPrecision>
 template <std::size_t index>
 void
-RefOrbitKaratsubaProducts::Dispatch() noexcept
+RefOrbitKaratsubaProductsT<DynamicPrecision>::Dispatch() noexcept
 {
     m_Slots[index].State.store(WorkState::Run, std::memory_order_release);
 }
 
+template <bool DynamicPrecision>
 template <std::size_t index>
 void
-RefOrbitKaratsubaProducts::WaitIdle() noexcept
+RefOrbitKaratsubaProductsT<DynamicPrecision>::WaitIdle() noexcept
 {
     while (m_Slots[index].State.load(std::memory_order_acquire) != WorkState::Idle) {
         _mm_pause();
     }
 }
 
+template <bool DynamicPrecision>
 template <std::size_t index,
-          RefOrbitKaratsubaProducts::ProductKind kind,
-          RefOrbitKaratsubaProducts::PartKind part>
+          RefOrbitKaratsubaProductsT<DynamicPrecision>::ProductKind kind,
+          RefOrbitKaratsubaProductsT<DynamicPrecision>::PartKind part>
 void
-RefOrbitKaratsubaProducts::WorkerLoop() noexcept
+RefOrbitKaratsubaProductsT<DynamicPrecision>::WorkerLoop() noexcept
 {
     WorkerMpirTls tls;
-    // Roles are named once at startup for CPU traces. All pointers and lengths are
-    // bound once because the backing vectors never resize after thread creation.
+    // Roles and pointers are bound once because backing vectors never resize.
+    // Fixed workers also bind lengths once; dynamic workers acquire active lengths
+    // from the caller's release of Run for each completed batch.
     constexpr std::array<const wchar_t *, WorkerCount> names{L"MT9 X high",
                                                              L"MT9 X low",
                                                              L"MT9 X sum",
@@ -217,7 +240,7 @@ RefOrbitKaratsubaProducts::WorkerLoop() noexcept
                                                              L"MT9 XY low",
                                                              L"MT9 XY sum"};
     Environment::SetCurrentThreadName(names[index]);
-    const ArithmeticJob job = BindJob<kind, part>();
+    ArithmeticJob job = BindJob<kind, part>();
     auto &state = m_Slots[index].State;
     for (;;) {
         WorkState command = state.load(std::memory_order_acquire);
@@ -227,6 +250,15 @@ RefOrbitKaratsubaProducts::WorkerLoop() noexcept
         }
         if (command == WorkState::Stop) {
             return;
+        }
+        if constexpr (DynamicPrecision) {
+            if constexpr (part == PartKind::Low) {
+                job.Width = m_LowWidth;
+            } else if constexpr (part == PartKind::High) {
+                job.Width = m_HighWidth;
+            } else {
+                job.Width = m_HighWidth + 1;
+            }
         }
         Multiply<kind>(job);
         if constexpr (part == PartKind::High) {
@@ -240,11 +272,12 @@ RefOrbitKaratsubaProducts::WorkerLoop() noexcept
     }
 }
 
+template <bool DynamicPrecision>
 template <std::size_t index,
-          RefOrbitKaratsubaProducts::ProductKind kind,
-          RefOrbitKaratsubaProducts::PartKind part>
+          RefOrbitKaratsubaProductsT<DynamicPrecision>::ProductKind kind,
+          RefOrbitKaratsubaProductsT<DynamicPrecision>::PartKind part>
 void
-RefOrbitKaratsubaProducts::StartWorker()
+RefOrbitKaratsubaProductsT<DynamicPrecision>::StartWorker()
 {
     // A worker failure is unrecoverable, matching MT3. Arithmetic has no per-job
     // exception bookkeeping; allocations of owned buffers happen before startup.
@@ -252,8 +285,9 @@ RefOrbitKaratsubaProducts::StartWorker()
     m_Workers[index] = std::jthread([this]() noexcept { WorkerLoop<index, kind, part>(); });
 }
 
+template <bool DynamicPrecision>
 void
-RefOrbitKaratsubaProducts::StopWorkers() noexcept
+RefOrbitKaratsubaProductsT<DynamicPrecision>::StopWorkers() noexcept
 {
     // Called only between complete batches, or before any batch during constructor
     // unwinding. No worker can still be waiting for a stopped follower in either case.
@@ -262,10 +296,12 @@ RefOrbitKaratsubaProducts::StopWorkers() noexcept
     }
 }
 
+template <bool DynamicPrecision>
 void
-RefOrbitKaratsubaProducts::Prepare(Operand &output, mpf_srcptr input)
+RefOrbitKaratsubaProductsT<DynamicPrecision>::Prepare(Operand &output, mpf_srcptr input)
 {
     output.Size = MagnitudeSize(input);
+    assert(output.Size <= m_LowWidth + m_HighWidth);
     output.Exponent = input->_mp_exp;
     output.Negative = input->_mp_size < 0;
     // Copy the stored magnitude in bulk and zero only unused padding. Exponent
@@ -273,67 +309,72 @@ RefOrbitKaratsubaProducts::Prepare(Operand &output, mpf_srcptr input)
     const mp_size_t lowSize = std::min(output.Size, m_LowWidth);
     const mp_size_t highSize = output.Size - lowSize;
     std::copy_n(input->_mp_d, lowSize, output.Low.data());
-    std::fill(output.Low.begin() + lowSize, output.Low.end(), 0);
+    std::fill(output.Low.begin() + lowSize, output.Low.begin() + m_LowWidth, 0);
     if (highSize != 0) {
         std::copy_n(input->_mp_d + lowSize, highSize, output.High.data());
     }
-    std::fill(output.High.begin() + highSize, output.High.end(), 0);
+    std::fill(output.High.begin() + highSize, output.High.begin() + m_HighWidth, 0);
     const mp_limb_t carry =
         mpn_add(output.Sum.data(), output.High.data(), m_HighWidth, output.Low.data(), m_LowWidth);
     output.Sum[static_cast<size_t>(m_HighWidth)] = carry;
 }
 
+template <bool DynamicPrecision>
 void
-RefOrbitKaratsubaProducts::AddShifted(std::vector<mp_limb_t> &destination,
-                                      const std::vector<mp_limb_t> &source,
-                                      mp_size_t shift)
+RefOrbitKaratsubaProductsT<DynamicPrecision>::AddShifted(std::vector<mp_limb_t> &destination,
+                                                         const std::vector<mp_limb_t> &source,
+                                                         mp_size_t shift)
 {
-    const auto remaining = static_cast<mp_size_t>(destination.size()) - shift;
-    const mp_limb_t carry = mpn_add(destination.data() + shift,
-                                    destination.data() + shift,
-                                    remaining,
-                                    source.data(),
-                                    static_cast<mp_size_t>(source.size()));
+    const mp_size_t fullSize = DynamicPrecision ? 2 * (m_LowWidth + m_HighWidth) + 2
+                                                : static_cast<mp_size_t>(destination.size());
+    const mp_size_t sourceSize =
+        DynamicPrecision ? 2 * (m_HighWidth + 1) : static_cast<mp_size_t>(source.size());
+    const auto remaining = fullSize - shift;
+    const mp_limb_t carry = mpn_add(
+        destination.data() + shift, destination.data() + shift, remaining, source.data(), sourceSize);
     assert(carry == 0);
     (void)carry;
 }
 
+template <bool DynamicPrecision>
 void
-RefOrbitKaratsubaProducts::Assemble(Product &product)
+RefOrbitKaratsubaProductsT<DynamicPrecision>::Assemble(Product &product)
 {
     // With S=beta^m, C-A-B = XH*YL + XL*YH is nonnegative. The subtraction and
     // shifted additions are exact integers, with no truncated intermediate limbs.
-    const auto sumSize = static_cast<mp_size_t>(product.Sum.size());
-    const mp_limb_t firstBorrow = mpn_sub(product.Sum.data(),
-                                          product.Sum.data(),
-                                          sumSize,
-                                          product.High.data(),
-                                          static_cast<mp_size_t>(product.High.size()));
-    const mp_limb_t secondBorrow = mpn_sub(product.Sum.data(),
-                                           product.Sum.data(),
-                                           sumSize,
-                                           product.Low.data(),
-                                           static_cast<mp_size_t>(product.Low.size()));
+    const mp_size_t sumSize =
+        DynamicPrecision ? 2 * (m_HighWidth + 1) : static_cast<mp_size_t>(product.Sum.size());
+    const mp_size_t highSize =
+        DynamicPrecision ? 2 * m_HighWidth : static_cast<mp_size_t>(product.High.size());
+    const mp_size_t lowSize =
+        DynamicPrecision ? 2 * m_LowWidth : static_cast<mp_size_t>(product.Low.size());
+    const mp_limb_t firstBorrow =
+        mpn_sub(product.Sum.data(), product.Sum.data(), sumSize, product.High.data(), highSize);
+    const mp_limb_t secondBorrow =
+        mpn_sub(product.Sum.data(), product.Sum.data(), sumSize, product.Low.data(), lowSize);
     assert(firstBorrow == 0 && secondBorrow == 0);
     (void)firstBorrow;
     (void)secondBorrow;
     // Low and shifted High occupy adjacent, nonoverlapping ranges. Initialize them
     // by copying rather than clearing the full product and performing two additions.
     // Only the two guard limbs need clearing before the single middle-term addition.
-    std::copy(product.Low.begin(), product.Low.end(), product.Full.begin());
-    std::copy(product.High.begin(), product.High.end(), product.Full.begin() + 2 * m_LowWidth);
-    product.Full[product.Full.size() - 2] = 0;
-    product.Full.back() = 0;
+    std::copy_n(product.Low.begin(), lowSize, product.Full.begin());
+    std::copy_n(product.High.begin(), highSize, product.Full.begin() + 2 * m_LowWidth);
+    const auto fullSize = static_cast<size_t>(2 * (m_LowWidth + m_HighWidth) + 2);
+    product.Full[fullSize - 2] = 0;
+    product.Full[fullSize - 1] = 0;
     AddShifted(product.Full, product.Sum, m_LowWidth);
 }
 
+template <bool DynamicPrecision>
 void
-RefOrbitKaratsubaProducts::Store(mpf_ptr destination,
-                                 const Product &product,
-                                 const Operand &left,
-                                 const Operand &right)
+RefOrbitKaratsubaProductsT<DynamicPrecision>::Store(mpf_ptr destination,
+                                                    const Product &product,
+                                                    const Operand &left,
+                                                    const Operand &right)
 {
-    auto size = static_cast<mp_size_t>(product.Full.size());
+    mp_size_t size = DynamicPrecision ? 2 * (m_LowWidth + m_HighWidth) + 2
+                                      : static_cast<mp_size_t>(product.Full.size());
     while (size > 0 && product.Full[static_cast<size_t>(size - 1)] == 0) {
         --size;
     }
@@ -349,8 +390,12 @@ RefOrbitKaratsubaProducts::Store(mpf_ptr destination,
         left.Negative != right.Negative ? -retained : retained);
     // For exact nonzero XY with normalized limb exponent e, discarding low limbs
     // toward zero gives |stored-XY| < beta^(e-retained). Karatsuba adds no error.
-    // This bound is local to multiplication; orbit precision and MPIR add/sub remain
-    // full width. It does not assert equality with MPIR's clipped-input mpf_mul.
+    // This is a local multiplication bound. The fixed orbit keeps full precision;
+    // the dynamic orbit separately propagates every arithmetic/truncation error.
+    // Neither specialization asserts equality with MPIR's clipped-input mpf_mul.
 }
+
+template class RefOrbitKaratsubaProductsT<false>;
+template class RefOrbitKaratsubaProductsT<true>;
 
 } // namespace FractalShark

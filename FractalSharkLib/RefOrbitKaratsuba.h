@@ -22,19 +22,20 @@ inline constexpr uint64_t RefOrbitKaratsubaAutoPrecisionBits = 16'384;
 
 // Computes three products at full destination precision. Outputs must be distinct, but may
 // alias either input. Full stored input mantissas, including guard limbs, are snapshotted.
-// The fixed precision applies to all outputs and bounds input sizes. Zero and one-limb
-// inputs use the same padded split buffers. All scratch is sized once at construction and reused.
-class RefOrbitKaratsubaProducts {
+// Construction precision bounds all inputs and allocates scratch once. The dynamic specialization
+// selects active widths from destination precision between batches; the fixed specialization binds
+// worker widths once. Zero and one-limb inputs use the same padded split buffers.
+template <bool DynamicPrecision> class RefOrbitKaratsubaProductsT {
 public:
-    explicit RefOrbitKaratsubaProducts(mp_bitcnt_t precisionBits);
-    ~RefOrbitKaratsubaProducts();
+    explicit RefOrbitKaratsubaProductsT(mp_bitcnt_t precisionBits);
+    ~RefOrbitKaratsubaProductsT();
 
     // Workers capture this object and bind pointers into its fixed scratch buffers.
     // Its address and ownership must remain stable until every worker has joined.
-    RefOrbitKaratsubaProducts(const RefOrbitKaratsubaProducts &) = delete;
-    RefOrbitKaratsubaProducts &operator=(const RefOrbitKaratsubaProducts &) = delete;
-    RefOrbitKaratsubaProducts(RefOrbitKaratsubaProducts &&) = delete;
-    RefOrbitKaratsubaProducts &operator=(RefOrbitKaratsubaProducts &&) = delete;
+    RefOrbitKaratsubaProductsT(const RefOrbitKaratsubaProductsT &) = delete;
+    RefOrbitKaratsubaProductsT &operator=(const RefOrbitKaratsubaProductsT &) = delete;
+    RefOrbitKaratsubaProductsT(RefOrbitKaratsubaProductsT &&) = delete;
+    RefOrbitKaratsubaProductsT &operator=(RefOrbitKaratsubaProductsT &&) = delete;
 
     void Compute(mpf_ptr xSquared, mpf_ptr ySquared, mpf_ptr cross, mpf_srcptr x, mpf_srcptr y);
 
@@ -88,14 +89,11 @@ private:
 
     void StopWorkers() noexcept;
     void Prepare(Operand &output, mpf_srcptr input);
-    static void AddShifted(std::vector<mp_limb_t> &destination,
-                           const std::vector<mp_limb_t> &source,
-                           mp_size_t shift);
+    void AddShifted(std::vector<mp_limb_t> &destination,
+                    const std::vector<mp_limb_t> &source,
+                    mp_size_t shift);
     void Assemble(Product &product);
-    static void Store(mpf_ptr destination,
-                      const Product &product,
-                      const Operand &left,
-                      const Operand &right);
+    void Store(mpf_ptr destination, const Product &product, const Operand &left, const Operand &right);
 
     mp_size_t m_LowWidth{};
     mp_size_t m_HighWidth{};
@@ -108,5 +106,8 @@ private:
     // are destroyed. StartupGuard publishes Stop before that member teardown begins.
     std::array<std::jthread, WorkerCount> m_Workers;
 };
+
+// Preserve the fixed-precision arithmetic API for existing callers and its explicit contract.
+using RefOrbitKaratsubaProducts = RefOrbitKaratsubaProductsT<false>;
 
 } // namespace FractalShark

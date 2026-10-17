@@ -170,6 +170,7 @@ enum class FractalCommand : uint32_t {
     PerturbationMultithread5Periodicity = 40520,
     PerturbationGpu = 40521,
     PerturbationMultithread9KaratsubaPeriodicity = 40522,
+    PerturbationMultithread9KaratsubaDynamicPrecision = 40523,
 
     PerturbationLoad = 40530,
     PerturbationSave = 40531,

@@ -708,6 +708,82 @@ TEST(HDR_Int64Exponent)
 // Reciprocal
 // ---------------------------------------------------------------------------
 
+TEST(HDR_Int64ArithmeticAndRange)
+{
+    // Deep negative exponents must not clamp to the old int16 floor (-4096),
+    // and same-width operands must not pass through a default int32 exponent.
+    constexpr int64_t DeepExponent = -100'000;
+    HDRFloat<double, HDROrder::Left, int64_t> left{DeepExponent, 1.5};
+    const HDRFloat<double, HDROrder::Left, int64_t> right{DeepExponent - 1, 1.0};
+    auto sum = left + right;
+    sum.Reduce();
+    ASSERT_EQ(sum.getExp(), DeepExponent + 1);
+    ASSERT_EQ(sum.getMantissa(), 1.0);
+    auto product = left * right;
+    product.Reduce();
+    ASSERT_EQ(product.getExp(), 2 * DeepExponent - 1);
+    ASSERT_EQ(product.getMantissa(), 1.5);
+    const HDRFloat<double, HDROrder::Left, int64_t> zero;
+    ASSERT_EQ(zero.getExp(), -std::numeric_limits<int64_t>::max() / 2);
+    auto withZero = zero + left;
+    withZero.Reduce();
+    ASSERT_EQ(withZero.getExp(), left.getExp());
+    ASSERT_EQ(withZero.getMantissa(), left.getMantissa());
+    ASSERT_TRUE(zero.compareToBothPositiveReduced(left) < 0);
+    auto zeroProduct = zero * left;
+    zeroProduct.Reduce();
+    ASSERT_EQ(zeroProduct.getMantissa(), 0.0);
+    ASSERT_EQ(zeroProduct.getExp(), zero.getExp());
+
+    constexpr int64_t BeyondInt32 = 3'000'000'000;
+    const HDRFloat<double, HDROrder::Right, int64_t> wideOther{BeyondInt32, 1.25};
+    HDRFloat<double, HDROrder::Left, int64_t> wide{BeyondInt32, 1.5};
+    wide += wideOther;
+    wide.Reduce();
+    ASSERT_EQ(wide.getExp(), BeyondInt32 + 1);
+    ASSERT_EQ(wide.getMantissa(), 1.375);
+    ASSERT_TRUE(wide.compareToBothPositiveReduced(wideOther) > 0);
+    static_assert(sizeof(HDRFloat<double, HDROrder::Left, int64_t>) == 2 * sizeof(uint64_t),
+                  "Imagina HDR records retain their mantissa/exponent layout");
+}
+
+TEST(HDR_Int64NormalizationAndSqrt)
+{
+    constexpr int64_t DeepExponent = -100'001;
+    HDRFloat<double, HDROrder::Left, int64_t> subnormal{DeepExponent,
+                                                        std::numeric_limits<double>::denorm_min()};
+    int64_t adjustment{};
+    subnormal.Reduce<true>(&adjustment);
+    ASSERT_EQ(adjustment, int64_t{-1074});
+    ASSERT_EQ(subnormal.getExp(), DeepExponent - 1074);
+    ASSERT_EQ(subnormal.getMantissa(), 1.0);
+
+    // Legacy serialized zeros can carry any exponent. Reduce canonicalizes their
+    // sorting representation while preserving their value and binary record layout.
+    HDRFloat<double, HDROrder::Left, int64_t> legacyZero{-4096, 0.0};
+    legacyZero.Reduce();
+    ASSERT_EQ(legacyZero.getExp(), legacyZero.MIN_BIG_EXPONENT());
+    ASSERT_EQ(legacyZero.getMantissa(), 0.0);
+
+    const HDRFloat<double, HDROrder::Left, int64_t> odd{DeepExponent, 1.25};
+    auto root = HdrSqrt(odd);
+    root.Reduce();
+    ASSERT_EQ(root.getExp(), (DeepExponent - 1) / 2);
+    ASSERT_EQ(root.getMantissa(), std::sqrt(2.5));
+    const HDRFloat<double, HDROrder::Left, int64_t> even{DeepExponent + 1, 1.5625};
+    auto exactRoot = HdrSqrt(even);
+    exactRoot.Reduce();
+    ASSERT_EQ(exactRoot.getExp(), (DeepExponent + 1) / 2);
+    ASSERT_EQ(exactRoot.getMantissa(), 1.25);
+
+    HDRFloat<double, HDROrder::Left, int64_t> infinity{0, std::numeric_limits<double>::infinity()};
+    infinity.Reduce();
+    ASSERT_TRUE(std::isinf(infinity.getMantissa()));
+    HDRFloat<double, HDROrder::Left, int64_t> invalid{0, std::numeric_limits<double>::quiet_NaN()};
+    invalid.Reduce();
+    ASSERT_TRUE(std::isnan(invalid.getMantissa()));
+}
+
 TEST(HDR_Reciprocal)
 {
     HDRd a(4.0);

@@ -82,9 +82,11 @@ medium-precision reference construction, rather than selecting the per-pixel
 render algorithm. Reuse storage is described in \cref{subsec:ref-orbit-reuse}.
 The legacy menu label ``MT2'' counts the two square workers; the implementation
 name MT3 also counts the calling thread. Explicit selections bypass Auto.
-The dynamic MT9 enum has a GUI selection and is selected by Auto, but has no
-accepted explicit CLI name; the
-remaining names in the catalog are accepted by \code{-{}-perturbation-alg}.
+Every selection name in the catalog is accepted by
+\code{-{}-perturbation-alg}, including
+\code{MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision}.
+The CLI parser and help share one catalog, whose compile-time checks require
+one unique, nonempty name for every algorithm enum value.
 
 \begin{table}[!htbp]
 \centering
@@ -116,9 +118,9 @@ remaining names in the catalog are accepted by \code{-{}-perturbation-alg}.
   $32{,}768$ bits, with dynamic MT9 as the CPU alternative. \\
 \code{MTPeriodicity9\-Karatsuba} & Eight workers plus caller; exact split products,
   full-precision recurrence additions and subtractions, with periodicity. \\
-\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} & GUI/internal or Auto selection;
+\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} & Explicit GUI/CLI or Auto selection;
   variable working precision with sample certificates and fixed-MT9 restart.
-  No explicit CLI algorithm name. \\
+  Fixed MT9 remains separately selectable. \\
 \hline
 \end{tabularx}
 \end{table}
@@ -213,14 +215,16 @@ convention for reference generation, distinct from the mathematical escape
 radius and the final pixel bailout.  Consequently, reference and pixel loops
 need not terminate at the same index.
 
-\subsection{Periodicity tracking via \texorpdfstring{$\partial z/\partial c$}{dz/dc}}
+\subsection{View-dependent near-return checking}
 \label{subsec:ref-orbit-periodicity}
 
 An orbit returning close to the critical point can indicate a nearby periodic
 center.  Its closeness must be interpreted relative to parameter sensitivity:
 a displacement $\delta c$ changes $z_n$ to first order by $d_n\delta c$.
-Several modes use that observation as an early-termination heuristic.  The
-implementation tracks the complex derivative
+The CPU and GPU reference backends use that observation for the same
+radius-based early-termination test. The following derivation describes their
+shared mathematics; \cref{sec:hp-periodicity} describes GPU execution.
+The implementations track the complex derivative
 
 \(\frac{\partial z_n}{\partial c}\) in low precision:
 \begin{equation}
@@ -231,8 +235,8 @@ Mathematically \(d_0 = \partial z_0/\partial c = 0\), since \(z_0=0\).
 The chain rule gives
 $\partial(z_n^2+c)/\partial c=2z_n(\partial z_n/\partial c)+1$;
 the final $+1$ is the direct dependence on the parameter.
-Because the implementation begins its loop at \(z_1=c\) (folding in the
-first iteration), the code variable \code{dzdcX} is initialized to~$1$,
+Because ordinary reference generation begins its loop at \(z_1=c\) (folding in the
+first iteration), the derivative's real component is initialized to~$1$,
 which corresponds to \(d_1=1\) in the recurrence above.
 
 Writing \(d_n = d_{x,n} + i d_{y,n}\) and expanding into real and imaginary parts yields:
@@ -242,11 +246,107 @@ Writing \(d_n = d_{x,n} + i d_{y,n}\) and expanding into real and imaginary part
   d_{y,n+1} &= 2(x_n d_{y,n} + y_n d_{x,n}). \label{eq:st-dzdc-imag}
 \end{align}
 
-The code applies an empirically chosen radius-based heuristic (no formal derivation is known): let
+\subsubsection{Screen coverage and parameter distance}
+\label{subsec:ref-orbit-view-bounds}
+
+Let the image cover the parameter rectangle
+$[x_{\min},x_{\max}]\times[y_{\min},y_{\max}]$, with reference parameter
+$c_\star=c_{\star,x}+ic_{\star,y}$. Bounds relative to that reference are
+\begin{align}
+ R_x&=\max(|x_{\min}-c_{\star,x}|,|x_{\max}-c_{\star,x}|),\\
+ R_y&=\max(|y_{\min}-c_{\star,y}|,|y_{\max}-c_{\star,y}|).
+ \label{eq:periodicity-screen-radii}
+\end{align}
+Every sampled pixel then satisfies
+$|\Delta c_x|\le R_x$, $|\Delta c_y|\le R_y$, and
+$|\Delta c|\le\rho=\sqrt{R_x^2+R_y^2}$. The rectangle includes all sample
+positions, so these bounds remain conservative when the last sampled position
+precedes an edge. An off-center or reused reference requires its actual
+coordinates in these expressions.
+
+For output dimensions $W\times H$ and $s$ samples per pixel dimension, the
+coordinate steps are
+\begin{equation}
+ h_x=\frac{x_{\max}-x_{\min}}{sW},\qquad
+ h_y=\frac{y_{\max}-y_{\min}}{sH}.
+ \label{eq:periodicity-pixel-spacing}
+\end{equation}
+The covered widths are $sWh_x$ and $sHh_y$. Increasing resolution or
+supersampling within the same rectangle refines sample spacing without
+increasing its parameter-distance bound. For a centered reference and an
+aspect-fitted view with square pixels, $R_x/R_y=W/H$.
+
+\subsubsection{Linear displacement and the factor two}
+\label{subsec:ref-orbit-linear-radius}
+
+Write $d_n=a+ib$ and $\Delta c=u+iv$. Complex multiplication gives
+$d_n\Delta c=(au-bv)+i(bu+av)$, so the rectangular bounds imply
+\begin{equation}
+ \|d_n\Delta c\|_\infty\le B_n
+ =\max(|a|R_x+|b|R_y,\;|b|R_x+|a|R_y).
+ \label{eq:periodicity-rectangular-bound}
+\end{equation}
+Each component bound is attained at a corner of the symmetric offset
+rectangle. If both $R_x$ and $R_y$ are at most $R$, then
+\begin{equation}
+ B_n\le R(|a|+|b|)\le2R\|d_n\|_\infty.
+ \label{eq:periodicity-factor-two}
+\end{equation}
+The factor two therefore has a direct norm-based interpretation for a
+covering square in parameter space. A reference state small relative to
+that displacement scale suggests a nearby critical return. The scalar
+inequality uses an enclosing square for the linear image; it does not solve
+$\Delta c=-z_n/d_n$ or establish that such an offset lies in the view.
+
+The current CPU \code{GetMaxRadius()} and GPU \code{RadiusY} both store
+the vertical half-height $(y_{\max}-y_{\min})/2$. The initializer does not
+use the horizontal extents or reference offset for that scalar. Its name
+therefore does not establish a maximum distance over the complete image.
+For a centered $16{:}9$ view and $d_n=1+i$,
+\eqref{eq:periodicity-rectangular-bound} gives $B_n=25R_y/9$, whereas
+the implemented scale is $2R_y$. Equation~\eqref{eq:periodicity-factor-two}
+describes a covering-square bound only when its radius actually covers
+both axes. The existing implementation retains its vertical-radius policy.
+
+\subsubsection{Nonlinear displacement and reduced arithmetic}
+\label{subsec:ref-orbit-near-return-limits}
+
+The screen bounds constrain $\Delta c$, not the evolved orbit displacement.
+For an exact reference, the complete perturbation identity is
+\begin{equation}
+ \Delta z_{n+1}=2z_n^\star\Delta z_n+(\Delta z_n)^2+\Delta c.
+ \label{eq:periodicity-full-displacement}
+\end{equation}
+Consequently, a uniform disk bound in exact arithmetic can be propagated as
+\begin{equation}
+ D_0=0,\qquad
+ D_{n+1}=2|z_n^\star|D_n+D_n^2+\rho,
+ \qquad |\Delta z_n|\le D_n.
+ \label{eq:periodicity-displacement-disk}
+\end{equation}
+The triangle inequality proves the induction. Such a bound can be much wider
+than the linear estimate; a numerical implementation would additionally
+require outward rounding and reference-error allowances. The existing
+near-return test does not propagate this disk or certify a nonlinear zero.
+
+The geometric bounds are independent of the numeric type. Their computed
+values, orbit snapshots, derivative recurrence, and final comparison incur
+type-dependent errors. \code{HDRFloat<float>} and \code{HDRFloat<double>}
+retain 24 and 53 significand bits, respectively; the separate exponent extends
+range without supplying more significand bits. Derivative cancellation and
+accumulation prevent a universal relative-error allowance based on machine
+epsilon alone. A comparison whose true slack
+$2R\|d_n\|_\infty-\|z_n\|_\infty$ is close to zero can therefore change
+with the reduced type. More precision improves its evaluation but does not
+replace the geometric or nonlinear arguments.
+
+\subsubsection{Implemented comparison and CPU execution}
+
+The shared reduced-precision comparison forms
 
 \begin{equation}
   n_2 = \max(|\hat{x}_n|,|\hat{y}_n|),\qquad
-  r_0 = \max(|d_{x,n}|,|d_{y,n}|),
+  r_0 = \max(|\hat d_{x,n}|,|\hat d_{y,n}|),
   \label{eq:periodicity-norms}
 \end{equation}
 
@@ -257,11 +357,26 @@ and define a detection threshold
   \label{eq:periodicity-threshold}
 \end{equation}
 
-where \(R_{\max}\) is the maximum perturbation radius stored in \code{results}
-. If \(n_2 < n_3\), the orbit is marked as \emph{maybe periodic} and the
+where $R_{\max}$ denotes the stored vertical half-height described above,
+and hats denote the reduced values actually compared. The completed threshold
+is normalized before the HDR exponent-first comparison. If \(n_2 < n_3\),
+the CPU orbit is marked as \emph{maybe periodic} and the
 reference loop terminates early (unless periodicity detection is disabled).
 Otherwise, \((d_{x,n},d_{y,n})\) is advanced using the update above.
-See \cref{sec:hp-periodicity} for the analogous GPU-side periodicity mechanism.
+Single-threaded generation checks its current snapshot before updating the
+high-precision state. MT3 and MT9 retain their delayed sample schedules
+(\cref{subsec:ref-orbit-mt3,subsec:ref-orbit-mt9}); their arithmetic and
+publication timings need not match GPU execution bit for bit.
+
+Early reference termination does not terminate every pixel's iteration.
+At the end of an available reference prefix, rebasing represents the current
+pixel state relative to $z_0^\star=0$ and continues its own iteration count
+(\cref{sec:perturb-only-deltas,sec:perturb-only-reconstruct}). That algebraic
+change of representation does not require an exactly periodic reference.
+Finite-precision rendering and compression retain their existing numerical
+contracts. The independent dynamic-MT9 sample certificate in
+\cref{subsec:ref-orbit-dynamic-certificate} certifies conversions rather
+than this near-return decision.
 
 For $c_\star=-1$, the complete calculation remains real:
 \begin{center}

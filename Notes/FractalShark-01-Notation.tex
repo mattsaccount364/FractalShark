@@ -148,7 +148,10 @@ $z_n^{\mathrm{HP}}$ & selected reference sample   & finite-precision source valu
 $z_r$            & simple-compression waypoint value
                  & stored sample from which intermediate iterations are replayed;
                    maximal compression separately advances its reference index \\
-$R_{\max}$       & maximum perturbation radius    & stored in \code{PerturbationResults} \\
+$R_{\max}$       & stored vertical half-height    & \code{GetMaxRadius()} in
+                  \code{PerturbationResults}; not a general image-distance bound \\
+$R_x,\;R_y$      & parameter-offset bounds       & reference-relative screen coverage;
+                  \cref{subsec:ref-orbit-view-bounds} \\
 $\widetilde z_n^\star$ & dynamic working orbit & distinct from the compression shadow
                   $\hat z_n$; \cref{subsec:ref-orbit-dynamic-precision} \\
 $\varepsilon_n,\;E_n$ & working-orbit error / disk radius

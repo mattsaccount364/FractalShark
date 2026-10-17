@@ -11232,7 +11232,10 @@ CheckPeriodicity(HpSharkReferenceResults<SharkFloatParams> *SharkRestrict combo,
         HdrReduce(zy);
         const Hdr zyAbs = HdrAbs(zy);
         const Hdr n2 = HdrMaxPositiveReduced(zxAbs, zyAbs);
-        const Hdr n3 = combo->RadiusY * HdrMaxPositiveReduced(dxAbs, dyAbs) * Hdr{2.0f};
+        Hdr n3 = combo->RadiusY * HdrMaxPositiveReduced(dxAbs, dyAbs) * Hdr{2.0f};
+        // Multiplication can leave a mantissa >= 2. The reduced comparator orders
+        // exponents first, so normalize the completed threshold just as the CPU does.
+        HdrReduce(n3);
         if (HdrCompareToBothPositiveReducedLT(n2, n3)) {
             combo->PeriodicityStatus = PeriodicityResult::PeriodFound;
             ++combo->OutputIterCount;

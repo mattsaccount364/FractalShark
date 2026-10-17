@@ -12,7 +12,8 @@ recurrence stages.  Early termination can avoid later arithmetic, but the
 check and its required cooperative-grid synchronization have a measurable cost
 that depends on precision and launch configuration.
 
-Application dispatch to the CUDA engine is manual.  Its stored-output type \code{T} may be
+The CUDA engine can be selected explicitly or through the compatible-format
+\code{Auto} policy in \cref{subsec:ref-orbit-pipeline}. Its stored-output type \code{T} may be
 \code{HDRFloat<float>}, \code{HDRFloat<double>}, or
 \code{HDRFloat<CudaDblflt<dblflt>>}.  The CUDA path forces
 \code{PExtras::Disable} and \code{ReuseMode::DontSaveForReuse}; neither produces
@@ -22,87 +23,71 @@ CUDA application path.
 \paragraph{State extraction and logging.}
 
 At iteration \(n\), the high-precision state \((x_n, y_n)\) is available in the
-persistent kernel's reference state. The periodicity checker converts
+persistent kernel's reference state. The active fused checker,
+\code{ReferenceDetail::CheckPeriodicity}, converts
 these values into a reduced high-dynamic-range scalar format,
 \(\mathrm{HDR}(\cdot)\), via a lossy extraction
-(\code{ToHDRFloat}) and stores the resulting pair in a per-iteration trace
+(\code{ToNormalized\allowbreak HDRFloat}) and stores the resulting pair in a per-iteration output
 buffer:
 
 \begin{equation}
   \widehat{x}_n \leftarrow \mathrm{HDR}(x_n), \quad
   \widehat{y}_n \leftarrow \mathrm{HDR}(y_n), \quad
-  \code{OutputIters}[n] \leftarrow (\widehat{x}_n, \widehat{y}_n).
+  \code{OutputIters}[k] \leftarrow (\widehat{x}_n, \widehat{y}_n).
   \label{eq:hdr-extraction}
 \end{equation}
 
-This trace is used both for downstream diagnostics and to provide a compact,
-device-side reduced representation of the orbit prefix.
+Here $k$ is the iteration index within the current GPU invocation, while $n$
+is the mathematical orbit index. Ordinary generation starts at $z_1=c$ and
+$d_1=1$; the host supplies the preceding zero entry. The output buffer contains
+the reduced reference samples consumed downstream, as well as supporting
+diagnostics. A later invocation reuses the persistent state with $k$ reset
+to zero; it does not restart the mathematical orbit or derivative.
 
 \paragraph{Derivative-based periodicity criterion.}
 
-In addition to the orbit state, the computation propagates the complex derivative
-\(
-\frac{dz}{dc}
-\)
-along the orbit (cf.\ the CPU-side counterpart in \cref{subsec:ref-orbit-periodicity}). For the Mandelbrot map \(f(z)=z^2+c\), the chain rule yields
+The CPU and active GPU checkers use the same derivative recurrence
+\eqref{eq:dzdc-def}, the same componentwise norms
+\eqref{eq:periodicity-norms}, and the same strict near-return condition:
 
 \begin{equation}
-  \frac{d z_{n+1}}{d c} = f'(z_n)\frac{d z_n}{d c} + 1
-  = 2 z_n \frac{d z_n}{d c} + 1,
-  \label{eq:dzdc-recurrence}
-\end{equation}
-
-with initialization \(\frac{dz_0}{dc}=0\) when \(z_0=0\).
-Writing \(z_n = x_n + i y_n\) and introducing the shorthand
-\(d_n \equiv \frac{\partial z_n}{\partial c}\) with real and imaginary parts
-\(d_{x,n}\) and \(d_{y,n}\), expanding
-\eqref{eq:dzdc-recurrence} into real and imaginary parts gives:
-
-\begin{align}
-  d_{x,n+1} &= 2\,(x_n\, d_{x,n} - y_n\, d_{y,n}) + 1, \label{eq:dzdc-real}\\
-  d_{y,n+1} &= 2\,(x_n\, d_{y,n} + y_n\, d_{x,n}). \label{eq:dzdc-imag}
-\end{align}
-
-In the CUDA engine, the orbit components are \code{HpSharkFloat}, but the
-application periodicity state \code{dzdcX}, \code{dzdcY}, and \code{RadiusY}
-uses \code{HDRFloat}.  The periodicity decision is performed on reduced HDR
-magnitudes:
-
-\begin{equation}
-  \lVert z_n\rVert_\infty \approx \max(|\widehat{x}_n|, |\widehat{y}_n|), \qquad
-  \left\lVert\frac{dz_n}{dc}\right\rVert_\infty \approx \max(|\widehat{d x}_n|, |\widehat{d y}_n|),
-  \label{eq:reduced-norms}
-\end{equation}
-
-where hats denote reduced HDR representations after a normalization/reduction
-step (\code{HdrReduce}) to ensure stable comparisons.
-
-The checker uses the heuristic condition
-
-\begin{equation}
-  \lVert z_n\rVert_\infty < 2\,R\,\left\lVert\frac{dz_n}{dc}\right\rVert_\infty,
+  \max(|\widehat{x}_n|,|\widehat{y}_n|)
+  <2R\max(|\hat d_{x,n}|,|\hat d_{y,n}|).
   \label{eq:periodicity-ineq}
 \end{equation}
 
-where \(R\) is the configured view radius (stored as \code{RadiusY} in the
-reference structure).  To first order, varying $c$ by at most $R$ changes
-$z_n$ on a scale comparable to $R|d_n|$.  A state small relative to that scale
-suggests a nearby parameter whose critical orbit returns to zero.  The test
-does not compare two full orbit states, prove convergence to a cycle, or
-certify a least period.  The factor two and componentwise maximum are
-implementation choices rather than a rigorous enclosure of the nonlinear
-parameter dependence.
-Concretely, the device computes
+The shared screen-geometry derivation and factor-two bound are in
+\cref{subsec:ref-orbit-view-bounds,subsec:ref-orbit-linear-radius}; their
+nonlinear and reduced-precision limits are in
+\cref{subsec:ref-orbit-near-return-limits}. The host passes the same stored
+vertical half-height through \code{GetMaxRadius()} into \code{RadiusY}.
+The GPU therefore retains the same aspect-ratio and reference-offset
+qualification as the CPU test.
 
-\begin{equation}
-  n_2 \leftarrow \max(|\widehat{x}_n|, |\widehat{y}_n|), \quad
-  r_0 \leftarrow \max(|\widehat{d x}_n|, |\widehat{d y}_n|), \quad
-  n_3 \leftarrow 2\,R\,r_0,
-  \label{eq:gpu-periodicity-vars}
-\end{equation}
+The orbit components use \code{HpSharkFloat}; the checker's \code{DzdcX},
+\code{DzdcY}, and \code{RadiusY} use
+\code{SharkFloatParams::Float}, an HDR type with the selected float, double,
+or double-float significand. These reduced derivative fields are separate
+from the high-precision derivative streams used for Newton--Raphson work.
+If the comparison fails, the checker advances both derivative components
+using the unchanged old pair, then applies the escape test. If it succeeds,
+it sets \code{PeriodicityStatus} to \code{PeriodFound}, counts the current
+sample, and returns before advancing the high-precision recurrence.
+The status is the implementation's near-return result, not an exact-period
+certificate.
 
-and terminates when \(n_2 < n_3\), setting \code{PeriodicityStatus =
-PeriodFound} and recording \code{OutputIterCount = n+1}.
+\paragraph{Threshold normalization.}
+HDR multiplication can leave a significand outside its normalized interval.
+The checker calls \code{HdrReduce} on the completed $2Rr_0$ product before
+the reduced comparison, which orders exponents before significands.
+For $c=3/8$ and $R=3/16$, the first check is equality and continues. At
+$z_2=33/64$, the derivative is $d_2=7/4$ and the threshold is $21/32$.
+The unnormalized threshold can be stored as $(21/8)2^{-2}$, whereas its
+normalized representation is $(21/16)2^{-1}$. Comparing the former by
+exponent first would miss $33/64<21/32$. The example is exact in all three
+supported significand families, so the required normalization is independent
+of their rounding accuracy. Regression cases check this result within one
+invocation and across a chunk boundary, together with strict equality cases.
 
 \paragraph{A numerical interpretation.}
 For $c=-0.999$, the first two orbit values are $z_1=-0.999$ and
@@ -130,8 +115,8 @@ the checker evaluates
 \end{equation}
 and declares \code{Escaped} when this value exceeds a fixed threshold
 (\code{256.0} in the current implementation). As with the periodicity
-criterion, all comparisons are performed on reduced positive HDR values to avoid
-high-precision control-flow costs on the device.  The expression
+criterion, the test uses HDR arithmetic to avoid high-precision control-flow
+costs on the device. The expression
 $\widehat z_n+\widehat c$ is not $\widehat{z_{n+1}}$; for $z_n=2$ and
 $c=1$, the former is $3$ and the latter is $5$.  The threshold and proxy
 match the application reference contract, rather than the usual direct-pixel
@@ -149,7 +134,7 @@ then executes a cooperative-grid barrier:
   \label{eq:grid-sync}
 \end{equation}
 ensuring that (i) all blocks observe a consistent \code{PeriodicityStatus} and
-(ii) any updates to \code{dzdcX}, \code{dzdcY}, and the trace buffer are
+(ii) any updates to \code{DzdcX}, \code{DzdcY}, and the output buffer are
 visible before subsequent work proceeds. If termination is requested, the
 iteration loop exits immediately; otherwise, the kernel proceeds into the
 fused NTT recurrence that produces the next high-precision state.
@@ -159,7 +144,13 @@ while maintaining grid-wide early-exit behavior.  The checker publishes its
 status through one explicit \code{grid.sync()} per iteration.  The recurrence uses the same publication
 boundary to expose the iteration plan built by the leader.  The synchronization
 cost is amortized by the subsequent high-precision work but is not assumed to be
-negligible.
+negligible. A completed recurrence or a terminating sampled check increments
+\code{OutputIterCount}; a stop at local index $k$ therefore reports $k+1$
+samples for that invocation. Chunk entry resets this count and the running
+status while preserving the orbit and derivative. The host accumulates chunk
+counts and translates \code{PeriodFound} into the stored maybe-periodic
+metadata. \Cref{subsec:fused-ntt-periodicity} describes the fused loop's
+publication and resume semantics.
 
 \paragraph{Alternative host-side periodicity checking.}
 An alternative design would be to retain the authoritative high-precision orbit

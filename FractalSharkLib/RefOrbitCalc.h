@@ -154,7 +154,9 @@ public:
         GPU,
         Auto,
         MTPeriodicity9Karatsuba,
-        MTPeriodicity9KaratsubaDynamicPrecision
+        MTPeriodicity9KaratsubaDynamicPrecision,
+        // Keep Count last: CLI catalog validation covers every preceding, contiguous value.
+        Count
     };
 
     enum class PerturbationResultType { None, LAOnly, MediumRes, HighRes, All };

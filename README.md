@@ -20,6 +20,8 @@ FractalShark includes several innovations relative to most other Mandelbrot rend
 
 FractalShark includes a working **GPU-accelerated reference orbit implementation**. To my knowledge, this implementation is unique in the context of accelerating Mandelbrot rendering. The active Ref2/v2 implementation evaluates the complete high-precision recurrence in one persistent fused CUDA kernel. It uses Number Theoretic Transforms, fused pointwise recurrence algebra, signed carry propagation, and normalization to accelerate work that is traditionally CPU-bound.
 
+The number theoretic transform is a spectacular mechanism for exploiting GPU-level parallelism in the reference orbit calculation.  Its convolution structure is similar to that of the FFT, but it avoids tricky precision issues associated with floating point.  FractalShark's implementation is taylored specifically for the Mandelbrot recurrence, and exploits as much as possible from its structure.  The implementation does nevertheless provide a nice demonstration of using the NTT for high-precision multiplies in CUDA.
+
 As of v0.532, at a precision of 16384 32-bit limbs (≈ 158,000 decimal digits), my benchmark runs found that this GPU reference orbit implementation outperformed the existing multithreaded MPIR + AVX-2 CPU reference orbit by approximately **10× on an RTX 4090**.  The built-in View where I observed a clear benefit to the GPU-accelerated approach is View #30, which uses 16384 32-bit limbs internally.  My RTX 5090 measured slightly slower than the 4090, at ~9× faster than the existing FractalShark multithreaded CPU-based reference orbit calculator.
 
 The new v0.54 version rearchitects the reference orbit/newton-raphson implementation to improve performance further.  On the rtx 5090, I'm seeing 70x better perf at 16384 32-bit limbs vs. a single-threaded reference orbit implementation using the AVX-2 MPIR implementation.  I just realized my multithreaded CPU test is broken and I don't have the 4090 any more, so I don't have a comparable result vs. before, but the results do look promising.  Even assuming we speed up the single-threaded implementation by 3x the naive implementation here, the new GPU-accelerated design appears to easily best it.
@@ -42,11 +44,13 @@ I have not found another public CUDA implementation of this technique. The CUDA 
 
 ### 4. Multithreaded high-performance CPU reference orbit calculation
 
-FractalShark includes a **multithreaded CPU reference orbit implementation** designed to maximize performance on modern CPUs.
+FractalShark includes several **multithreaded CPU reference orbit implementations** designed to maximize performance on modern CPUs.
 
-The standard MT3 path uses three computation threads total—two dedicated to squaring and one coordinating—and has empirically provided the best performance on an AMD 5950X. Reference orbit computation is the dominant bottleneck at extreme magnifications, making this optimization particularly important. Reuse modes can use four computation threads, and the current MT5 entry falls back to MT3. In my measurements, once the zoom depth exceeds approximately 1e10000, the GPU-accelerated approach above may be faster; at shallower depths, the CPU is more likely to win.
+The standard MT3 path uses three computation threads total—two dedicated to squaring and one coordinating—and has empirically provided the best performance on an AMD 5950X. Reference orbit computation is the dominant bottleneck at extreme magnifications, making this optimization particularly important. Reuse modes can use four computation threads. In my measurements, once the zoom depth exceeds approximately 1e10000, the GPU-accelerated approach above is typically faster; at shallower depths, the CPU is more likely to win.
 
-In my tests, this implementation has outperformed the CPU-based reference-orbit implementations I compared against on modern multi-core CPUs with AVX-2 support. This is not an exhaustive survey of all implementations. Additional optimizations are possible but remain unexplored; a bespoke AVX-512 implementation may beat FractalShark in its current form. The GPU-accelerated approach above may win at higher zoom depths, depending on the workload and hardware.
+The new MT9 (9-thread) path uses a clever dynamic-precision strategy combined with a decomposed Karatsuba approach for getting a bit more per-iteration parallelism.  I learned of it via Fractadyne, but the idea apparently originated earlier.  The FractalShark notes provide more detail on the design.  Using this implementation is likely most appropriate in the 1e5000-1e10000 zoom regime, which is slightly too low for the GPU-accelerated orbit to exhibit much benefit, but large enough that its increased per-iteration synchronization overhead is dwarfed by its superior per-iteration parallelism.
+
+Additional CPU-based reference orbit optimizations are possible, but remain unexplored; a bespoke AVX-512 implementation may beat FractalShark in its current form. The GPU-accelerated approach above may win at higher zoom depths, depending on the workload and hardware.
 
 This subsystem also includes a **custom memory allocator** supporting an optional *perturbed perturbation* mode, in which intermediate-resolution reference orbit values are cached and reused across successive zooms.  (See FractalShark.pdf §13 for reference orbit computation details.)
 
@@ -144,10 +148,14 @@ On Windows, an unhandled crash attempts to write `core.dmp` in the process's cur
 Many.
 
 - The perturbation inspiration is from Kalles Fraktaler. It certainly helped clarify some things. And Claude's blog was a great help. [Kalles Fraktaler](https://mathr.co.uk/kf/kf.html)
+
 - [Deep Zoom Theory and Practice](https://mathr.co.uk/blog/2021-05-14_deep_zoom_theory_and_practice.html)
+
 - [Deep Zoom Theory and Practice Again](https://mathr.co.uk/blog/2022-02-21_deep_zoom_theory_and_practice_again.html)
 
-- The reference orbit periodicity detection implementation is from Imagina. [Imagina](https://github.com/5E-324/Imagina)
+- The reference orbit periodicity detection implementation is from Imagina. [Imagina](https://github.com/5E-324/Imagina), as is the reference compression idea and save file format
+
+- The MT9 algorithm is inspired by the implementation in Fractadyne: [FractalDyne](https://github.com/WindySnowOwl/fractadyne)
 
 - The Float/Exp and linear/bilinear approximation implementations are from FractalZoomer. FractalZoomer is written in Java, but it was easy enough to port to C++ and "templatize." [FractalZoomer](https://sourceforge.net/projects/fractalzoomer/)
 
@@ -155,7 +163,19 @@ Many.
 
 - FractalShark's reference orbit compression is novel code, but based on the approach Zhuoran described here: [Reference Compression](https://fractalforums.org/fractal-mathematics-and-new-theories/28/reference-compression/5142). Claude posted a simple easy-to-understand sample here, which FractalShark's implementation is loosely based on: [Fractal Bits](https://code.mathr.co.uk/fractal-bits/tree/HEAD:/mandelbrot-reference-compression)
 
-- This implementation would probably not have happened without the work of these folks so thank you!
+- Niall Emmart's PhD: [Emmart](https://scholarworks.umass.edu/bitstreams/3cd92dff-0d11-4976-8556-2dc34d0abb27/download)
+
+This implementation would probably not have happened without the work of these folks so thank you!  More comprehensive references are available in the FractalShark notes.  Some contributions of FractalShark's are likely novel:
+
+- The GPU-accelerated reference orbit/feature finder designs and implementation (I'm most proud of this :)), design inspired by Emmart, but mostly novel
+
+- Using compressed reference orbits at runtime and successful 27-billion iteration orbit demonstration
+
+- The reuse-based perturbation modes
+
+- Most of the CUDA engineering, though often not their algorithmic basis (see above)
+
+- The ~1e650000 minibrot discovery in 2026, please let me know if you find a deeper one
 
 ## Closing
 

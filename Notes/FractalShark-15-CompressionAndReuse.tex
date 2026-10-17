@@ -348,8 +348,19 @@ well as to direct authoritative generation.
 \subsection{Reference Compression}
 \label{sec:ref-compression-zhuoran}
 
-The idea in this section was developed by Zhuoran
-\cite{Zhuoran2023ReferenceCompression} and \FractalShark{} implements it.
+Zhuoran developed the reference-compression idea for saving orbit files
+\cite{Zhuoran2023ReferenceCompression}. Matthew Renzelmann extended its use
+to runtime rendering in \FractalShark{}, while also supporting compressed
+orbit-file storage. The runtime extension retains compressed reference data
+and reconstructs samples on demand for rendering, reducing the memory needed
+to consume long orbits. \Cref{sec:refcomp-runtime-access} describes the
+sequential and random access mechanisms used by that extension.
+
+For file interchange, \FractalShark{} supports Imagina-style maximally
+compressed reference orbits in both directions: it loads files produced by
+Imagina, and its Imagina-compatible exports can be loaded by Imagina.
+\Cref{subsec:imagina-format} documents the binary format and load modes;
+the save and load commands are described in \cref{sec:user-documentation}.
 
 \subsubsection{Motivation}
 For deep zoom escape-time fractals, pixel evaluation has become extremely fast
@@ -456,7 +467,10 @@ controls when resets occur but does not, by itself, prove a global error bound.
 Because decompression is a forward scan with occasional resets, it can be
 performed \emph{streaming} (no random access required), and can be interleaved
 with perturbation-based pixel evaluation by iterating \(\hat z_n\) alongside the
-main render loop.
+main render loop. This on-demand rendering use is Renzelmann's extension of
+the file-storage idea. It applies to the simple runtime representation; the
+maximal Imagina-compatible representation below materializes and corrects its
+reconstructed orbit before consumption.
 
 \subsubsection{Perturbation-assisted compression}
 

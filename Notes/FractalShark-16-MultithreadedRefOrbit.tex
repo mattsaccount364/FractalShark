@@ -389,8 +389,10 @@ ineligible. Explicitly selecting fixed MT9 disables dynamic precision.
 The dynamic variant does not alter the other CPU backends, CUDA reference
 generation, or authoritative reuse modes.
 The option appears in the GUI as \emph{MT9 + Periodicity + Karatsuba + Dynamic
-Precision}; it is not currently an accepted explicit CLI algorithm name,
-although the CLI's \code{Auto} selection can resolve to this backend.
+Precision}. The CLI selects it explicitly with
+\code{-{}-perturbation-alg MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision};
+\code{Auto} can also resolve to this backend. Parser and help use a shared
+catalog with compile-time coverage checks over every reference algorithm.
 
 Two mathematical arguments have different roles. Parameter sensitivity predicts
 a working precision likely to be economical. An independent enclosure of the

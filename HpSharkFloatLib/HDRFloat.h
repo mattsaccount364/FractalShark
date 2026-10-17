@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <format>
 #include <fstream>
+#include <limits>
 #include <math.h>
 #include <stdint.h>
 #include <type_traits>
@@ -50,7 +51,10 @@ public:
     static CUDA_CRAP constexpr TExp
     MIN_BIG_EXPONENT()
     {
-        if constexpr (std::is_same<TExp, int32_t>::value || std::is_same<TExp, float>::value) {
+        if constexpr (std::is_same_v<TExp, int64_t>) {
+            // Keep room for adding zero exponents without clamping deep finite values.
+            return -std::numeric_limits<int64_t>::max() / 2;
+        } else if constexpr (std::is_same<TExp, int32_t>::value || std::is_same<TExp, float>::value) {
             return INT32_MIN >> 3;
         } else {
             return INT16_MIN >> 3;
@@ -410,76 +414,103 @@ public:
     }
 #endif
 
-    template <bool GetExpAmt = false>
+    // Finite kernels may omit special-value handling when the mantissa is known
+    // to be zero or finite and normal. Zero still receives its canonical exponent.
+    template <bool GetExpAmt = false, bool HandleSpecialValues = true>
     CUDA_CRAP constexpr HDRFloat &
-    Reduce(TExp *DestExp = nullptr) &
+    Reduce(TExp *destExp = nullptr) &
     {
         if constexpr (std::is_same<T, double>::value) {
             if (Base::mantissa == 0) {
-
+                if constexpr (std::is_same_v<TExp, int64_t>) {
+                    // Restore one sorting exponent, including for legacy serialized zeros.
+                    Base::exp = GenericHdrBase::MIN_BIG_EXPONENT();
+                }
                 if constexpr (GetExpAmt) {
-                    *DestExp = 0;
+                    *destExp = 0;
                 }
                 return *this;
             }
 
             const auto bits = bit_cast<uint64_t>(this->Base::mantissa);
-            const auto f_exp = static_cast<TExp>(((bits & 0x7FF0'0000'0000'0000ULL) >> 52ULL)) +
-                               MIN_SMALL_EXPONENT_INT_DOUBLE();
+            if constexpr (std::is_same_v<TExp, int64_t> && HandleSpecialValues) {
+                constexpr uint64_t ExponentMask = 0x7FF0'0000'0000'0000ULL;
+                if ((bits & ExponentMask) == ExponentMask) {
+                    // Preserve infinity/NaN markers rather than rebiasing them to finite.
+                    if constexpr (GetExpAmt) {
+                        *destExp = 0;
+                    }
+                    return *this;
+                }
+                if ((bits & ExponentMask) == 0) {
+                    // Rebiasing assumes a normal mantissa. frexp covers subnormals too,
+                    // including the outward neighbor of an exact MPIR zero.
+                    int subnormalExponent;
+                    Base::mantissa = ::frexp(Base::mantissa, &subnormalExponent) * 2.0;
+                    const TExp adjustment = static_cast<TExp>(subnormalExponent - 1);
+                    Base::exp += adjustment;
+                    if constexpr (GetExpAmt) {
+                        *destExp = adjustment;
+                    }
+                    return *this;
+                }
+            }
+            const auto scalarExponent = static_cast<TExp>(((bits & 0x7FF0'0000'0000'0000ULL) >> 52ULL)) +
+                                        MIN_SMALL_EXPONENT_INT_DOUBLE();
             const uint64_t val = (bits & 0x800F'FFFF'FFFF'FFFFULL) | 0x3FF0'0000'0000'0000ULL;
-            const auto f_val = bit_cast<const T>(val);
-            Base::exp += f_exp;
-            Base::mantissa = f_val;
+            const auto scalarMantissa = bit_cast<const T>(val);
+            Base::exp += scalarExponent;
+            Base::mantissa = scalarMantissa;
 
             if constexpr (GetExpAmt) {
-                *DestExp = f_exp;
+                *destExp = scalarExponent;
             }
         } else if constexpr (std::is_same<T, float>::value) {
             if (Base::mantissa == 0) {
 
                 if constexpr (GetExpAmt) {
-                    *DestExp = 0;
+                    *destExp = 0;
                 }
                 return *this;
             }
 
             const auto bits = bit_cast<uint32_t>(this->Base::mantissa);
-            const auto f_exp =
+            const auto scalarExponent =
                 static_cast<TExp>(((bits & 0x7F80'0000UL) >> 23UL)) + MIN_SMALL_EXPONENT_INT_FLOAT();
             const uint32_t val = (bits & 0x807F'FFFFU) | 0x3F80'0000U;
-            const auto f_val = bit_cast<T>(val);
-            Base::exp += f_exp;
-            Base::mantissa = f_val;
+            const auto scalarMantissa = bit_cast<T>(val);
+            Base::exp += scalarExponent;
+            Base::mantissa = scalarMantissa;
 
             if constexpr (GetExpAmt) {
-                *DestExp = f_exp;
+                *destExp = scalarExponent;
             }
         } else if constexpr (std::is_same<T, CudaDblflt<dblflt>>::value) {
             if (Base::mantissa.d.head == 0 && Base::mantissa.d.tail == 0) {
 
                 if constexpr (GetExpAmt) {
-                    *DestExp = 0;
+                    *destExp = 0;
                 }
                 return *this;
             }
 
-            const auto bits_y = bit_cast<uint32_t>(this->Base::mantissa.d.head);
-            const auto bits_x = bit_cast<uint32_t>(this->Base::mantissa.d.tail);
-            const auto f_exp_y =
-                static_cast<TExp>(((bits_y & 0x7F80'0000UL) >> 23UL)) + MIN_SMALL_EXPONENT_INT_FLOAT();
-            const auto f_exp_x = static_cast<TExp>(((bits_x & 0x7F80'0000UL) >> 23UL));
-            const auto val_y = (bits_y & 0x807F'FFFFU) | 0x3F80'0000U;
-            const auto newexp = f_exp_x - f_exp_y;
-            const auto satexp = newexp <= 0 ? 0 : newexp;
-            const auto val_x = (bits_x & 0x807F'FFFFU) | (satexp << 23U);
-            const auto f_val_y = bit_cast<float>(val_y);
-            const auto f_val_x = bit_cast<float>(val_x);
-            Base::exp += f_exp_y;
-            Base::mantissa.d.head = f_val_y;
-            Base::mantissa.d.tail = f_val_x;
+            const auto headBits = bit_cast<uint32_t>(this->Base::mantissa.d.head);
+            const auto tailBits = bit_cast<uint32_t>(this->Base::mantissa.d.tail);
+            const auto headExponent =
+                static_cast<TExp>(((headBits & 0x7F80'0000UL) >> 23UL)) + MIN_SMALL_EXPONENT_INT_FLOAT();
+            const auto tailExponent = static_cast<TExp>(((tailBits & 0x7F80'0000UL) >> 23UL));
+            const auto headValue = (headBits & 0x807F'FFFFU) | 0x3F80'0000U;
+            const auto newExponent = tailExponent - headExponent;
+            const auto saturatedExponent = newExponent <= 0 ? 0 : newExponent;
+            const auto tailValue = (tailBits & 0x807F'FFFFU) | (saturatedExponent << 23U);
+            const auto headMantissa = bit_cast<float>(headValue);
+            const auto tailMantissa = bit_cast<float>(tailValue);
+            Base::exp += headExponent;
+            Base::mantissa.d.head = headMantissa;
+            Base::mantissa.d.tail = tailMantissa;
 
             if constexpr (GetExpAmt) {
-                *DestExp = f_exp_y;
+                *destExp = headExponent;
             }
         }
 
@@ -1001,7 +1032,7 @@ public:
 
     template <HDROrder OtherOrder>
     CUDA_CRAP constexpr HDRFloat &
-    add_mutable(HDRFloat<T, OtherOrder> value)
+    add_mutable(HDRFloat<T, OtherOrder, TExp> value)
     {
 
         TExp expDiff = Base::exp - value.exp;
@@ -1030,8 +1061,9 @@ public:
     // friends defined inside class body are inline and are hidden from non-ADL lookup
     template <HDROrder OtherOrder>
     friend CUDA_CRAP constexpr HDRFloat
-    operator+(HDRFloat lhs,                       // passing lhs by value helps optimize chained a+b+c
-              const HDRFloat<T, OtherOrder> &rhs) // otherwise, both parameters may be const references
+    operator+(
+        HDRFloat lhs,                             // passing lhs by value helps optimize chained a+b+c
+        const HDRFloat<T, OtherOrder, TExp> &rhs) // otherwise, both parameters may be const references
     {
         lhs.add_mutable(rhs); // reuse compound assignment
         return lhs;           // return the result by value (uses move constructor)
@@ -1039,7 +1071,7 @@ public:
 
     template <HDROrder OtherOrder>
     CUDA_CRAP constexpr HDRFloat &
-    operator+=(const HDRFloat<T, OtherOrder> &other)
+    operator+=(const HDRFloat<T, OtherOrder, TExp> &other)
     {
         return add_mutable(other);
     }
@@ -1177,16 +1209,16 @@ public:
 
     template <HDROrder OtherOrder>
     CUDA_CRAP constexpr int
-    compareToBothPositiveReduced(HDRFloat<T, OtherOrder> compareTo) const
+    compareToBothPositiveReduced(HDRFloat<T, OtherOrder, TExp> other) const
     {
-        if (Base::exp > compareTo.exp) {
+        if (Base::exp > other.exp) {
             return 1;
-        } else if (Base::exp < compareTo.exp) {
+        } else if (Base::exp < other.exp) {
             return -1;
         } else {
-            if (Base::mantissa > compareTo.mantissa) {
+            if (Base::mantissa > other.mantissa) {
                 return 1;
-            } else if (Base::mantissa < compareTo.mantissa) {
+            } else if (Base::mantissa < other.mantissa) {
                 return -1;
             } else {
                 return 0;
@@ -1389,7 +1421,8 @@ HdrSqrt(const T &incoming)
 {
     static_assert(std::is_same<T, double>::value || std::is_same<T, float>::value ||
                       std::is_same<T, HDRFloat<double>>::value ||
-                      std::is_same<T, HDRFloat<float>>::value,
+                      std::is_same<T, HDRFloat<float>>::value ||
+                      std::is_same_v<T, HDRFloat<double, HDROrder::Left, int64_t>>,
                   "No");
 
     static_assert(!std::is_same<T, HDRFloat<CudaDblflt<dblflt>>>::value, "!");
@@ -1397,6 +1430,12 @@ HdrSqrt(const T &incoming)
 
     if constexpr (std::is_same<T, double>::value || std::is_same<T, float>::value) {
         return sqrt((T)incoming);
+    } else if constexpr (std::is_same_v<T, HDRFloat<double, HDROrder::Left, int64_t>>) {
+        // Parity and halving must use the carrier's full exponent width.
+        const int64_t exponent = incoming.getExp();
+        const bool odd = (exponent & 1) != 0;
+        return T{(exponent - static_cast<int64_t>(odd)) / 2,
+                 ::sqrt(odd ? 2.0 * incoming.getMantissa() : incoming.getMantissa())};
     } else if constexpr (std::is_same<T, HDRFloat<double>>::value) {
         int32_t castExp = *reinterpret_cast<const int32_t *>(&incoming.exp);
         bool isOdd = (castExp & 1) != 0;

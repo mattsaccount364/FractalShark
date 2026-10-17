@@ -76,7 +76,38 @@ constexpr auto PerturbationAlgorithms = std::array{
     PerturbationAlgorithmOption{"MTPeriodicity5", RefOrbitCalc::PerturbationAlg::MTPeriodicity5},
     PerturbationAlgorithmOption{"MTPeriodicity9Karatsuba",
                                 RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
+    PerturbationAlgorithmOption{"MTPeriodicity9KaratsubaDynamicPrecision",
+                                RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision},
     PerturbationAlgorithmOption{"GPU", RefOrbitCalc::PerturbationAlg::GPU}};
+
+template <std::size_t N>
+consteval bool
+ValidatePerturbationAlgorithms(const std::array<PerturbationAlgorithmOption, N> &algorithms)
+{
+    // Checking values as well as cardinality catches an omitted mode hidden by a duplicate.
+    // Parsing and help consume this same table, so a new enum cannot silently be GUI-only.
+    constexpr auto count = static_cast<std::size_t>(RefOrbitCalc::PerturbationAlg::Count);
+    if (N != count) {
+        return false;
+    }
+    std::array<bool, count> seen{};
+    for (std::size_t i = 0; i < N; ++i) {
+        const auto index = static_cast<std::size_t>(algorithms[i].Value);
+        if (index >= count || seen[index] || algorithms[i].Name.empty()) {
+            return false;
+        }
+        seen[index] = true;
+        for (std::size_t j = 0; j < i; ++j) {
+            if (algorithms[i].Name == algorithms[j].Name) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+static_assert(ValidatePerturbationAlgorithms(PerturbationAlgorithms),
+              "Every PerturbationAlg must have exactly one unique, nonempty CLI name");
 
 struct CliArgs {
     int Width = 1024;
@@ -221,13 +252,15 @@ PrintUsage()
         << "                    Auto uses estimated precision bits without reuse padding:\n"
            "                      <640: STPeriodicity; 640-6783: MTPeriodicity3\n"
            "                      6784-16383: MTPeriodicity3PerturbMTHighMTMed3\n"
-           "                      16384-32767: MTPeriodicity9Karatsuba\n"
+           "                      16384-32767: MTPeriodicity9KaratsubaDynamicPrecision\n"
            "                      >=32768: GPU with working CUDA and a compatible HDR renderer\n"
-           "                    At >=32768, unsupported GPU type/format/precision uses MT9\n"
-           "                    CUDA disabled/unavailable also uses MT9 at that depth\n"
+           "                    At >=32768, unsupported GPU type/format/precision uses dynamic MT9\n"
+           "                    CUDA disabled/unavailable also uses dynamic MT9 at that depth\n"
            "                    Explicit reference choices bypass Auto\n"
            "                    MTPeriodicity9Karatsuba uses eight workers plus the caller\n"
            "                    Explicit MTPeriodicity9Karatsuba selection works at any depth\n"
+           "                    MTPeriodicity9KaratsubaDynamicPrecision enables certified dynamic\n"
+           "                    samples, restarting with fixed MT9 if certification fails\n"
            "                    GPU uses CUDA with an HDR perturbation render algorithm\n"
            "  --clear-reference-orbits\n"
            "                    Clear all cached reference orbits before each render\n"
@@ -280,8 +313,8 @@ ParseRenderAlgorithm(const std::string &name)
     return std::nullopt;
 }
 
-std::optional<RefOrbitCalc::PerturbationAlg>
-ParsePerturbationAlg(const std::string &name)
+constexpr std::optional<RefOrbitCalc::PerturbationAlg>
+ParsePerturbationAlg(std::string_view name)
 {
     for (const auto &algorithm : PerturbationAlgorithms) {
         if (name == algorithm.Name) {
@@ -290,6 +323,17 @@ ParsePerturbationAlg(const std::string &name)
     }
     return std::nullopt;
 }
+
+// Exercise the actual parser at compile time, including the newly exposed dynamic mode.
+static_assert([] {
+    for (const auto &algorithm : PerturbationAlgorithms) {
+        if (ParsePerturbationAlg(algorithm.Name) != algorithm.Value) {
+            return false;
+        }
+    }
+    return !ParsePerturbationAlg("") && !ParsePerturbationAlg("UnknownReferenceAlgorithm") &&
+           !ParsePerturbationAlg("Count");
+}());
 
 bool
 ParseUint64(const char *s, uint64_t &out)

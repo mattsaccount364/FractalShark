@@ -1496,6 +1496,77 @@ TEST(RefOrbitDynamicPrecision_ConversionCertificates)
     ASSERT_TRUE(hdr.Certify(x.Get(), y.Get(), false));
 }
 
+TEST(RefOrbitDynamicPrecision_CertificationHeadroom)
+{
+    constexpr mp_bitcnt_t bits = 1024;
+    constexpr mp_bitcnt_t BoundaryOffsetBits = 900;
+    constexpr int64_t SafeErrorBits = 960;
+    MpfValue x(bits), y(bits), offset(bits), ulp(bits);
+    mpf_set_ui(offset.Get(), 1);
+    mpf_div_2exp(offset.Get(), offset.Get(), BoundaryOffsetBits);
+    mpf_set_ui(ulp.Get(), 1);
+    mpf_div_2exp(ulp.Get(), ulp.Get(), std::numeric_limits<double>::digits - 1);
+    for (const int sign : {-1, 1}) {
+        for (const bool nearUpper : {false, true}) {
+            mpf_set_ui(x.Get(), 1);
+            if (nearUpper) {
+                mpf_add(x.Get(), x.Get(), ulp.Get());
+                mpf_sub(x.Get(), x.Get(), offset.Get());
+            } else {
+                mpf_add(x.Get(), x.Get(), offset.Get());
+            }
+            if (sign < 0) {
+                mpf_neg(x.Get(), x.Get());
+            }
+            FractalShark::RefOrbitPrecisionSchedule safe(bits, x.Get(), y.Get(), x.Get(), y.Get());
+            safe.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(-SafeErrorBits), {});
+            const auto margin = safe.DescribeCertification(x.Get(), y.Get(), true);
+            ASSERT_TRUE(margin.Failure == FractalShark::RefOrbitPrecisionFailure::None);
+            ASSERT_TRUE(std::string_view{margin.Component} == "real");
+            ASSERT_TRUE(std::string_view{margin.Boundary} ==
+                        (nearUpper ? "upper_magnitude" : "lower_magnitude"));
+            ASSERT_EQ(margin.GapLowerBoundLog2, -static_cast<double>(BoundaryOffsetBits));
+            // Gap = 2^-900 and error approximately 2^-960 give sixty bits of headroom.
+            // Tiny outward allowances remain included in the reported comparison.
+            ASSERT_NEAR(margin.HeadroomBits, 60.0, 1e-9);
+            ASSERT_NEAR(margin.ComparisonErrorBoundLog2, -static_cast<double>(SafeErrorBits), 1e-9);
+            ASSERT_TRUE(safe.Certify(x.Get(), y.Get(), true));
+
+            FractalShark::RefOrbitPrecisionSchedule rejected(bits, x.Get(), y.Get(), x.Get(), y.Get());
+            rejected.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(
+                                            -static_cast<int64_t>(BoundaryOffsetBits) + 1),
+                                        {});
+            const auto failedMargin = rejected.DescribeCertification(x.Get(), y.Get(), true);
+            ASSERT_TRUE(failedMargin.Failure == FractalShark::RefOrbitPrecisionFailure::AmbiguousSample);
+            ASSERT_NEAR(failedMargin.HeadroomBits, -1.0, 1e-9);
+            // Describing an unused final pipeline state must not change orbit validity.
+            ASSERT_TRUE(rejected.GetStats().Failure == FractalShark::RefOrbitPrecisionFailure::None);
+            ASSERT_FALSE(rejected.Certify(x.Get(), y.Get(), true));
+        }
+    }
+
+    // Zero error passes without a boundary test, even exactly on a conversion boundary.
+    mpf_set_ui(x.Get(), 1);
+    FractalShark::RefOrbitPrecisionSchedule exact(bits, x.Get(), y.Get(), x.Get(), y.Get());
+    const auto exactMargin = exact.DescribeCertification(x.Get(), y.Get(), true);
+    ASSERT_TRUE(exactMargin.Failure == FractalShark::RefOrbitPrecisionFailure::None);
+    ASSERT_EQ(exactMargin.HeadroomBits, std::numeric_limits<double>::infinity());
+    exact.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(-SafeErrorBits), {});
+    const auto boundaryMargin = exact.DescribeCertification(x.Get(), y.Get(), true);
+    ASSERT_TRUE(boundaryMargin.Failure == FractalShark::RefOrbitPrecisionFailure::AmbiguousSample);
+    ASSERT_EQ(boundaryMargin.HeadroomBits, -std::numeric_limits<double>::infinity());
+    ASSERT_EQ(boundaryMargin.GapLowerBoundLog2, -std::numeric_limits<double>::infinity());
+
+    // A conversion outside the supported native range has no numeric gap threshold.
+    mpf_div_2exp(x.Get(), x.Get(), 2000);
+    FractalShark::RefOrbitPrecisionSchedule unsupported(bits, x.Get(), y.Get(), x.Get(), y.Get());
+    const auto unsupportedMargin = unsupported.DescribeCertification(x.Get(), y.Get(), true);
+    ASSERT_TRUE(unsupportedMargin.Failure ==
+                FractalShark::RefOrbitPrecisionFailure::UnsupportedConversion);
+    ASSERT_TRUE(std::isnan(unsupportedMargin.HeadroomBits));
+    ASSERT_TRUE(unsupported.GetStats().Failure == FractalShark::RefOrbitPrecisionFailure::None);
+}
+
 TEST(RefOrbitDynamicPrecision_ReducedOrbitMatchesOracle)
 {
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
@@ -1528,8 +1599,10 @@ TEST(RefOrbitDynamicPrecision_ReducedOrbitMatchesOracle)
         << "Dynamic attempt: steps=" << statistics->Steps << " min_bits=" << statistics->MinimumBits
         << " failure=" << static_cast<int>(statistics->Failure);
     ASSERT_TRUE(statistics->Failure == FractalShark::RefOrbitPrecisionFailure::None);
-    ASSERT_TRUE(statistics->ReducedSteps > 300);
-    ASSERT_TRUE(statistics->MinimumBits < bits / 2);
+    // A representation-only refactor must retain this fixture's precision tiers,
+    // as well as the independently checked samples below.
+    ASSERT_EQ(statistics->ReducedSteps, uint64_t{499});
+    ASSERT_EQ(statistics->MinimumBits, uint64_t{384});
     const auto *dynamic = calculator.GetLast<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
     ASSERT_EQ(dynamic->GetCountOrbitEntries(), iterations);
     std::vector<std::array<HDRFloat<double>, 2>> samples;
@@ -1652,6 +1725,10 @@ TEST(RefOrbitDynamicPrecision_RejectionLogsAndThrows)
             ASSERT_TRUE(diagnostic.find("reduced_steps=0") != std::string::npos);
             ASSERT_TRUE(diagnostic.find("elapsed_ms=") != std::string::npos);
             ASSERT_TRUE(diagnostic.find("sample_type=") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find("limiting_component=real") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find("gap_lower_bound_log2=") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find("comparison_error_bound_log2=") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find("certification_headroom_bits=") != std::string::npos);
             CheckLoggedCoordinate(diagnostic, "cx", cx.backend());
             CheckLoggedCoordinate(diagnostic, "cy", cy.backend());
             CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);

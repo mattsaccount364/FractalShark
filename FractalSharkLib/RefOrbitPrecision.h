@@ -1,5 +1,6 @@
 #pragma once
 
+#include "HDRFloat.h"
 #include "RefOrbitKaratsuba.h"
 #include "RefOrbitPrecisionStats.h"
 
@@ -11,7 +12,8 @@ namespace FractalShark {
 
 // A nonnegative binary magnitude with an extended exponent. Upper operations round
 // outward; FromMpfLower deliberately truncates and is used only for certification gaps.
-// It is separate from HDRFloat because the latter does not provide interval arithmetic.
+// HDRFloat supplies the representation and arithmetic; this wrapper adds directed
+// rounding and range validation required for an enclosure, rather than a point value.
 class RefOrbitErrorBound {
 public:
     static RefOrbitErrorBound PowerOfTwo(int64_t exponent);
@@ -41,9 +43,24 @@ private:
     static RefOrbitErrorBound NormFinite(RefOrbitErrorBound x, RefOrbitErrorBound y);
     // Sort zero below every nonzero finite-kernel intermediate. Its exponent is
     // ignored by validation, allowing addition to use ordinary alignment for zero.
-    static constexpr int64_t ZeroExponent = -std::numeric_limits<int64_t>::max() / 2;
-    double m_Mantissa{};
-    int64_t m_Exponent{ZeroExponent};
+    static constexpr int64_t ZeroExponent =
+        HDRFloat<double, HDROrder::Left, int64_t>::MIN_BIG_EXPONENT();
+    HDRFloat<double, HDROrder::Left, int64_t> m_Value;
+};
+
+// On-demand diagnostics for one complex state, not a minimum over the orbit.
+// HeadroomBits = log2(gapLowerBound / comparisonErrorBound); the strict gap
+// comparison passes only above zero. Infinite headroom with no component means
+// an exact-zero error bound needs no gap test; unsupported conversions have NaNs.
+struct RefOrbitCertificationDiagnostics {
+    double AccumulatedErrorBoundLog2{-std::numeric_limits<double>::infinity()};
+    double GapRoundingBoundLog2{-std::numeric_limits<double>::infinity()};
+    double ComparisonErrorBoundLog2{-std::numeric_limits<double>::infinity()};
+    double GapLowerBoundLog2{std::numeric_limits<double>::infinity()};
+    double HeadroomBits{std::numeric_limits<double>::infinity()};
+    const char *Component{"none"};
+    const char *Boundary{"none"};
+    RefOrbitPrecisionFailure Failure{RefOrbitPrecisionFailure::None};
 };
 
 // MT9 only: the derivative proposes a work precision, while an independent forward
@@ -73,6 +90,10 @@ public:
     bool Certify(mpf_srcptr x, mpf_srcptr y, bool nativeDouble);
     const RefOrbitDynamicPrecisionStats &GetStats() const;
     RefOrbitErrorBound GetError() const;
+    // Reuses certification scratch only at termination; never changes attempt status.
+    RefOrbitCertificationDiagnostics DescribeCertification(mpf_srcptr x,
+                                                           mpf_srcptr y,
+                                                           bool nativeDouble);
 
     static RefOrbitErrorBound CopyError(mpf_srcptr source, mpf_srcptr destination);
     static RefOrbitErrorBound ProductError(mpf_srcptr product);

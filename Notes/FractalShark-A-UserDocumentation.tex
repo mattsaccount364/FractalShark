@@ -488,8 +488,10 @@ choice and triggers any necessary reconfiguration.
       and fixed MT9 restarts from the original coordinates. Certification and
       restart can outweigh the arithmetic savings. Auto selects this variant
       in its MT9 range and when GPU reference generation is ineligible.
-      There is no explicit name for it in \code{-{}-perturbation-alg}; the
-      CLI's \code{Auto} selection can use it. See
+      The CLI name is
+      \code{MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision},
+      supplied to \code{-{}-perturbation-alg}; the CLI's \code{Auto} selection
+      can also use it. See
       \cref{subsec:ref-orbit-dynamic-precision} for the mathematical argument
       and the certificate's precise scope.
 
@@ -1093,6 +1095,8 @@ API names differ from the descriptive labels in the graphical menu.
     Reference-orbit algorithm. All valid strings are listed below;
     \cref{tab:reference-backends} explains their actual dispatch.
     GPU reference generation requires CUDA and an HDR perturbation render algorithm.
+\par\noindent
+\begin{minipage}{\linewidth}
 \begin{lstlisting}[language={}]
 Auto
 ST
@@ -1106,8 +1110,11 @@ MTPeriodicity3PerturbMTHighMTMed3
 MTPeriodicity3PerturbMTHighMTMed4
 MTPeriodicity5
 MTPeriodicity9Karatsuba
+MTPeriodicity9KaratsubaDynamicPrecision
 GPU
 \end{lstlisting}
+\end{minipage}
+\par
 
   \item[\code{-{}-commit-cap-bytes N}]
     Memory cap for growable vectors (default unlimited). Set it when starting

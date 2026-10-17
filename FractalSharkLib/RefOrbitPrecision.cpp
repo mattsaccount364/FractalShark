@@ -24,10 +24,6 @@ constexpr mp_bitcnt_t GapGuardLimbs = 2;
 constexpr int64_t BoundExponentLimit = std::numeric_limits<int64_t>::max() / 8;
 constexpr int MaximumAlignment =
     -std::numeric_limits<double>::min_exponent + std::numeric_limits<double>::digits;
-// Normalized magnitudes, their products, and their roots are in [0.25, 2).
-// Their three leading binary64 encoding bits are 001, versus 000 for exact zero.
-// Extract a 0/1 arithmetic factor without a comparison or a Debug-build branch.
-constexpr int MagnitudeFlagShift = std::numeric_limits<uint64_t>::digits - 3;
 constexpr int WordSignShift = std::numeric_limits<uint64_t>::digits - 1;
 static_assert(std::numeric_limits<double>::is_iec559 && std::numeric_limits<double>::radix == 2 &&
               std::numeric_limits<double>::digits == 53);
@@ -124,15 +120,17 @@ RefOrbitErrorBound
 RefOrbitErrorBound::Invalid()
 {
     RefOrbitErrorBound result;
-    result.m_Mantissa = std::numeric_limits<double>::infinity();
+    result.m_Value.setMantissa(std::numeric_limits<double>::infinity());
     return result;
 }
 
 RefOrbitErrorBound
 RefOrbitErrorBound::Checked(RefOrbitErrorBound value)
 {
-    return value.m_Mantissa != 0.0 &&
-                   (value.m_Exponent < -BoundExponentLimit || value.m_Exponent > BoundExponentLimit)
+    // Legacy bounds used frexp's [0.5,1) convention. HDR's exponent is one lower;
+    // preserve the existing permitted values and overflow behavior at that boundary.
+    const int64_t exponent = value.m_Value.getExp();
+    return !value.IsZero() && (exponent < -BoundExponentLimit - 1 || exponent >= BoundExponentLimit)
                ? Invalid()
                : value;
 }
@@ -140,15 +138,12 @@ RefOrbitErrorBound::Checked(RefOrbitErrorBound value)
 RefOrbitErrorBound
 RefOrbitErrorBound::Normalize(double mantissa, int64_t exponent)
 {
-    RefOrbitErrorBound result;
     if (!std::isfinite(mantissa) || exponent < -BoundExponentLimit || exponent > BoundExponentLimit) {
         return Invalid();
     }
-    int adjustment;
-    result.m_Mantissa = std::frexp(mantissa, &adjustment);
-    const auto nonzero =
-        static_cast<int64_t>(std::bit_cast<uint64_t>(result.m_Mantissa) >> MagnitudeFlagShift);
-    result.m_Exponent = (exponent + adjustment) * nonzero + ZeroExponent * (1 - nonzero);
+    RefOrbitErrorBound result;
+    result.m_Value = HDRFloat<double, HDROrder::Left, int64_t>{exponent, mantissa};
+    result.m_Value.Reduce();
     return Checked(result);
 }
 
@@ -159,8 +154,7 @@ RefOrbitErrorBound::PowerOfTwo(int64_t exponent)
         return Invalid();
     }
     RefOrbitErrorBound result;
-    result.m_Mantissa = 0.5;
-    result.m_Exponent = exponent + 1;
+    result.m_Value = HDRFloat<double, HDROrder::Left, int64_t>{exponent, 1.0};
     return result;
 }
 
@@ -178,7 +172,7 @@ RefOrbitErrorBound
 RefOrbitErrorBound::FromMpfLower(mpf_srcptr value)
 {
     if (!HasBoundableExponent(value)) {
-        return Normalize(std::numeric_limits<double>::infinity(), 0);
+        return Invalid();
     }
     double mantissa;
     const int64_t exponent = mpf_get_2exp_d(&mantissa, value);
@@ -189,7 +183,7 @@ RefOrbitErrorBound
 RefOrbitErrorBound::FromMpfUpper(mpf_srcptr value)
 {
     if (!HasBoundableExponent(value)) {
-        return Normalize(std::numeric_limits<double>::infinity(), 0);
+        return Invalid();
     }
     double mantissa;
     const int64_t exponent = mpf_get_2exp_d(&mantissa, value);
@@ -210,28 +204,17 @@ RefOrbitErrorBound::Add(RefOrbitErrorBound left, RefOrbitErrorBound right)
 RefOrbitErrorBound
 RefOrbitErrorBound::AddFinite(RefOrbitErrorBound left, RefOrbitErrorBound right)
 {
-    if (left.m_Exponent < right.m_Exponent) {
-        std::swap(left, right);
-    }
-    const int64_t difference = left.m_Exponent - right.m_Exponent;
-    // If alignment underflows, its positive contribution is still covered by the
-    // outward ulp on the larger operand. All arithmetic significands stay normalized.
-    const double aligned = difference > MaximumAlignment
-                               ? 0.0
-                               : std::ldexp(right.m_Mantissa, -static_cast<int>(difference));
-    // Zero sorts last without a special-case branch. For nonnegative binary64,
-    // incrementing the encoding advances one ulp. The normalized addend's encoding
-    // supplies that increment directly, including when alignment underflows.
-    const double sum = left.m_Mantissa + aligned;
-    left.m_Mantissa =
-        std::bit_cast<double>(std::bit_cast<uint64_t>(sum) +
-                              (std::bit_cast<uint64_t>(right.m_Mantissa) >> MagnitudeFlagShift));
-    // The outward sum is in [0.5, 2]. A carry to exactly 2 needs two shifts.
-    if (left.m_Mantissa >= 1.0) {
-        const int shift = left.m_Mantissa >= 2.0 ? 2 : 1;
-        left.m_Mantissa *= shift == 2 ? 0.25 : 0.5;
-        left.m_Exponent += shift;
-    }
+    const uint64_t rounding =
+        static_cast<uint64_t>(!left.IsZero()) & static_cast<uint64_t>(!right.IsZero());
+    left.m_Value += right.m_Value;
+    // For positive binary64 values the next encoding is the next outward ulp.
+    // HDR may discard a tiny aligned addend; that ulp still covers it. Adding an
+    // exact zero needs no rounding increment and follows the same arithmetic path.
+    // Finite-kernel operands/results are zero or normal, so Reduce's nonfinite and
+    // subnormal handling compiles out here and in the other finite kernels.
+    left.m_Value.setMantissa(
+        std::bit_cast<double>(std::bit_cast<uint64_t>(left.m_Value.getMantissa()) + rounding));
+    left.m_Value.Reduce<false, false>();
     return left;
 }
 
@@ -247,21 +230,11 @@ RefOrbitErrorBound::Multiply(RefOrbitErrorBound left, RefOrbitErrorBound right)
 RefOrbitErrorBound
 RefOrbitErrorBound::MultiplyFinite(RefOrbitErrorBound left, RefOrbitErrorBound right)
 {
-    const uint64_t product = std::bit_cast<uint64_t>(left.m_Mantissa * right.m_Mantissa);
-    const auto nonzero = static_cast<int64_t>(product >> MagnitudeFlagShift);
-    left.m_Mantissa = std::bit_cast<double>(product + static_cast<uint64_t>(nonzero));
-    left.m_Exponent += right.m_Exponent;
-    // Normalized inputs give an outward product in [0.25, 1]. Scaling is exact.
-    if (left.m_Mantissa < 0.5) {
-        left.m_Mantissa *= 2.0;
-        --left.m_Exponent;
-    } else if (left.m_Mantissa >= 1.0) {
-        left.m_Mantissa *= 0.5;
-        ++left.m_Exponent;
-    }
-    // Preserve the canonical sorting exponent through ordinary zero arithmetic,
-    // without an early return. Both-zero exponent addition also fits int64_t.
-    left.m_Exponent = left.m_Exponent * nonzero + ZeroExponent * (1 - nonzero);
+    left.m_Value *= right.m_Value;
+    const uint64_t rounding = static_cast<uint64_t>(!left.IsZero());
+    left.m_Value.setMantissa(
+        std::bit_cast<double>(std::bit_cast<uint64_t>(left.m_Value.getMantissa()) + rounding));
+    left.m_Value.Reduce<false, false>();
     return left;
 }
 
@@ -271,8 +244,7 @@ RefOrbitErrorBound::ScaleByPowerOfTwo(RefOrbitErrorBound value, int64_t shift)
     if (!value.IsFinite() || shift < -BoundExponentLimit || shift > BoundExponentLimit) {
         return Invalid();
     }
-    value.m_Exponent +=
-        shift * static_cast<int64_t>(std::bit_cast<uint64_t>(value.m_Mantissa) >> MagnitudeFlagShift);
+    value.m_Value.setExp(value.m_Value.getExp() + shift * static_cast<int64_t>(!value.IsZero()));
     return Checked(value);
 }
 
@@ -289,55 +261,42 @@ RefOrbitErrorBound
 RefOrbitErrorBound::NormFinite(RefOrbitErrorBound x, RefOrbitErrorBound y)
 {
     const auto squared = AddFinite(MultiplyFinite(x, x), MultiplyFinite(y, y));
-    double mantissa = squared.m_Mantissa;
-    int64_t exponent = squared.m_Exponent;
-    if (exponent % 2 != 0) {
-        mantissa *= 2.0;
-        --exponent;
-    }
-    // Binary64 sqrt is correctly rounded on the supported x64 Windows/Linux targets.
-    // Squared inputs and addition were already rounded upward, so one outward ulp
-    // encloses the square root without changing the process floating-point environment.
     RefOrbitErrorBound result;
-    const uint64_t root = std::bit_cast<uint64_t>(std::sqrt(mantissa));
-    const auto nonzero = static_cast<int64_t>(root >> MagnitudeFlagShift);
-    result.m_Mantissa = std::bit_cast<double>(root + static_cast<uint64_t>(nonzero));
-    result.m_Exponent = exponent / 2;
-    // sqrt's significand is in [sqrt(0.5), sqrt(2)], so at most one shift is needed.
-    if (result.m_Mantissa >= 1.0) {
-        result.m_Mantissa *= 0.5;
-        ++result.m_Exponent;
-    }
-    result.m_Exponent = result.m_Exponent * nonzero + ZeroExponent * (1 - nonzero);
+    result.m_Value = HdrSqrt(squared.m_Value);
+    // The squared norm is already rounded upward. Enclose the correctly rounded
+    // square root by one additional ulp, retaining an exact zero without a branch.
+    const uint64_t rounding = static_cast<uint64_t>(!result.IsZero());
+    result.m_Value.setMantissa(
+        std::bit_cast<double>(std::bit_cast<uint64_t>(result.m_Value.getMantissa()) + rounding));
+    result.m_Value.Reduce<false, false>();
     return result;
 }
 
 bool
 RefOrbitErrorBound::Less(RefOrbitErrorBound left, RefOrbitErrorBound right)
 {
-    if (!left.IsFinite() || !right.IsFinite()) {
-        return false;
-    }
-    return left.m_Exponent != right.m_Exponent ? left.m_Exponent < right.m_Exponent
-                                               : left.m_Mantissa < right.m_Mantissa;
+    return left.IsFinite() && right.IsFinite() &&
+           left.m_Value.compareToBothPositiveReduced(right.m_Value) < 0;
 }
 
 bool
 RefOrbitErrorBound::IsZero() const
 {
-    return m_Mantissa == 0.0;
+    return m_Value.getMantissa() == 0.0;
 }
 
 bool
 RefOrbitErrorBound::IsFinite() const
 {
-    return std::isfinite(m_Mantissa);
+    return std::isfinite(m_Value.getMantissa());
 }
 
 double
 RefOrbitErrorBound::Log2() const
 {
-    return std::log2(m_Mantissa) + static_cast<double>(m_Exponent);
+    // Keep the previous evaluation order so a normalization convention change
+    // cannot shift a precision tier at a rounding boundary.
+    return std::log2(m_Value.getMantissa() * 0.5) + static_cast<double>(m_Value.getExp() + 1);
 }
 
 RefOrbitPrecisionSchedule::RefOrbitPrecisionSchedule(
@@ -474,8 +433,7 @@ RefOrbitPrecisionSchedule::FinishStep(RefOrbitErrorBound localXError, RefOrbitEr
     // A Euclidean disk preserves complex multiplication's norm exactly; propagating
     // independent absolute component errors would spuriously amplify every rotation.
     auto twiceRadius = m_StepRadius;
-    twiceRadius.m_Exponent +=
-        static_cast<int64_t>(std::bit_cast<uint64_t>(twiceRadius.m_Mantissa) >> MagnitudeFlagShift);
+    twiceRadius.m_Value.multiply2_mutable();
     const auto linear = RefOrbitErrorBound::MultiplyFinite(twiceRadius, m_Error);
     const auto quadratic = RefOrbitErrorBound::MultiplyFinite(m_Error, m_Error);
     const auto local = RefOrbitErrorBound::AddFinite(
@@ -506,15 +464,12 @@ RefOrbitPrecisionSchedule::AccumulateRoundingErrors(std::span<const int64_t> qua
                                                                           -static_cast<int>(difference));
         sum = std::bit_cast<double>(std::bit_cast<uint64_t>(sum + aligned) + nonzero);
     }
-    // There are at most four terms. The sum is zero or in [1, 4 + four outward ulps],
-    // so one exact scaling normalizes the entire component without frexp.
+    // There are at most four terms. Let HDR normalize their outward-rounded sum,
+    // including the canonical sorting exponent when every quantum is exact zero.
     assert(quanta.size() <= 4);
-    const int shift = sum >= 4.0 ? 3 : sum >= 2.0 ? 2 : 1;
     RefOrbitErrorBound result;
-    result.m_Mantissa = sum * (shift == 3 ? 0.125 : shift == 2 ? 0.25 : 0.5);
-    const uint64_t sumBits = std::bit_cast<uint64_t>(sum);
-    const auto nonzero = static_cast<int64_t>((sumBits | (uint64_t{0} - sumBits)) >> WordSignShift);
-    result.m_Exponent = (largest + shift) * nonzero + ZeroQuantum * (1 - nonzero);
+    result.m_Value = HDRFloat<double, HDROrder::Left, int64_t>{largest, sum};
+    result.m_Value.Reduce<false, false>();
     return RefOrbitErrorBound::Checked(result);
 }
 
@@ -629,6 +584,105 @@ RefOrbitErrorBound
 RefOrbitPrecisionSchedule::GetError() const
 {
     return m_Error;
+}
+
+RefOrbitCertificationDiagnostics
+RefOrbitPrecisionSchedule::DescribeCertification(mpf_srcptr x, mpf_srcptr y, bool nativeDouble)
+{
+    RefOrbitCertificationDiagnostics result;
+    result.AccumulatedErrorBoundLog2 = m_Error.Log2();
+    if (!m_Error.IsFinite()) {
+        result.Failure = RefOrbitPrecisionFailure::InvalidBound;
+        result.HeadroomBits = std::numeric_limits<double>::quiet_NaN();
+        return result;
+    }
+
+    // Replay the existing certificate on demand instead of adding tracing, logarithms,
+    // or copies to every iteration. The same conversion bins, gap scratch precision,
+    // subtraction allowance, and directed gap bound must match CertifyComponent/CheckGap.
+    for (int component = 0; component < 2; ++component) {
+        mpf_srcptr value = component == 0 ? x : y;
+        const char *componentName = component == 0 ? "real" : "imaginary";
+        if (component == 1 && m_RealAxis && y->_mp_size == 0) {
+            continue;
+        }
+        double mantissa = 0.0;
+        int64_t exponent = 0;
+        const bool boundable = HasBoundableExponent(value);
+        if (boundable) {
+            exponent = mpf_get_2exp_d(&mantissa, value);
+        }
+        if (!boundable ||
+            (nativeDouble && value->_mp_size != 0 &&
+             (exponent < std::numeric_limits<double>::min_exponent ||
+              exponent > std::numeric_limits<double>::max_exponent)) ||
+            exponent < std::numeric_limits<int32_t>::min() ||
+            exponent > std::numeric_limits<int32_t>::max()) {
+            result = RefOrbitCertificationDiagnostics{};
+            result.AccumulatedErrorBoundLog2 = m_Error.Log2();
+            result.Component = componentName;
+            result.Failure = RefOrbitPrecisionFailure::UnsupportedConversion;
+            result.ComparisonErrorBoundLog2 = std::numeric_limits<double>::quiet_NaN();
+            result.GapLowerBoundLog2 = std::numeric_limits<double>::quiet_NaN();
+            result.HeadroomBits = std::numeric_limits<double>::quiet_NaN();
+            return result;
+        }
+        if (m_Error.IsZero()) {
+            continue;
+        }
+        if (value->_mp_size == 0) {
+            result.Component = componentName;
+            result.Boundary = "zero";
+            result.GapRoundingBoundLog2 = -std::numeric_limits<double>::infinity();
+            result.ComparisonErrorBoundLog2 = m_Error.Log2();
+            result.GapLowerBoundLog2 = -std::numeric_limits<double>::infinity();
+            result.HeadroomBits = -std::numeric_limits<double>::infinity();
+            result.Failure = RefOrbitPrecisionFailure::AmbiguousSample;
+            return result;
+        }
+
+        __mpf_struct magnitude = *value;
+        magnitude._mp_size = static_cast<decltype(magnitude._mp_size)>(MagnitudeSize(value));
+        for (int boundary = 0; boundary < 2; ++boundary) {
+            const double endpoint =
+                boundary == 0
+                    ? std::abs(mantissa)
+                    : std::nextafter(std::abs(mantissa), std::numeric_limits<double>::infinity());
+            mpf_set_d(m_Boundary.Get(), endpoint);
+            if (exponent < 0) {
+                mpf_div_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(-exponent));
+            } else {
+                mpf_mul_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(exponent));
+            }
+            mpf_srcptr larger = boundary == 0 ? &magnitude : m_Boundary.Get();
+            mpf_srcptr smaller = boundary == 0 ? m_Boundary.Get() : &magnitude;
+            const auto rounding = SumError(larger, smaller, m_Gap.Get());
+            mpf_sub(m_Gap.Get(), larger, smaller);
+            const auto gap = mpf_sgn(m_Gap.Get()) > 0 ? RefOrbitErrorBound::FromMpfLower(m_Gap.Get())
+                                                      : RefOrbitErrorBound{};
+            const auto comparison = RefOrbitErrorBound::Add(m_Error, rounding);
+            const bool passes = RefOrbitErrorBound::Less(comparison, gap);
+            if (!passes) {
+                result.Failure = RefOrbitPrecisionFailure::AmbiguousSample;
+            }
+            // Subtract integer exponents before conversion to double, preserving
+            // near-zero margins even when the absolute exponents are extremely deep.
+            const double headroom =
+                gap.IsZero() || !comparison.IsFinite()
+                    ? -std::numeric_limits<double>::infinity()
+                    : static_cast<double>(gap.m_Value.getExp() - comparison.m_Value.getExp()) +
+                          std::log2(gap.m_Value.getMantissa() / comparison.m_Value.getMantissa());
+            if (headroom < result.HeadroomBits) {
+                result.Component = componentName;
+                result.Boundary = boundary == 0 ? "lower_magnitude" : "upper_magnitude";
+                result.GapRoundingBoundLog2 = rounding.Log2();
+                result.ComparisonErrorBoundLog2 = comparison.Log2();
+                result.GapLowerBoundLog2 = gap.Log2();
+                result.HeadroomBits = headroom;
+            }
+        }
+    }
+    return result;
 }
 
 RefOrbitErrorBound

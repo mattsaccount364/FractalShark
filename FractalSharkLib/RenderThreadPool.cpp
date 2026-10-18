@@ -563,7 +563,12 @@ public:
             m_Pool.m_RendererPool.Release(*m_RendererIdx);
         }
 
-        m_Pool.m_InFlightCount.fetch_sub(1);
+        {
+            // Pair the idle transition with Drain's wait mutex so the final
+            // notification cannot arrive between its predicate check and sleep.
+            std::lock_guard drainLock(m_Pool.m_DrainMutex);
+            m_Pool.m_InFlightCount.fetch_sub(1);
+        }
         m_Pool.m_DrainCV.notify_all();
     }
 
@@ -780,6 +785,9 @@ RenderThreadPool::CancelPacedAnimation(uint64_t presentationGroup)
     std::vector<std::pair<uint64_t, std::string>> cancelledOperations;
     size_t pendingCount = 0;
     {
+        // Removing the final queued job can also satisfy Drain. Match its
+        // lock order: drain mutex before work-queue mutex.
+        std::lock_guard drainLock(m_DrainMutex);
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto it = m_WorkQueue.begin(); it != m_WorkQueue.end();) {
             if (it->PresentationMode == RenderPresentationMode::PacedAnimation &&
@@ -877,6 +885,7 @@ RenderThreadPool::Shutdown()
     // Discard all queued work — exit takes priority.
     std::vector<std::pair<uint64_t, std::string>> cancelledOperations;
     {
+        std::lock_guard drainLock(m_DrainMutex);
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto &item : m_WorkQueue) {
             cancelledOperations.emplace_back(item.OperationId, item.OperationName);
@@ -896,6 +905,7 @@ RenderThreadPool::Shutdown()
 
     // Wake up all workers
     m_WorkQueueCV.notify_all();
+    m_DrainCV.notify_all();
 
     // Shut down the frame queue to unblock GL consumer
     m_FrameQueue.Shutdown();
@@ -914,6 +924,9 @@ RenderThreadPool::Shutdown()
 void
 RenderThreadPool::Drain()
 {
+    // Completion and queue cancellation hold this mutex when they can make
+    // the predicate true. The queue lock also keeps dequeue's pop/increment
+    // transition indivisible to this check. Always acquire drain before queue.
     std::unique_lock lk(m_DrainMutex);
     m_DrainCV.wait(lk, [this] {
         std::lock_guard qlk(m_WorkQueueMutex);
@@ -1809,6 +1822,7 @@ RenderThreadPool::AbortAfterWorkerException(const std::exception &e, const char 
     LogWorkerException(e, file, line);
 
     {
+        std::lock_guard drainLock(m_DrainMutex);
         std::lock_guard lk(m_WorkQueueMutex);
         for (auto &item : m_WorkQueue) {
             LogOperationEvent(item, "cancelled (worker failure)", 0, file, line);

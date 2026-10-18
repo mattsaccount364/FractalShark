@@ -483,11 +483,12 @@ choice and triggers any necessary reconfiguration.
 
       \item \emph{MT9 + Periodicity + Karatsuba + Dynamic Precision} (radio):
       Optional MT9 strategy that proposes fewer working bits as the parameter
-      derivative grows. An independent accumulated-error bound certifies sample
-      conversions. If certification fails, the unpublished attempt is discarded
-      and fixed MT9 restarts from the original coordinates. Certification and
-      restart can outweigh the arithmetic savings. Auto selects this variant
-      in its MT9 range and when GPU reference generation is ineligible.
+      derivative grows. An independent propagated bound on current state error
+      certifies sample conversions. If certification fails, the unpublished attempt is discarded
+      and an application exception reports the rejection. Fixed MT9 can be
+      explicitly selected for a retry; it is not started automatically.
+      Certification overhead can outweigh the arithmetic savings. Auto selects
+      this variant in its MT9 range and when GPU reference generation is ineligible.
       The CLI name is
       \code{MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision},
       supplied to \code{-{}-perturbation-alg}; the CLI's \code{Auto} selection

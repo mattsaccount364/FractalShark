@@ -26,7 +26,7 @@ jobs:
     permissions:
       contents: read
 
-  # ---- Linux CMake builds (Debug tests + Release artifacts) ----
+  # ---- Linux CMake builds (Debug and Release builds; Release tests and artifacts) ----
   build-linux:
     name: Build FractalShark (Linux CMake)
     runs-on: ubuntu-24.04
@@ -214,8 +214,8 @@ jobs:
             readelf -S "$binary" | grep -q '\.symtab'
           done
 
-      - name: Run FractalSharkTest
-        run: ./build-debug/FractalSharkTest/FractalSharkTest
+      - name: Run FractalSharkTest (Release)
+        run: ./build-release/FractalSharkTest/FractalSharkTest
 
       - name: Smoke-test FractalSharkCli
         run: |
@@ -445,7 +445,8 @@ jobs:
           FractalSharkCudaCodeGeneration: compute_75,sm_75;compute_80,sm_80;compute_86,sm_86;compute_89,sm_89;compute_90,sm_90;compute_100,sm_100;compute_120,sm_120
         run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64
 
-      - name: Run unit tests
+      - name: Run unit tests (Release)
+        if: matrix.configuration == 'Release'
         run: ${{ matrix.configuration }}\FractalSharkTest.exe
 
       - name: Smoke-test FractalSharkCli

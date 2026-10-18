@@ -48,11 +48,43 @@ private:
     HDRFloat<double, HDROrder::Left, int64_t> m_Value;
 };
 
+enum class RefOrbitErrorBudgetStatus {
+    NotChecked,
+    Bounded,
+    Exact,
+    ZeroGap,
+    UnsupportedConversion,
+    InvalidBound
+};
+
+// Logarithmic comparison-error magnitude in units of the component's full precision
+// quantum, 2^(e-P). UsedBits includes the certificate's gap subtraction allowance;
+// MaxBits is the strict limit at the boundary with the least remaining headroom.
+// Only Bounded supplies numeric UsedBits/MaxBits. Signed values are intentional:
+// a comparison bound smaller than one full precision quantum has a negative log.
+struct RefOrbitComponentErrorBudget {
+    double UsedBits{std::numeric_limits<double>::quiet_NaN()};
+    double MaxBits{std::numeric_limits<double>::quiet_NaN()};
+    // Z1 is the copied coordinate. Zero identifies an absent check.
+    uint64_t StateIteration{};
+    RefOrbitErrorBudgetStatus Status{RefOrbitErrorBudgetStatus::NotChecked};
+};
+
+// Each component can reach its tightest checked margin at a different state.
+// Fast records use the conservative gap that actually certified the component;
+// an inconclusive fast probe never becomes a record of a failed certificate.
+struct RefOrbitWorstCertificationDiagnostics {
+    RefOrbitComponentErrorBudget Real;
+    RefOrbitComponentErrorBudget Imaginary;
+};
+
 // On-demand diagnostics for one complex state, not a minimum over the orbit.
 // HeadroomBits = log2(gapLowerBound / comparisonErrorBound); the strict gap
 // comparison passes only above zero. Infinite headroom with no component means
 // an exact-zero error bound needs no gap test; unsupported conversions have NaNs.
 struct RefOrbitCertificationDiagnostics {
+    RefOrbitComponentErrorBudget Real;
+    RefOrbitComponentErrorBudget Imaginary;
     double AccumulatedErrorBoundLog2{-std::numeric_limits<double>::infinity()};
     double GapRoundingBoundLog2{-std::numeric_limits<double>::infinity()};
     double ComparisonErrorBoundLog2{-std::numeric_limits<double>::infinity()};
@@ -90,6 +122,8 @@ public:
     bool Certify(mpf_srcptr x, mpf_srcptr y, bool nativeDouble);
     const RefOrbitDynamicPrecisionStats &GetStats() const;
     RefOrbitErrorBound GetError() const;
+    // Formats stored bounds without replaying any state or changing route counters.
+    RefOrbitWorstCertificationDiagnostics DescribeWorstCertification() const;
     // Reuses certification scratch only at termination; never changes attempt status.
     RefOrbitCertificationDiagnostics DescribeCertification(mpf_srcptr x,
                                                            mpf_srcptr y,
@@ -101,12 +135,34 @@ public:
     static RefOrbitErrorBound DoublingError(mpf_srcptr source);
 
 private:
+    // Store only fixed-size bound descriptors, never MPIR limbs or orbit snapshots.
+    // Pressure is comparison/gap, normalized for ranking without logarithms.
+    struct CertificationRecord {
+        RefOrbitErrorBound Comparison;
+        RefOrbitErrorBound Gap;
+        int64_t ComponentExponent{};
+        int64_t PressureExponent{};
+        double PressureMantissa{};
+        uint64_t StateIteration{};
+        RefOrbitErrorBudgetStatus Status{RefOrbitErrorBudgetStatus::NotChecked};
+        bool Failed{};
+    };
+
     static RefOrbitErrorBound AccumulateRoundingErrors(std::span<const int64_t> quanta);
-    bool CertifyComponent(mpf_srcptr value, bool nativeDouble);
+    void RecordCertificationStatus(CertificationRecord &record, RefOrbitErrorBudgetStatus status);
+    void RecordCertification(CertificationRecord &record,
+                             RefOrbitErrorBound comparison,
+                             RefOrbitErrorBound gap,
+                             int64_t componentExponent,
+                             bool passes);
+    bool CertifyComponent(mpf_srcptr value, bool nativeDouble, CertificationRecord &record);
     // A false fast result is inconclusive; only the regular certificate may reject.
-    bool TryCertifyComponentFast(mpf_srcptr value, bool nativeDouble) const;
-    bool CertifyComponentSlow(mpf_srcptr value, bool nativeDouble);
-    bool CheckGap(mpf_srcptr larger, mpf_srcptr smaller);
+    bool TryCertifyComponentFast(mpf_srcptr value, bool nativeDouble, CertificationRecord &record);
+    bool CertifyComponentSlow(mpf_srcptr value, bool nativeDouble, CertificationRecord &record);
+    bool CheckGap(mpf_srcptr larger,
+                  mpf_srcptr smaller,
+                  int64_t componentExponent,
+                  CertificationRecord &record);
 
     mp_bitcnt_t m_FullBits;
     mp_bitcnt_t m_Quantum;
@@ -116,10 +172,14 @@ private:
     int64_t m_DerivativeExponent{};
     RefOrbitErrorBound m_CScale;
     RefOrbitErrorBound m_CError;
+    // Current forward-error radius, including transported earlier residuals. The
+    // recurrence can contract this radius; it is not a running sum of lost bits.
     RefOrbitErrorBound m_Error;
     RefOrbitErrorBound m_StepRadius;
     bool m_RealAxis;
     RefOrbitDynamicPrecisionStats m_Stats;
+    CertificationRecord m_WorstReal;
+    CertificationRecord m_WorstImaginary;
     // The boundary is a short exact dyadic; the gap has enough preallocated limbs
     // for exact subtraction from any working state, including very deep near-returns.
     // No verification multiplication or per-sample allocation growth is needed.

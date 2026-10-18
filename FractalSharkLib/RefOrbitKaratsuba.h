@@ -17,9 +17,6 @@
 
 namespace FractalShark {
 
-// This threshold selects the backend in Auto mode; explicit selection is unrestricted.
-inline constexpr uint64_t RefOrbitKaratsubaAutoPrecisionBits = 16'384;
-
 // Computes three products at full destination precision. Outputs must be distinct, but may
 // alias either input. Full stored input mantissas, including guard limbs, are snapshotted.
 // Construction precision bounds all inputs and allocates scratch once. The dynamic specialization

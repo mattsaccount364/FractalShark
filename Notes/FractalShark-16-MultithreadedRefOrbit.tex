@@ -309,7 +309,7 @@ retaining $q$ limbs toward zero gives
 \end{equation}
 The destination retains up to \code{\_mp\_prec+1} limbs. Karatsuba introduces
 no error before that final truncation. The bound concerns products of the
-stored inputs; it does not bound accumulated orbit error or certify periodicity.
+stored inputs; it does not bound propagated orbit-state error or certify periodicity.
 Ordinary \code{mpf\_mul} can clip inputs differently, so exact split assembly
 need not be bitwise identical to MT3. Fixed split buffers accommodate zero and
 one-limb inputs, including values produced by cancellation during the orbit.
@@ -352,7 +352,7 @@ Caller & $X_HY_H$ & Assemble $XY$, join both square leads, update both
 
 After product completion, the caller forms $y_{n+1}=2x_ny_n+c_y$ and
 $x_{n+1}=x_n^2-y_n^2+c_x$ from the same old-state batch. Low-precision
-derivative tracking, scheduling, accumulated-error enclosure, and conversion
+derivative tracking, scheduling, propagation of the state-error enclosure, and conversion
 certification all run on the caller. The last three activities are present
 only in the dynamic variant; no worker independently chooses a precision.
 
@@ -371,12 +371,13 @@ There is at most one outstanding job per worker, so generation counters and
 a shared completion counter are unnecessary. Pending arithmetic must finish
 before snapshots are overwritten or workers are stopped.
 Each worker's MPIR scratch lifetime is scoped inside its thread. On normal
-exit, cancellation, or a dynamic restart, outstanding batches complete before
+exit, cancellation, or dynamic rejection, outstanding batches complete before
 Stop is published; all eight workers are joined before their owned buffers
-are destroyed. A rejected dynamic attempt is discarded before fixed MT9
-restarts. The heuristic schedule can therefore affect cost and acceptance,
-but cannot bypass the accepted-sample certificate derived next. The fallback
-does not inherit a certificate from the rejected attempt.
+are destroyed. A rejected dynamic attempt is discarded and an application
+exception reports the failure; a caller can explicitly retry with fixed MT9.
+The heuristic schedule can therefore affect cost and acceptance, but cannot
+bypass the accepted-sample certificate derived next. A fixed retry does not
+inherit a certificate from the rejected attempt.
 
 \subsection{Optional dynamic working precision}
 \label{subsec:ref-orbit-dynamic-precision}
@@ -396,7 +397,7 @@ catalog with compile-time coverage checks over every reference algorithm.
 
 Two mathematical arguments have different roles. Parameter sensitivity predicts
 a working precision likely to be economical. An independent enclosure of the
-accumulated orbit error certifies the conversions actually consumed downstream.
+current orbit-state error certifies the conversions actually consumed downstream.
 The precision proposal is heuristic; the acceptance condition has a proof under
 the arithmetic assumptions stated below. In particular, the proof applies to
 any permitted sequence of working precisions, including one selected with an
@@ -440,7 +441,7 @@ $C2^{-P_{\mathrm{full}}-g}$ motivates the proposal
 Here $P_{\mathrm{full}}$ is the configured working precision, including its
 existing coordinate-precision margin; $2^{-P_{\mathrm{full}}}$ is a budget
 scale, not an exact identity for pixel spacing. The constant $g$ supplies a
-safety margin for the proposal, rather than an accumulated-error theorem.
+safety margin for the proposal, rather than a theorem bounding propagated state error.
 
 The quadratic recurrence supplies explicit conditions for derivative growth.
 Complex multiplication preserves magnitudes multiplicatively, so rotation
@@ -462,7 +463,7 @@ A near-return makes the next derivative close to $1$ when
 $|2z_n^\star d_n^\star|$ is small; small $|z_n^\star|$ alone does not
 establish that condition.
 
-\subsubsection{Accumulation and the limits of the precision proposal}
+\subsubsection{Error propagation and the limits of the precision proposal}
 
 Write $\widetilde z_n^\star$ for the working state and
 $\varepsilon_n=\widetilde z_n^\star-z_n^\star$ for its error. A complete
@@ -507,7 +508,7 @@ An empty product equals $1$. Since $|1-u|\le1+|u|\le\exp(|u|)$,
  \label{eq:dynamic-transport-bound}
 \end{equation}
 Sustained geometric growth makes the reciprocal-derivative sum bounded.
-If each transport product is at most $K$, the linearized accumulated error
+If each transport product is at most $K$, the linearized parameter-normalized error
 is at most $KN\eta$. Consequently, a margin $g$ absorbs that factor only
 when its size, together with the local arithmetic constants, fits the
 budget. The full argument must also account for the quadratic terms.
@@ -543,8 +544,9 @@ Later requests can decrease or increase. As an illustrative calculation,
 $P_{\mathrm{full}}=16{,}384$, $w=64$, unit operand scale, and derivative norm
 $2^{8192}$ give $Q=256$ and $a=8304$, hence a request of $8448$ bits.
 These values illustrate tier rounding rather than a measured orbit.
-Raising a subsequent request restores arithmetic capacity; it does not
-restore discarded state or reduce the accumulated-error enclosure.
+Raising a subsequent request restores arithmetic capacity; the precision change
+alone does not restore discarded state or reduce the current state-error enclosure.
+Later recurrence updates can contract that enclosure, as described below.
 
 \subsubsection{A schedule-independent enclosure proof}
 \label{subsec:ref-orbit-dynamic-enclosure}
@@ -566,6 +568,25 @@ the nonnegative bound with outward rounding at each operation. A Euclidean
 disk respects complex rotation; independent component boxes can instead
 introduce artificial growth under repeated rotations. Disk propagation for
 the Mandelbrot polynomial also appears in~\cite{MandelbrotNotes2018}.
+
+\paragraph{Meaning of the propagated bound.}
+The radius $E_n$ bounds the error in the current working state, including the
+transported effects of earlier residuals. It is neither a measurement of the
+unknown error $\varepsilon_n$ nor a running sum of rounding-error magnitudes.
+One disk bounds both real and imaginary component errors. Local arithmetic
+bounds and outward rounding propagate the entire enclosure; an oracle orbit
+is not required for the bound calculation. A separately computed oracle can
+instead test whether an implementation respects that enclosure.
+
+The update can amplify or contract the radius. At a computed state
+$\widetilde z_n^\star=0$, with no newly introduced residual, every possible
+exact state lies within $|z_n^\star|\le E_n$, so squaring maps the disk into a
+disk of radius $E_n^2$. For example, $E_n=2^{-100}$ permits a next radius of
+$2^{-200}$ when the subsequent arithmetic and coordinate addition are exact.
+For a nonzero working state, the linear term $2R_nE_n$ and the new residual
+bound $\tau_n$ also contribute. Such contraction follows from the recurrence;
+it does not reconstruct the discarded earlier state. A small final radius
+therefore does not establish how tight the certificate was at earlier states.
 
 The initialization and precision changes require explicit accounting. The
 working coordinates $\widetilde c$ are copied once at full working precision.
@@ -638,7 +659,7 @@ The result is an arithmetic enclosure theorem, conditional on the stated
 primitive bounds and floating-point behavior; it is not a claim of formal
 verification of the machine code.
 
-\subsubsection{Conversion certificates and fixed restart}
+\subsubsection{Conversion certificates and rejection}
 \label{subsec:ref-orbit-dynamic-certificate}
 
 A small error bound alone does not establish identical stored conversions.
@@ -684,8 +705,8 @@ The bin boundaries are exact dyadics. Boundary scratch has $256$ bits;
 gap scratch has the full working precision plus two limbs, allowing exact
 subtraction even for a gap far below the leading limb. A defensive subtraction
 bound is added to $E_n$ before comparison with a lower bound for the gap.
-Native subnormal/overflow cases and unsupported HDR exponents use fixed
-fallback. For exactly real $c_\star$, the imaginary orbit remains exactly
+Native subnormal/overflow cases and unsupported HDR exponents reject the
+dynamic attempt. For exactly real $c_\star$, the imaginary orbit remains exactly
 zero by the recurrence, independently of the real-component error radius;
 the implementation preserves that structural exception.
 
@@ -697,23 +718,75 @@ enclosure containment in one conversion bin, with the exact-zero cases above.
 Certifying the normalized binary64/exponent pair also certifies the existing
 deterministic casts to the renderer's sample types. This theorem holds for
 any allowed precision schedule. An approximate derivative can affect the
-amount of work or the likelihood of restart, but cannot invalidate an
+amount of work or the likelihood of rejection, but cannot invalidate an
 accepted sample when the theorem's hypotheses hold.
 
 Each sampled state is certified before it supplies input to the existing
 publication, periodicity, or escape pipeline. A dynamic attempt remains private
 until completion. An ambiguous conversion or invalid bound rejects the attempt;
-after workers, precision guards, and TLS-owned arithmetic objects unwind,
-fixed MT9 restarts from the original coordinates. Cancellation publishes only
+the implementation records diagnostics and throws an application exception.
+Workers, precision guards, and TLS-owned arithmetic objects unwind, and a
+caller may explicitly select fixed MT9 afterward. No automatic full-precision
+retry is performed. Cancellation publishes only
 the already certified prefix and does not start another attempt.
 
 The certificate applies to samples entering storage/compression. Compression
 retains its established error contract. The periodicity test remains a
 termination heuristic, and downstream pixel arithmetic has its own errors.
-Fixed fallback retains fixed MT9's existing numerical contract; its output
-does not inherit the dynamic attempt's certificate. Likewise, agreement with
+An explicitly requested fixed retry retains fixed MT9's existing numerical
+contract; its output does not inherit the dynamic attempt's certificate. Likewise, agreement with
 fixed MT9 in regression fixtures is evidence about those fixtures, rather
 than a universal identity between two finite-precision algorithms.
+
+\paragraph{Reading the worst checked error budgets.}
+The completion and rejection summaries retain each component's tightest
+checked certificate across the attempt. They do not substitute the final
+computed pipeline state, which can be ahead of the last stored sample.
+For a nonzero component with normalized binary exponent $s$, define its full
+precision unit as $u_v=2^{s-P_{\mathrm{full}}}$. At a checked boundary $b$,
+let $G_b$ be the gap lower bound and let $E_{\mathrm{cmp},b}$ be the propagated
+radius plus the outward-rounded gap-subtraction allowance. The printed pair is
+\begin{equation}
+ b_{\mathrm{current}}=\log_2(E_{\mathrm{cmp},b}/u_v),
+ \qquad b_{\mathrm{max}}=\log_2(G_b/u_v).
+ \label{eq:dynamic-diagnostic-budget}
+\end{equation}
+The difference $b_{\mathrm{max}}-b_{\mathrm{current}}$ is certification
+headroom in bits. The stored record maximizes
+$E_{\mathrm{cmp},b}/G_b$, with the earliest checked state retained when the
+binary64 pressure representations tie. Real and imaginary records can refer
+to different states. Bounds and their exponents are retained without copying
+orbit states; logarithms are evaluated only when producing the report.
+
+For example,
+\begin{lstlisting}
+worst_real_error_bits=120.00/123.00 worst_real_error_state_Z=4567
+\end{lstlisting}
+reports three bits of headroom at $Z_{4567}$: the comparison-error bound is
+eight times smaller than its checked limit. The imaginary fields have the
+same interpretation. Both values are logarithmic magnitudes in the stated
+unit, not counts of incorrect bits. High coordinate precision can produce a
+large maximum at an ordinary-magnitude state, while a near-zero sample can
+require a much smaller absolute error. There is no single error allowance
+that can be spent uniformly across the orbit.
+
+Accepted fast certificates contribute their conservative prefix-derived gap
+bounds with no subtraction allowance. An inconclusive fast probe contributes
+no record; only the ensuing regular comparisons determine that check's
+record. The summary therefore describes the most restrictive bounds actually
+checked, rather than an exact minimum over all mathematical boundary distances.
+A tight fast bound can still be resolved by the regular certificate.
+Certification uses the original strict bound comparison, independently of the
+two-decimal display; equality fails, and rounded values can appear equal even
+when the comparison passes.
+
+The status \code{not\_checked} with state index zero denotes an absent check.
+Supported zero-error checks and structural imaginary zeros are \code{exact}.
+The labels \code{zero\_gap}, \code{unsupported\_conversion}, and
+\code{invalid\_bound} explain failures without displaying infinities or NaNs.
+An affected component's failure supersedes an earlier finite record; a
+component skipped after another component rejects retains its earlier record
+or remains \code{not\_checked}.
 
 \subsubsection{Allocation, cost, and provenance}
 
@@ -732,9 +805,10 @@ attempt costs approximately
 $\sum_n C_{\mathrm{step}}(P_n)$ plus certification and scheduling overhead,
 instead of $N C_{\mathrm{step}}(P_{\mathrm{full}})$. Reduced limb counts can
 save substantial product work in a favorable growth regime. Conservative
-enclosures or conversion boundaries can instead cause an attempt followed by
-a full fixed restart. The strategy therefore offers a workload-dependent
-trade-off, with no universal speedup implied by derivative growth.
+enclosures or conversion boundaries can instead reject an attempt, with a
+subsequent full fixed retry available by explicit selection. The strategy
+therefore offers a workload-dependent trade-off, with no universal speedup
+implied by derivative growth.
 
 Fractadyne supplies the immediate precision-schedule model~\cite{Fractadyne}.
 An earlier derivative-driven implementation is present in

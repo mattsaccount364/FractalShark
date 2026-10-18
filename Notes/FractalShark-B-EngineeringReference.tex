@@ -96,11 +96,16 @@ publishes active limb lengths with each batch, after the preceding batch joins.
 \code{RefOrbitPrecisionSchedule} proposes precision and maintains the independent
 error disk and conversion certificate. \code{RefOrbitRawPrecisionGuard} clips
 the state explicitly and restores allocation precision before destruction.
-Its lifetime, together with that of the product workers, remains inside the
-caller's MPIR allocator/TLS scope; workers and every MPIR object must be destroyed before
+\code{DescribeWorstCertification} reports each component's tightest checked
+bound and state index without replaying the orbit or changing route counts.
+The propagated radius bounds current state error and can grow or contract;
+it is not a measurement of actual error or a running total of rounding losses.
+Schedule and precision-guard lifetimes, together with those of the product workers,
+remain inside the caller's MPIR allocator/TLS scope; workers and every MPIR object must be destroyed before
 their associated TLS arena is shut down. A dynamic attempt enters the reference
 cache only after completion; a failed certificate unwinds all attempt-owned
-arithmetic before fixed MT9 restarts. Entering or leaving the manually selected
+arithmetic as the rejection exception propagates. Fixed MT9 requires an explicit
+retry selection. Entering or leaving the manually selected
 dynamic variant invalidates cached reference state. The enclosure argument and
 conversion contract appear in
 \cref{subsec:ref-orbit-dynamic-enclosure,subsec:ref-orbit-dynamic-certificate}.

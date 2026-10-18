@@ -162,10 +162,51 @@ CheckCertificationReport(const std::string &message,
     ASSERT_NEAR(read("certification_fast_percent="),
                 fast + regular == 0.0 ? 0.0 : 100.0 * fast / (fast + regular),
                 1e-12);
-    // Require route statistics and the numerical margin on the same report line.
-    ASSERT_TRUE(report.find("accumulated_error_bound_log2=") != std::string_view::npos);
-    ASSERT_TRUE(report.find("comparison_error_bound_log2=") != std::string_view::npos);
-    ASSERT_TRUE(report.find("certification_headroom_bits=") != std::string_view::npos);
+    // Both component budgets must be on the route-statistics line. Special states
+    // have readable names; finite budgets use two decimal places on each side.
+    for (const std::string_view field : {"worst_real_error_bits=", "worst_imaginary_error_bits="}) {
+        const size_t position = report.find(field);
+        ASSERT_TRUE(position != std::string_view::npos);
+        const size_t begin2 = position + field.size();
+        const size_t end2 = report.find_first_of(", \r", begin2);
+        const auto budget = report.substr(begin2, end2 == std::string_view::npos ? end2 : end2 - begin2);
+        if (budget == "not_checked" || budget == "exact" || budget == "zero_gap" ||
+            budget == "unsupported_conversion" || budget == "invalid_bound") {
+            continue;
+        }
+        const size_t slash = budget.find('/');
+        ASSERT_TRUE(slash != std::string_view::npos);
+        for (const auto number : {budget.substr(0, slash), budget.substr(slash + 1)}) {
+            double value{};
+            const auto parsed = std::from_chars(number.data(), number.data() + number.size(), value);
+            ASSERT_TRUE(parsed.ec == std::errc{});
+            ASSERT_TRUE(parsed.ptr == number.data() + number.size());
+            ASSERT_TRUE(std::isfinite(value));
+            const size_t point = number.find('.');
+            ASSERT_TRUE(point != std::string_view::npos);
+            ASSERT_EQ(number.size() - point - 1, size_t{2});
+        }
+    }
+    for (const std::string_view field :
+         {"worst_real_error_state_Z=", "worst_imaginary_error_state_Z="}) {
+        const double state = read(field);
+        ASSERT_TRUE(state >= 0.0 && state <= static_cast<double>(stats.Steps) + 1.0);
+        ASSERT_EQ(state, std::floor(state));
+        if (fast + regular == 0.0) {
+            ASSERT_EQ(state, 0.0);
+        }
+    }
+    for (const std::string_view field : {"accumulated_error_bound_log2=",
+                                         "comparison_error_bound_log2=",
+                                         "gap_lower_bound_log2=",
+                                         "gap_rounding_bound_log2=",
+                                         "certification_headroom_bits=",
+                                         "final_computed_state_Z=",
+                                         "final_state_certifies=",
+                                         "limiting_component=",
+                                         "limiting_boundary="}) {
+        ASSERT_TRUE(report.find(field) == std::string_view::npos);
+    }
 }
 
 mp_size_t
@@ -919,21 +960,22 @@ TEST(RefOrbitAuto_PrecisionBoundaries)
         SelectionCase{639, RefOrbitCalc::PerturbationAlg::STPeriodicity},
         SelectionCase{640, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
         SelectionCase{641, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
-        SelectionCase{6'783, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
-        SelectionCase{6'784, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
-        SelectionCase{6'785, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
-        SelectionCase{16'383, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
-        SelectionCase{16'384, RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
-        SelectionCase{16'385, RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
-        SelectionCase{32'767, RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
+        SelectionCase{4'095, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
+        SelectionCase{4'096, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+        SelectionCase{4'097, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+        SelectionCase{8'191, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+        SelectionCase{8'192, RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision},
+        SelectionCase{8'193, RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision},
+        SelectionCase{32'767, RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision},
         SelectionCase{32'768, RefOrbitCalc::PerturbationAlg::GPU},
         SelectionCase{32'769, RefOrbitCalc::PerturbationAlg::GPU}};
     for (const auto &test : cases) {
         ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, true, renderer) ==
                     test.Expected);
-        const auto withoutGpu = test.Expected == RefOrbitCalc::PerturbationAlg::GPU
-                                    ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba
-                                    : test.Expected;
+        const auto withoutGpu =
+            test.Expected == RefOrbitCalc::PerturbationAlg::GPU
+                ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision
+                : test.Expected;
         ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, false, renderer) ==
                     withoutGpu);
     }
@@ -942,7 +984,7 @@ TEST(RefOrbitAuto_PrecisionBoundaries)
 TEST(RefOrbitAuto_GpuTypeAndFormatCompatibility)
 {
     // Exercise the whole catalog against a concrete supported set, including CPU HDR consumers.
-    // Plain types, scaled bookkeeping, and compressed double-float conversion must stay on MT9.
+    // Plain types, scaled bookkeeping, and compressed double-float conversion use CPU dynamic MT9.
     const std::array supported{RenderAlgorithmEnum::Cpu32PerturbedBLAHDR,
                                RenderAlgorithmEnum::Cpu64PerturbedBLAHDR,
                                RenderAlgorithmEnum::Cpu32PerturbedBLAV2HDR,
@@ -969,13 +1011,14 @@ TEST(RefOrbitAuto_GpuTypeAndFormatCompatibility)
     for (const auto &renderer : RenderAlgorithms) {
         const bool compatible =
             std::find(supported.begin(), supported.end(), renderer.Algorithm) != supported.end();
-        const auto expected = compatible ? RefOrbitCalc::PerturbationAlg::GPU
-                                         : RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba;
+        const auto expected =
+            compatible ? RefOrbitCalc::PerturbationAlg::GPU
+                       : RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision;
         ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, true, renderer) == expected);
         ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'767, true, renderer) ==
-                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
         ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, false, renderer) ==
-                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
     }
 }
 
@@ -990,7 +1033,7 @@ TEST(RefOrbitAuto_GpuPrecisionCapacity)
     }
     for (const auto bits : {maximumGpuBits + 1, std::numeric_limits<uint64_t>::max()}) {
         ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, true, renderer) ==
-                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
     }
 }
 
@@ -1004,22 +1047,22 @@ TEST(RefOrbitKaratsuba_AutoSelectionAndExplicitOverride)
                             uint64_t{640},
                             uint64_t{641},
                             uint64_t{3400},
-                            uint64_t{6'783},
-                            uint64_t{6'784},
-                            uint64_t{6'785},
+                            uint64_t{4'095},
+                            uint64_t{4'096},
+                            uint64_t{4'097},
+                            uint64_t{8'191},
+                            uint64_t{8'192},
+                            uint64_t{8'193},
                             uint64_t{10'000},
-                            uint64_t{16'383},
-                            uint64_t{16'384},
-                            uint64_t{16'385},
                             uint64_t{32'767},
                             uint64_t{32'768},
                             uint64_t{32'769}}) {
         fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
         ASSERT_TRUE(fractal.RecenterViewCalc(ViewAtPrecision(bits)));
-        if (bits >= 16'384) {
+        if (bits >= 8'192) {
             ASSERT_TRUE(fractal.GetPerturbationAlg() ==
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
-        } else if (bits >= 6'784) {
+                        RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
+        } else if (bits >= 4'096) {
             ASSERT_TRUE(fractal.GetPerturbationAlg() ==
                         RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
         } else if (bits >= 640) {
@@ -1029,7 +1072,7 @@ TEST(RefOrbitKaratsuba_AutoSelectionAndExplicitOverride)
         }
         const auto selected = fractal.GetPerturbationAlg();
         const uint64_t reusePadding =
-            bits >= 6'784 && bits < 16'384
+            bits >= 4'096 && bits < 8'192
                 ? AuthoritativeReuseExtraPrecisionInBits - AuthoritativeMinExtraPrecisionInBits
                 : 0;
         ASSERT_EQ(fractal.GetPrecision(), bits + reusePadding);
@@ -1037,9 +1080,11 @@ TEST(RefOrbitKaratsuba_AutoSelectionAndExplicitOverride)
 
         // Explicit GPU selection is also preserved even when runtime CUDA is disabled;
         // generation retains its existing error contract, while this test checks the picker only.
-        for (const auto explicitAlg : {RefOrbitCalc::PerturbationAlg::MTPeriodicity3,
-                                       RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba,
-                                       RefOrbitCalc::PerturbationAlg::GPU}) {
+        for (const auto explicitAlg :
+             {RefOrbitCalc::PerturbationAlg::MTPeriodicity3,
+              RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba,
+              RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision,
+              RefOrbitCalc::PerturbationAlg::GPU}) {
             fractal.SetPerturbationAlg(explicitAlg);
             ASSERT_TRUE(fractal.GetPerturbationAlg() == explicitAlg);
         }
@@ -1480,6 +1525,11 @@ TEST(RefOrbitDynamicPrecision_FiniteRecurrence)
     ASSERT_FALSE(invalid.GetError().IsFinite());
     ASSERT_FALSE(invalid.Certify(zero.Get(), zero.Get(), true));
     ASSERT_TRUE(invalid.GetStats().Failure == FractalShark::RefOrbitPrecisionFailure::InvalidBound);
+    const auto invalidWorst = invalid.DescribeWorstCertification();
+    ASSERT_TRUE(invalidWorst.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::InvalidBound);
+    ASSERT_TRUE(invalidWorst.Imaginary.Status == FractalShark::RefOrbitErrorBudgetStatus::InvalidBound);
+    ASSERT_EQ(invalidWorst.Real.StateIteration, uint64_t{2});
+    ASSERT_EQ(invalidWorst.Imaginary.StateIteration, uint64_t{2});
     FractalShark::RefOrbitPrecisionSchedule overflow(
         128, zero.Get(), zero.Get(), zero.Get(), zero.Get());
     constexpr int64_t ExponentLimit = std::numeric_limits<int64_t>::max() / 8;
@@ -1617,7 +1667,13 @@ TEST(RefOrbitDynamicPrecision_FastCertificateRoutesAndThresholds)
     ASSERT_EQ(mixed.GetStats().RegularCertificationComponents, uint64_t{2} - expectedFast);
     const auto before = mixed.GetStats();
     const auto margin = mixed.DescribeCertification(x.Get(), y.Get(), false);
+    const auto worst = mixed.DescribeWorstCertification();
     ASSERT_NEAR(margin.HeadroomBits, 60.0, 1e-9);
+    ASSERT_TRUE(worst.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::Bounded);
+    ASSERT_TRUE(worst.Imaginary.Status == FractalShark::RefOrbitErrorBudgetStatus::Bounded);
+    ASSERT_NEAR(worst.Imaginary.MaxBits - worst.Imaginary.UsedBits, 60.0, 1e-9);
+    ASSERT_EQ(worst.Real.StateIteration, uint64_t{1});
+    ASSERT_EQ(worst.Imaginary.StateIteration, uint64_t{1});
     ASSERT_EQ(mixed.GetStats().FastCertifiedComponents, before.FastCertifiedComponents);
     ASSERT_EQ(mixed.GetStats().RegularCertificationComponents, before.RegularCertificationComponents);
     ASSERT_TRUE(mixed.Certify(x.Get(), y.Get(), false));
@@ -1748,6 +1804,11 @@ TEST(RefOrbitDynamicPrecision_CertificationHeadroom)
             // Tiny outward allowances remain included in the reported comparison.
             ASSERT_NEAR(margin.HeadroomBits, 60.0, 1e-9);
             ASSERT_NEAR(margin.ComparisonErrorBoundLog2, -static_cast<double>(SafeErrorBits), 1e-9);
+            // The component exponent is one: its full precision unit is 2^-1023.
+            ASSERT_TRUE(margin.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::Bounded);
+            ASSERT_NEAR(margin.Real.UsedBits, 63.0, 1e-9);
+            ASSERT_NEAR(margin.Real.MaxBits, 123.0, 1e-9);
+            ASSERT_TRUE(margin.Imaginary.Status == FractalShark::RefOrbitErrorBudgetStatus::Exact);
             ASSERT_TRUE(safe.Certify(x.Get(), y.Get(), true));
             ASSERT_EQ(safe.GetStats().FastCertifiedComponents, uint64_t{0});
             ASSERT_EQ(safe.GetStats().RegularCertificationComponents, uint64_t{1});
@@ -1759,9 +1820,18 @@ TEST(RefOrbitDynamicPrecision_CertificationHeadroom)
             const auto failedMargin = rejected.DescribeCertification(x.Get(), y.Get(), true);
             ASSERT_TRUE(failedMargin.Failure == FractalShark::RefOrbitPrecisionFailure::AmbiguousSample);
             ASSERT_NEAR(failedMargin.HeadroomBits, -1.0, 1e-9);
+            ASSERT_TRUE(failedMargin.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::Bounded);
+            ASSERT_NEAR(failedMargin.Real.UsedBits, 124.0, 1e-9);
+            ASSERT_NEAR(failedMargin.Real.MaxBits, 123.0, 1e-9);
             // Describing an unused final pipeline state must not change orbit validity.
             ASSERT_TRUE(rejected.GetStats().Failure == FractalShark::RefOrbitPrecisionFailure::None);
             ASSERT_FALSE(rejected.Certify(x.Get(), y.Get(), true));
+            const auto rejectedWorst = rejected.DescribeWorstCertification();
+            ASSERT_NEAR(rejectedWorst.Real.UsedBits, 124.0, 1e-9);
+            ASSERT_NEAR(rejectedWorst.Real.MaxBits, 123.0, 1e-9);
+            ASSERT_EQ(rejectedWorst.Real.StateIteration, uint64_t{1});
+            ASSERT_TRUE(rejectedWorst.Imaginary.Status ==
+                        FractalShark::RefOrbitErrorBudgetStatus::NotChecked);
         }
     }
 
@@ -1771,11 +1841,15 @@ TEST(RefOrbitDynamicPrecision_CertificationHeadroom)
     const auto exactMargin = exact.DescribeCertification(x.Get(), y.Get(), true);
     ASSERT_TRUE(exactMargin.Failure == FractalShark::RefOrbitPrecisionFailure::None);
     ASSERT_EQ(exactMargin.HeadroomBits, std::numeric_limits<double>::infinity());
+    ASSERT_TRUE(exactMargin.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::Exact);
+    ASSERT_TRUE(exactMargin.Imaginary.Status == FractalShark::RefOrbitErrorBudgetStatus::Exact);
     exact.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(-SafeErrorBits), {});
     const auto boundaryMargin = exact.DescribeCertification(x.Get(), y.Get(), true);
     ASSERT_TRUE(boundaryMargin.Failure == FractalShark::RefOrbitPrecisionFailure::AmbiguousSample);
     ASSERT_EQ(boundaryMargin.HeadroomBits, -std::numeric_limits<double>::infinity());
     ASSERT_EQ(boundaryMargin.GapLowerBoundLog2, -std::numeric_limits<double>::infinity());
+    ASSERT_TRUE(boundaryMargin.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::ZeroGap);
+    ASSERT_TRUE(boundaryMargin.Imaginary.Status == FractalShark::RefOrbitErrorBudgetStatus::Exact);
 
     // A conversion outside the supported native range has no numeric gap threshold.
     mpf_div_2exp(x.Get(), x.Get(), 2000);
@@ -1784,7 +1858,122 @@ TEST(RefOrbitDynamicPrecision_CertificationHeadroom)
     ASSERT_TRUE(unsupportedMargin.Failure ==
                 FractalShark::RefOrbitPrecisionFailure::UnsupportedConversion);
     ASSERT_TRUE(std::isnan(unsupportedMargin.HeadroomBits));
+    ASSERT_TRUE(unsupportedMargin.Real.Status ==
+                FractalShark::RefOrbitErrorBudgetStatus::UnsupportedConversion);
     ASSERT_TRUE(unsupported.GetStats().Failure == FractalShark::RefOrbitPrecisionFailure::None);
+}
+
+TEST(RefOrbitDynamicPrecision_WorstCertificationMargins)
+{
+    constexpr mp_bitcnt_t bits = 1024;
+    constexpr int64_t SafeErrorBits = 960;
+    constexpr mp_bitcnt_t RealGapBits = 900;
+    constexpr mp_bitcnt_t LooseImaginaryGapBits = 850;
+    constexpr mp_bitcnt_t TightImaginaryGapBits = 950;
+    constexpr mp_bitcnt_t ImaginaryScaleBits = 40;
+    constexpr int64_t ContractedErrorBits = 1000;
+    constexpr int64_t SmallerErrorBits = 1100;
+    // Exercise cancellation of large absolute exponents without leaving HDR's range.
+    constexpr int64_t ExponentScale = 1'000'000'000;
+    MpfValue x(bits), y(bits), zero(bits), offset(bits), error(bits);
+    const auto setNearBoundary = [&](mpf_ptr value, mp_bitcnt_t offsetBits, int64_t scale) {
+        mpf_set_ui(offset.Get(), 1);
+        mpf_div_2exp(offset.Get(), offset.Get(), offsetBits);
+        mpf_add_ui(value, offset.Get(), 1);
+        if (scale < 0) {
+            mpf_div_2exp(value, value, static_cast<mp_bitcnt_t>(-scale));
+        } else {
+            mpf_mul_2exp(value, value, static_cast<mp_bitcnt_t>(scale));
+        }
+    };
+
+    // Known dyadic gaps give independent numeric expectations. Scaling both
+    // components and the shared error must leave the normalized budgets unchanged.
+    for (const int64_t scale : {-ExponentScale, int64_t{0}, ExponentScale}) {
+        setNearBoundary(x.Get(), RealGapBits, scale);
+        setNearBoundary(
+            y.Get(), LooseImaginaryGapBits, scale - static_cast<int64_t>(ImaginaryScaleBits));
+        FractalShark::RefOrbitPrecisionSchedule schedule(bits, x.Get(), y.Get(), x.Get(), y.Get());
+        const auto empty = schedule.DescribeWorstCertification();
+        ASSERT_TRUE(empty.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::NotChecked);
+        ASSERT_TRUE(empty.Imaginary.Status == FractalShark::RefOrbitErrorBudgetStatus::NotChecked);
+        ASSERT_EQ(empty.Real.StateIteration, uint64_t{0});
+        ASSERT_TRUE(schedule.Certify(x.Get(), y.Get(), false));
+        ASSERT_TRUE(schedule.DescribeWorstCertification().Real.Status ==
+                    FractalShark::RefOrbitErrorBudgetStatus::Exact);
+        schedule.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(scale - SafeErrorBits),
+                                    {});
+        ASSERT_TRUE(schedule.Certify(x.Get(), y.Get(), false));
+        const auto worst = schedule.DescribeWorstCertification();
+        ASSERT_NEAR(worst.Real.UsedBits, 63.0, 1e-9);
+        ASSERT_NEAR(worst.Real.MaxBits, 123.0, 1e-9);
+        ASSERT_NEAR(worst.Imaginary.UsedBits, 103.0, 1e-9);
+        ASSERT_NEAR(worst.Imaginary.MaxBits, 173.0, 1e-9);
+        ASSERT_EQ(worst.Real.StateIteration, uint64_t{1});
+        ASSERT_EQ(worst.Imaginary.StateIteration, uint64_t{1});
+    }
+
+    // Drive synthetic certificate states to isolate record selection from orbit
+    // dynamics. Zero-radius recurrence updates supply controlled contractions.
+    setNearBoundary(x.Get(), RealGapBits, 0);
+    setNearBoundary(y.Get(), LooseImaginaryGapBits, -static_cast<int64_t>(ImaginaryScaleBits));
+    FractalShark::RefOrbitPrecisionSchedule schedule(bits, x.Get(), y.Get(), x.Get(), y.Get());
+    schedule.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(-SafeErrorBits), {});
+    ASSERT_TRUE(schedule.Certify(x.Get(), y.Get(), false));
+    schedule.BeginStep(zero.Get(), zero.Get(), false);
+    schedule.FinishStep(FractalShark::RefOrbitErrorBound::PowerOfTwo(-ContractedErrorBits), {});
+    setNearBoundary(y.Get(), TightImaginaryGapBits, -static_cast<int64_t>(ImaginaryScaleBits));
+    ASSERT_TRUE(schedule.Certify(x.Get(), y.Get(), false));
+    const auto tight = schedule.DescribeWorstCertification();
+    ASSERT_EQ(tight.Real.StateIteration, uint64_t{1});
+    ASSERT_EQ(tight.Imaginary.StateIteration, uint64_t{2});
+    ASSERT_NEAR(tight.Real.MaxBits - tight.Real.UsedBits, 60.0, 1e-9);
+    ASSERT_NEAR(tight.Imaginary.MaxBits - tight.Imaginary.UsedBits, 10.0, 1e-9);
+    const double tightErrorLog2 = schedule.GetError().Log2();
+
+    schedule.BeginStep(zero.Get(), zero.Get(), false);
+    schedule.FinishStep(FractalShark::RefOrbitErrorBound::PowerOfTwo(-SmallerErrorBits), {});
+    setNearBoundary(y.Get(), LooseImaginaryGapBits, -static_cast<int64_t>(ImaginaryScaleBits));
+    ASSERT_TRUE(schedule.Certify(x.Get(), y.Get(), false));
+    ASSERT_EQ(schedule.DescribeWorstCertification().Real.StateIteration, uint64_t{1});
+    ASSERT_EQ(schedule.DescribeWorstCertification().Imaginary.StateIteration, uint64_t{2});
+    const auto final = schedule.DescribeCertification(x.Get(), y.Get(), false);
+    ASSERT_TRUE(final.Real.UsedBits < 0.0);
+    ASSERT_TRUE(final.Real.UsedBits < tight.Real.UsedBits);
+
+    // Recreate the same outward-rounded pressure at Z4: equal records retain Z2.
+    schedule.BeginStep(zero.Get(), zero.Get(), false);
+    schedule.FinishStep(FractalShark::RefOrbitErrorBound::PowerOfTwo(-ContractedErrorBits), {});
+    setNearBoundary(y.Get(), TightImaginaryGapBits, -static_cast<int64_t>(ImaginaryScaleBits));
+    ASSERT_EQ(schedule.GetError().Log2(), tightErrorLog2);
+    ASSERT_TRUE(schedule.Certify(x.Get(), y.Get(), false));
+    ASSERT_EQ(schedule.DescribeWorstCertification().Imaginary.StateIteration, uint64_t{2});
+
+    // A real-component failure replaces its earlier finite record without
+    // claiming that the imaginary component was checked again after rejection.
+    mpf_set_ui(x.Get(), 1);
+    ASSERT_FALSE(schedule.Certify(x.Get(), y.Get(), false));
+    const auto failed = schedule.DescribeWorstCertification();
+    ASSERT_TRUE(failed.Real.Status == FractalShark::RefOrbitErrorBudgetStatus::ZeroGap);
+    ASSERT_EQ(failed.Real.StateIteration, uint64_t{4});
+    ASSERT_EQ(failed.Imaginary.StateIteration, uint64_t{2});
+
+    // Gap = 1.5 fast-tail quanta and error = 1.25 quanta. The fast bound is
+    // inconclusive, but regular certification passes with log2(1.2) headroom.
+    constexpr mp_bitcnt_t FastTailQuantumBits = std::numeric_limits<double>::digits - 1 + 32;
+    mpf_set_d(offset.Get(), 1.5);
+    mpf_div_2exp(offset.Get(), offset.Get(), FastTailQuantumBits);
+    mpf_add_ui(x.Get(), offset.Get(), 1);
+    mpf_set_d(error.Get(), 1.25);
+    mpf_div_2exp(error.Get(), error.Get(), FastTailQuantumBits);
+    FractalShark::RefOrbitPrecisionSchedule regular(bits, x.Get(), zero.Get(), x.Get(), zero.Get());
+    regular.AddStateTruncation(FractalShark::RefOrbitErrorBound::FromMpfLower(error.Get()), {});
+    ASSERT_TRUE(regular.Certify(x.Get(), zero.Get(), false));
+    const auto regularWorst = regular.DescribeWorstCertification();
+    ASSERT_EQ(regular.GetStats().FastCertifiedComponents, uint64_t{0});
+    ASSERT_EQ(regular.GetStats().RegularCertificationComponents, uint64_t{1});
+    ASSERT_TRUE(regularWorst.Real.UsedBits < regularWorst.Real.MaxBits);
+    ASSERT_NEAR(regularWorst.Real.MaxBits - regularWorst.Real.UsedBits, std::log2(1.2), 1e-9);
 }
 
 TEST(RefOrbitDynamicPrecision_ReducedOrbitMatchesOracle)
@@ -1945,10 +2134,11 @@ TEST(RefOrbitDynamicPrecision_RejectionLogsAndThrows)
             ASSERT_TRUE(diagnostic.find("reduced_steps=0") != std::string::npos);
             ASSERT_TRUE(diagnostic.find("elapsed_ms=") != std::string::npos);
             ASSERT_TRUE(diagnostic.find("sample_type=") != std::string::npos);
-            ASSERT_TRUE(diagnostic.find("limiting_component=real") != std::string::npos);
-            ASSERT_TRUE(diagnostic.find("gap_lower_bound_log2=") != std::string::npos);
-            ASSERT_TRUE(diagnostic.find("comparison_error_bound_log2=") != std::string::npos);
-            ASSERT_TRUE(diagnostic.find("certification_headroom_bits=") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find(unsupportedNative
+                                            ? "worst_real_error_bits=unsupported_conversion"
+                                            : "worst_real_error_bits=zero_gap") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find("worst_real_error_state_Z=1") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find("worst_imaginary_error_bits=not_checked") != std::string::npos);
             CheckLoggedCoordinate(diagnostic, "cx", cx.backend());
             CheckLoggedCoordinate(diagnostic, "cy", cy.backend());
             CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);
@@ -2037,6 +2227,8 @@ TEST(RefOrbitDynamicPrecision_StartupStorageAndPeriodicity)
             CheckDynamicPrecisionCounterDelta(countersBefore, 0, 0);
             ASSERT_EQ(stats->FastCertifiedComponents, uint64_t{0});
             ASSERT_EQ(stats->RegularCertificationComponents, uint64_t{0});
+            ASSERT_TRUE(diagnostic.find("worst_real_error_bits=not_checked") != std::string::npos);
+            ASSERT_TRUE(diagnostic.find("worst_imaginary_error_bits=not_checked") != std::string::npos);
         }
         const auto *results = calculator.GetLast<uint64_t, HDRFloat<double>, extras>();
         ASSERT_EQ(results->GetCountOrbitEntries(),
@@ -2114,8 +2306,9 @@ TEST(RefOrbitDynamicPrecision_ActiveCancellation)
     ASSERT_EQ(stats->FastCertifiedComponents + stats->RegularCertificationComponents, stats->Steps);
 }
 
-TEST(RefOrbitDynamicPrecision_ManualMenuAndAutoExclusion)
+TEST(RefOrbitDynamicPrecision_ManualMenuAndAutoSelection)
 {
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
 #include "MenuTreeDef.h"
     const auto command = FractalShark::FractalCommand::PerturbationMultithread9KaratsubaDynamicPrecision;
     const auto *node = FindNode(menu, static_cast<uint32_t>(command));
@@ -2136,13 +2329,14 @@ TEST(RefOrbitDynamicPrecision_ManualMenuAndAutoExclusion)
     commands.ExecuteCommand(FractalShark::FractalCommand::PerturbationMultithread9KaratsubaPeriodicity);
     fractal.GetRenderPool()->Drain();
     ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
-    const auto renderer = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedLAv2);
-    for (const uint64_t bits : {639, 640, 6784, 16384, 32768, 100096}) {
-        for (const bool gpuAvailable : {false, true}) {
-            ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, gpuAvailable, renderer) !=
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
-        }
-    }
+    // A deeper view preserves the explicit full-precision override. Returning to Auto
+    // through the menu selects dynamic MT9 at the CPU threshold when CUDA is disabled.
+    ASSERT_TRUE(fractal.RecenterViewCalc(ViewAtPrecision(8'192)));
+    ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+    commands.ExecuteCommand(FractalShark::FractalCommand::PerturbationAuto);
+    fractal.GetRenderPool()->Drain();
+    ASSERT_TRUE(fractal.GetPerturbationAlg() ==
+                RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
 }
 
 TEST(RefOrbitDynamicPrecision_RenderAndCompressionRoundtrip)

@@ -47,10 +47,9 @@
 
 namespace {
 
-// The former 10^150 and 10^2000 zoom cutoffs require approximately 616 and 6,761
-// bits, including the minimum precision margin. Round to 64-bit limb boundaries.
 constexpr uint64_t AutoMultithreadPrecisionBits = 640;
-constexpr uint64_t AutoReusePrecisionBits = 6'784;
+constexpr uint64_t AutoReusePrecisionBits = 4'096;
+constexpr uint64_t AutoKaratsubaPrecisionBits = 8'192;
 constexpr uint64_t AutoGpuPrecisionBits = 32'768;
 constexpr uint64_t GpuReferenceLimbBits = 32;
 constexpr uint64_t AutoGpuMaximumPrecisionBits =
@@ -2251,6 +2250,45 @@ MT9FastCertificationPercent(const FractalShark::RefOrbitDynamicPrecisionStats &s
     return total == 0.0 ? 0.0 : 100.0 * fast / total;
 }
 
+std::string
+MT9WorstErrorBudgets(const FractalShark::RefOrbitWorstCertificationDiagnostics &diagnostics,
+                     const char *separator)
+{
+    // A separate stream keeps the concise bit budgets from changing precision or
+    // notation for coordinates, route statistics, or the surrounding report.
+    std::ostringstream message;
+    message << std::fixed << std::setprecision(2);
+    const auto appendBudget = [&](const FractalShark::RefOrbitComponentErrorBudget &budget) {
+        switch (budget.Status) {
+            case FractalShark::RefOrbitErrorBudgetStatus::NotChecked:
+                message << "not_checked";
+                break;
+            case FractalShark::RefOrbitErrorBudgetStatus::Bounded:
+                message << budget.UsedBits << '/' << budget.MaxBits;
+                break;
+            case FractalShark::RefOrbitErrorBudgetStatus::Exact:
+                message << "exact";
+                break;
+            case FractalShark::RefOrbitErrorBudgetStatus::ZeroGap:
+                message << "zero_gap";
+                break;
+            case FractalShark::RefOrbitErrorBudgetStatus::UnsupportedConversion:
+                message << "unsupported_conversion";
+                break;
+            case FractalShark::RefOrbitErrorBudgetStatus::InvalidBound:
+                message << "invalid_bound";
+                break;
+        }
+    };
+    message << "worst_real_error_bits=";
+    appendBudget(diagnostics.Real);
+    message << separator << "worst_real_error_state_Z=" << diagnostics.Real.StateIteration << separator
+            << "worst_imaginary_error_bits=";
+    appendBudget(diagnostics.Imaginary);
+    message << separator << "worst_imaginary_error_state_Z=" << diagnostics.Imaginary.StateIteration;
+    return message.str();
+}
+
 [[noreturn]] void
 ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
                              FractalShark::RefOrbitDynamicPrecisionStats &stats,
@@ -2258,11 +2296,9 @@ ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
                              const HighPrecision &cx,
                              const HighPrecision &cy,
                              mpf_srcptr x,
-                             mpf_srcptr y,
                              uint64_t generation,
                              IterTypeFull orbitIteration,
                              IterTypeFull iterationLimit,
-                             bool nativeDouble,
                              const char *sampleType)
 {
     // Record the discarded attempt before unwinding. No failed orbit enters
@@ -2291,7 +2327,7 @@ ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
     summary << "MT9 dynamic precision rejected: " << reason << ", Z" << orbitIteration
             << ", steps=" << stats.Steps << '/' << iterationLimit << ", bits=" << mpf_get_prec(x) << '/'
             << stats.FullBits;
-    const auto margin = schedule.DescribeCertification(x, y, nativeDouble);
+    const auto margin = schedule.DescribeWorstCertification();
     std::ostringstream message;
     message << std::setprecision(std::numeric_limits<double>::max_digits10) << summary.str()
             << ", generation=" << stats.GenerationNumber << ", min_bits=" << stats.MinimumBits
@@ -2299,13 +2335,8 @@ ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
             << ", certification_fast_components=" << stats.FastCertifiedComponents
             << ", certification_regular_components=" << stats.RegularCertificationComponents
             << ", certification_fast_percent=" << MT9FastCertificationPercent(stats)
-            << ", elapsed_ms=" << stats.ElapsedMilliseconds << ", sample_type=" << sampleType
-            << ", accumulated_error_bound_log2=" << margin.AccumulatedErrorBoundLog2
-            << ", limiting_component=" << margin.Component << ", limiting_boundary=" << margin.Boundary
-            << ", gap_lower_bound_log2=" << margin.GapLowerBoundLog2
-            << ", gap_rounding_bound_log2=" << margin.GapRoundingBoundLog2
-            << ", comparison_error_bound_log2=" << margin.ComparisonErrorBoundLog2
-            << ", certification_headroom_bits=" << margin.HeadroomBits;
+            << ", elapsed_ms=" << stats.ElapsedMilliseconds << ", sample_type=" << sampleType << ", "
+            << MT9WorstErrorBudgets(margin, ", ");
 
     AppendMT9Coordinate(message, "cx", cx.backend());
     AppendMT9Coordinate(message, "cy", cy.backend());
@@ -2349,7 +2380,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                                         HighPrecision cx,
                                                         HighPrecision cy)
 {
-    // Experiment: skip sample certification but retain error tracking and final diagnostics if false
+    // Experiment: skip sample certification but retain propagated-error tracking if false.
     constexpr bool EnablePrecisionCertification = true;
 
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
@@ -2359,7 +2390,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
         PushbackResults(std::move(newArray));
     }
     std::conditional_t<DynamicPrecision, BenchmarkData, std::monostate> dynamicTimer;
-    std::conditional_t<DynamicPrecision, FractalShark::RefOrbitCertificationDiagnostics, std::monostate>
+    std::conditional_t<DynamicPrecision,
+                       FractalShark::RefOrbitWorstCertificationDiagnostics,
+                       std::monostate>
         certification;
     if constexpr (DynamicPrecision) {
         dynamicTimer.StartTimer();
@@ -2442,11 +2475,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                                  cx,
                                                  cy,
                                                  zx.backend(),
-                                                 zy.backend(),
                                                  results->GetGenerationNumber(),
                                                  1,
                                                  iterationLimit,
-                                                 std::is_same_v<T, double> || std::is_same_v<T, float>,
                                                  typeid(T).name());
                 }
             }
@@ -2492,19 +2523,16 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                     if (!schedule->Certify(zx.backend(),
                                            zy.backend(),
                                            std::is_same_v<T, double> || std::is_same_v<T, float>)) {
-                        ThrowMT9CertificationFailure(
-                            *schedule,
-                            *m_LastDynamicPrecisionStats,
-                            dynamicTimer,
-                            cx,
-                            cy,
-                            zx.backend(),
-                            zy.backend(),
-                            results->GetGenerationNumber(),
-                            i + 1,
-                            iterationLimit,
-                            std::is_same_v<T, double> || std::is_same_v<T, float>,
-                            typeid(T).name());
+                        ThrowMT9CertificationFailure(*schedule,
+                                                     *m_LastDynamicPrecisionStats,
+                                                     dynamicTimer,
+                                                     cx,
+                                                     cy,
+                                                     zx.backend(),
+                                                     results->GetGenerationNumber(),
+                                                     i + 1,
+                                                     iterationLimit,
+                                                     typeid(T).name());
                     }
                 }
                 const T currentX = ConvertMT9Sample<T, SubType>(zx.backend());
@@ -2592,10 +2620,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             }
             if constexpr (DynamicPrecision) {
                 m_LastDynamicPrecisionStats = schedule->GetStats();
-                // Diagnose once on the final computed state while its MPIR scratch is alive.
-                // The ordinary per-iteration certificate performs no additional tracing.
-                certification = schedule->DescribeCertification(
-                    zx.backend(), zy.backend(), std::is_same_v<T, double> || std::is_same_v<T, float>);
+                // Convert stored certificate bounds to display units only at exit.
+                // Unchecked final pipeline updates cannot replace tighter checked states.
+                certification = schedule->DescribeWorstCertification();
             }
         }
     }
@@ -2614,10 +2641,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
         m_LastDynamicPrecisionStats->GenerationNumber = results->GetGenerationNumber();
         dynamicTimer.StopTimer();
         m_LastDynamicPrecisionStats->ElapsedMilliseconds = dynamicTimer.GetDeltaInMs();
-        // The final computed state includes the last update of MT9's delayed pipeline;
-        // it can be ahead of the last checked/stored sample. This diagnostic does not
-        // introduce a new rejection of that unused update. Headroom = log2(gap / error)
-        // includes the verifier's subtraction allowance; positive passes, zero fails.
+        // Report each component's tightest checked certificate, including its limit
+        // and state index. Current/max use the same full precision unit; their
+        // difference is the conservative headroom at that check, before display rounding.
         // Keep console work outside timing and independent of the optional atomics.
         FractalSharkLog::LogLine(__FILE__, __LINE__)
             << std::setprecision(std::numeric_limits<double>::max_digits10)
@@ -2630,16 +2656,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             << " certification_regular_components="
             << m_LastDynamicPrecisionStats->RegularCertificationComponents
             << " certification_fast_percent="
-            << MT9FastCertificationPercent(*m_LastDynamicPrecisionStats) << " final_computed_state_Z="
-            << (m_LastDynamicPrecisionStats->Steps == 0 ? 0 : m_LastDynamicPrecisionStats->Steps + 1)
-            << " accumulated_error_bound_log2=" << certification.AccumulatedErrorBoundLog2
-            << " limiting_component=" << certification.Component
-            << " limiting_boundary=" << certification.Boundary
-            << " gap_lower_bound_log2=" << certification.GapLowerBoundLog2
-            << " gap_rounding_bound_log2=" << certification.GapRoundingBoundLog2
-            << " comparison_error_bound_log2=" << certification.ComparisonErrorBoundLog2
-            << " certification_headroom_bits=" << certification.HeadroomBits << " final_state_certifies="
-            << (certification.Failure == FractalShark::RefOrbitPrecisionFailure::None);
+            << MT9FastCertificationPercent(*m_LastDynamicPrecisionStats) << ' '
+            << MT9WorstErrorBudgets(certification, " ");
         if constexpr (EnableMT9DynamicPrecisionCounters) {
             if (m_LastDynamicPrecisionStats->Steps != 0 && !AbortMonitor::GetStopCalculatingGlobal()) {
                 MT9DynamicPrecisionSuccesses.fetch_add(1, std::memory_order_relaxed);
@@ -3355,7 +3373,7 @@ RefOrbitCalc::ResolveAutoPerturbationAlg(uint64_t precisionBits,
     if (precisionBits < AutoReusePrecisionBits) {
         return PerturbationAlg::MTPeriodicity3;
     }
-    if (precisionBits < FractalShark::RefOrbitKaratsubaAutoPrecisionBits) {
+    if (precisionBits < AutoKaratsubaPrecisionBits) {
         return PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3;
     }
     // RoundToSupportedLimbCount saturates at the largest GPU bucket. Avoid silently

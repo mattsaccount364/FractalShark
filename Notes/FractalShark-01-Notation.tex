@@ -154,9 +154,10 @@ $R_x,\;R_y$      & parameter-offset bounds       & reference-relative screen cov
                   \cref{subsec:ref-orbit-view-bounds} \\
 $\widetilde z_n^\star$ & dynamic working orbit & distinct from the compression shadow
                   $\hat z_n$; \cref{subsec:ref-orbit-dynamic-precision} \\
-$\varepsilon_n,\;E_n$ & working-orbit error / disk radius
+$\varepsilon_n,\;E_n$ & state error / propagated radius
                   & $\varepsilon_n=\widetilde z_n^\star-z_n^\star$,
-                    $|\varepsilon_n|\le E_n$; distinct from replay error $e_n$ \\
+                    $|\varepsilon_n|\le E_n$; the shared disk radius can grow or contract;
+                    distinct from replay error $e_n$ \\
 $\rho_n,\;\tau_n$ & local residual / magnitude bound
                   & $|\rho_n|\le\tau_n$, including coordinate-copy error \\
 $P_{\mathrm{full}},\;P_n,\;Q$ & full / active bits / tier quantum

@@ -2,7 +2,6 @@ name: Build
 
 on:
   push:
-    branches: ["main"]
     tags:
       - "*"
   pull_request:
@@ -215,7 +214,12 @@ jobs:
           done
 
       - name: Run FractalSharkTest (Release)
-        run: ./build-release/FractalSharkTest/FractalSharkTest
+        # Long timing fixtures belong on profiling hosts. Keep the separate MT9
+        # correctness, cancellation, and render regression cases in hosted CI.
+        run: >-
+          ./build-release/FractalSharkTest/FractalSharkTest
+          --exclude 'RefOrbitKaratsuba_Profile*'
+          --exclude 'RefOrbitDynamicPrecision_Profile*'
 
       - name: Smoke-test FractalSharkCli
         run: |
@@ -445,17 +449,8 @@ jobs:
           FractalSharkCudaCodeGeneration: compute_75,sm_75;compute_80,sm_80;compute_86,sm_86;compute_89,sm_89;compute_90,sm_90;compute_100,sm_100;compute_120,sm_120
         run: msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=${{ matrix.configuration }} /p:Platform=x64
 
-      - name: Run unit tests (Release)
-        if: matrix.configuration == 'Release'
-        run: ${{ matrix.configuration }}\FractalSharkTest.exe
-
-      - name: Smoke-test FractalSharkCli
-        shell: pwsh
-        run: |
-          & "${{ matrix.configuration }}\FractalSharkCli.exe" --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke-test.png --quiet
-          if (-not (Test-Path cli-smoke-test.png)) { throw "FractalSharkCli produced no output" }
-          Remove-Item cli-smoke-test.png
-
+      # Preserve successful builds even if a later test fails or exhausts the job timeout.
+      # Release publication still requires every build/test job to succeed.
       - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
@@ -463,6 +458,21 @@ jobs:
           path: |
             **/${{ matrix.configuration }}/**
             **/x64/${{ matrix.configuration }}/**
+
+      - name: Run unit tests (Release)
+        if: matrix.configuration == 'Release'
+        # Match Linux: exclude timing fixtures while retaining MT9 correctness coverage.
+        run: >-
+          ${{ matrix.configuration }}\FractalSharkTest.exe
+          --exclude 'RefOrbitKaratsuba_Profile*'
+          --exclude 'RefOrbitDynamicPrecision_Profile*'
+
+      - name: Smoke-test FractalSharkCli
+        shell: pwsh
+        run: |
+          & "${{ matrix.configuration }}\FractalSharkCli.exe" --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke-test.png --quiet
+          if (-not (Test-Path cli-smoke-test.png)) { throw "FractalSharkCli produced no output" }
+          Remove-Item cli-smoke-test.png
 
   release:
     name: Create FractalShark Release

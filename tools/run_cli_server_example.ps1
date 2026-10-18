@@ -1502,7 +1502,7 @@ $spiralSceneNames = @('54-path-1e10000', '55-path-1e30000')
 $referenceVariants = @(
     [PSCustomObject]@{
         Suffix = ''
-        PerturbationAlg = 'MTPeriodicity3PerturbMTHighMTMed3'
+        PerturbationAlg = 'MTPeriodicity9KaratsubaDynamicPrecision'
     }
     [PSCustomObject]@{
         Suffix = 'gpu-ref'

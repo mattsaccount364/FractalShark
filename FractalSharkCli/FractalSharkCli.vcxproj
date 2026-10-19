@@ -53,11 +53,18 @@
     <ClCompile Include="LocalIpc.cpp" />
     <ClCompile Include="BatchFile.cpp" />
     <ClCompile Include="BatchCompletion.cpp" />
+    <ClCompile Include="MovieJob.cpp" />
+    <ClCompile Include="MovieRunner.cpp" />
+    <ClCompile Include="MovieVideo.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="LocalIpc.h" />
     <ClInclude Include="BatchFile.h" />
     <ClInclude Include="BatchCompletion.h" />
+    <ClInclude Include="MovieJob.h" />
+    <ClInclude Include="MovieRunner.h" />
+    <ClInclude Include="MovieVideo.h" />
+    <ClInclude Include="MovieHash.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">

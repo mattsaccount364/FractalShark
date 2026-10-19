@@ -81,6 +81,10 @@
     <ClCompile Include="TestFractalSharkLib.cpp" />
     <ClCompile Include="TestSaveTransactions.cpp" />
     <ClCompile Include="TestBatchCompletion.cpp" />
+    <ClCompile Include="TestMovie.cpp" />
+    <ClCompile Include="..\FractalSharkCli\MovieJob.cpp" />
+    <ClCompile Include="..\FractalSharkCli\MovieVideo.cpp" />
+    <ClCompile Include="..\FractalSharkCli\MovieRunner.cpp" />
     <ClCompile Include="..\FractalSharkCli\BatchCompletion.cpp" />
   </ItemGroup>
   <ItemGroup>

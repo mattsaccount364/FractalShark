@@ -5,6 +5,9 @@
 #include "ScopedMpir.h"
 #include "Vectors.h"
 
+#include <algorithm>
+#include <cstring>
+
 thread_local uint8_t MPIRBoundedAllocator::Allocated[NumBlocks][BytesPerBlock];
 thread_local uint8_t *MPIRBoundedAllocator::AllocatedEnd[NumBlocks];
 thread_local size_t MPIRBoundedAllocator::AllocatedIndex = 0;
@@ -79,16 +82,28 @@ MPIRBoundedAllocator::ShutdownTls()
 void *
 MPIRBoundedAllocator::NewMalloc(size_t size)
 {
-    if (!TlsInitialized) {
+    // The TLS arena is a fast path, not a precision limit. A several-million-
+    // digit coordinate needs individual MPIR values larger than one block.
+    // Such allocations must retain ordinary heap ownership, which NewFree
+    // already recognizes, rather than underflow a block or spin on exhaustion.
+    if (!TlsInitialized || size > BytesPerBlock) {
         return s_ExistingMalloc(size);
     }
 
-    uint8_t *newPtr = AllocatedEnd[AllocatedIndex] - size;
-
-    // Round down to requested alignment:
-    newPtr = (uint8_t *)((uintptr_t)newPtr & ~63);
-
-    if (newPtr >= &Allocated[AllocatedIndex][0]) {
+    const auto allocateInCurrentBlock = [&]() -> void * {
+        constexpr uintptr_t AlignmentBytes = 64;
+        const auto begin = reinterpret_cast<uintptr_t>(&Allocated[AllocatedIndex][0]);
+        const auto end = reinterpret_cast<uintptr_t>(AllocatedEnd[AllocatedIndex]);
+        // Check integer byte counts before subtracting: pointer arithmetic
+        // outside the arena would itself be undefined, even if checked later.
+        if (size > end - begin) {
+            return nullptr;
+        }
+        const auto address = (end - size) & ~(AlignmentBytes - 1);
+        if (address < begin) {
+            return nullptr;
+        }
+        auto *newPtr = reinterpret_cast<uint8_t *>(address);
         AllocationsAndFrees[AllocatedIndex]++;
         AllocatedEnd[AllocatedIndex] = newPtr;
 
@@ -111,44 +126,44 @@ MPIRBoundedAllocator::NewMalloc(size_t size)
         }
 
         return newPtr;
-    } else {
-        // Find the next block with no allocations:
-        size_t InitIndex = AllocatedIndex;
-        for (;;) {
-            AllocatedIndex = (AllocatedIndex + 1) % NumBlocks;
-            if (AllocationsAndFrees[AllocatedIndex] == 0) {
-                newPtr = &Allocated[AllocatedIndex][BytesPerBlock] - size;
-                newPtr = (uint8_t *)((uintptr_t)newPtr & ~63);
-                AllocationsAndFrees[AllocatedIndex]++;
-                AllocatedEnd[AllocatedIndex] = newPtr;
-                return newPtr;
-            }
+    };
 
-            if constexpr (DebugInstrument) {
-                if (AllocatedIndex == InitIndex) {
-                    Environment::DebugBreakpoint();
-                }
+    if (void *result = allocateInCurrentBlock()) {
+        return result;
+    }
+    // Inspect each block once. More simultaneous live values than the original
+    // four-block assumption permits are valid and fall back to the same heap.
+    for (size_t inspected = 0; inspected < NumBlocks; ++inspected) {
+        AllocatedIndex = (AllocatedIndex + 1) % NumBlocks;
+        if (AllocationsAndFrees[AllocatedIndex] == 0) {
+            AllocatedEnd[AllocatedIndex] = &Allocated[AllocatedIndex][BytesPerBlock];
+            if (void *result = allocateInCurrentBlock()) {
+                return result;
             }
         }
     }
+    return s_ExistingMalloc(size);
 }
 
 void *
-MPIRBoundedAllocator::NewRealloc(void *ptr, size_t old_size, size_t new_size)
+MPIRBoundedAllocator::NewRealloc(void *ptr, size_t oldSize, size_t newSize)
 {
-    if (!TlsInitialized) {
-        return s_ExistingRealloc(ptr, old_size, new_size);
+    const auto address = reinterpret_cast<uintptr_t>(ptr);
+    const auto begin = reinterpret_cast<uintptr_t>(&Allocated[0][0]);
+    const auto end = begin + sizeof(Allocated);
+    if (!TlsInitialized || address < begin || address >= end) {
+        return s_ExistingRealloc(ptr, oldSize, newSize);
     }
 
-    // This one is like new_malloc, but copy in the prior data.
-    // auto ret = NewMalloc(new_size);
-    // auto minimum_size = std::min(old_size, new_size);
-    // memcpy(ret, ptr, minimum_size);
-
-    if constexpr (DebugInstrument) {
-        Environment::DebugBreakpoint();
+    // MPIR may grow a bounded allocation beyond the arena's block size. Move
+    // it through the allocation/free dispatchers so heap and TLS ownership
+    // remain correct in both directions, preserving the existing payload.
+    void *result = NewMalloc(newSize);
+    if (result != nullptr) {
+        std::memcpy(result, ptr, std::min(oldSize, newSize));
+        NewFree(ptr, oldSize);
     }
-    return nullptr;
+    return result;
 }
 
 void
@@ -157,16 +172,16 @@ MPIRBoundedAllocator::NewFree(void *ptr, size_t size)
     // Check if ptr falls within this thread's Allocated blocks.
     // Handles both uninitialized threads and memory allocated by the
     // default allocator before the custom allocator was installed.
-    const uint8_t *base = &Allocated[0][0];
-    const uint8_t *end = base + NumBlocks * BytesPerBlock;
+    const auto address = reinterpret_cast<uintptr_t>(ptr);
+    const auto base = reinterpret_cast<uintptr_t>(&Allocated[0][0]);
 
-    if ((uint8_t *)ptr < base || (uint8_t *)ptr >= end) {
+    if (address < base || address - base >= sizeof(Allocated)) {
         s_ExistingFree(ptr, size);
         return;
     }
 
     // Find offset relative to base of Allocated:
-    const uint64_t offset = (uint8_t *)ptr - base;
+    const auto offset = address - base;
 
     // Find index of Allocated:
     const size_t index = offset / BytesPerBlock;

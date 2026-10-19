@@ -32,6 +32,10 @@ target_sources(FractalSharkTest PRIVATE
     TestFractalSharkLib.cpp
     TestSaveTransactions.cpp
     TestBatchCompletion.cpp
+    TestMovie.cpp
+    ${CMAKE_SOURCE_DIR}/FractalSharkCli/MovieJob.cpp
+    ${CMAKE_SOURCE_DIR}/FractalSharkCli/MovieVideo.cpp
+    ${CMAKE_SOURCE_DIR}/FractalSharkCli/MovieRunner.cpp
     ${CMAKE_SOURCE_DIR}/FractalSharkCli/BatchCompletion.cpp
 )
 

@@ -376,6 +376,16 @@ Fractal::RecenterViewCalc(const PointZoomBBConverter &ptz)
     return true;
 }
 
+void
+Fractal::SetOfflineView(const PointZoomBBConverter &ptz)
+{
+    m_Ptz = ptz;
+    m_RefOrbit.ResetGuess();
+    SetPrecision();
+    SquareCurrentView();
+    m_ChangedWindow = true;
+}
+
 //////////////////////////////////////////////////////////////////////////////
 // Recenters the view to the the given screen coordinates.  Translates the
 // screen coordinates to calculator coordinates, using whatever dimensions were

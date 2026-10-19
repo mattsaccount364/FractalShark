@@ -379,8 +379,15 @@ public:
     std::string
     str() const
     {
-        std::vector<char> temp(FractalLimits::MaxDigits);
-        gmp_snprintf(temp.data(), FractalLimits::MaxDigits, "%.Fe", m_Data);
+        // Native reference metadata uses this decimal representation. Determine
+        // its length rather than silently truncating beyond the old 4 MiB cap.
+        // The representation and all persistence/flush behavior stay the same.
+        const int length = gmp_snprintf(nullptr, 0, "%.Fe", m_Data);
+        if (length < 0) {
+            throw FractalSharkSeriousException("Unable to format high-precision value");
+        }
+        std::vector<char> temp(static_cast<size_t>(length) + 1);
+        gmp_snprintf(temp.data(), temp.size(), "%.Fe", m_Data);
         std::string result(temp.data());
         return result;
     }

@@ -581,6 +581,39 @@ ProfileOrbit(mp_bitcnt_t precisionBits, RefOrbitCalc::PerturbationAlg algorithm)
 
 } // namespace
 
+TEST(RefOrbitBoundedAllocator_LargeValuesAndReallocation)
+{
+    MPIRBoundedAllocator allocator;
+    allocator.InitScopedAllocators();
+    struct CallerTls {
+        CallerTls() { MPIRBoundedAllocator::InitTls(); }
+        ~CallerTls() { MPIRBoundedAllocator::ShutdownTls(); }
+    } callerTls;
+    // Each of these values needs more than half an arena block. Keeping twelve
+    // live values exercises exhaustion without depending on allocator internals.
+    // Their destructors, including assertion unwinding, run before ShutdownTls.
+    std::vector<std::unique_ptr<MpfValue>> values;
+    for (unsigned i = 0; i < 12; ++i) {
+        values.push_back(std::make_unique<MpfValue>(5'000'000));
+        mpf_set_ui(values.back()->Get(), 1);
+        mpf_div_ui(values.back()->Get(), values.back()->Get(), i + 2);
+    }
+    MpfValue large(14'000'000);
+    for (unsigned i = 0; i < values.size(); ++i) {
+        mpf_mul_ui(large.Get(), values[i]->Get(), i + 2);
+        ASSERT_NEAR(mpf_get_d(large.Get()), 1.0, 1e-14);
+    }
+    // Integer growth invokes MPIR's realloc callback: first inside the arena,
+    // then across its size limit, and finally on a heap-owned allocation.
+    MpzValue integer;
+    mpz_set_ui(integer.Get(), 17);
+    for (const mp_bitcnt_t shift : {mp_bitcnt_t{128}, mp_bitcnt_t{14'000'000}, mp_bitcnt_t{2'000'000}}) {
+        mpz_mul_2exp(integer.Get(), integer.Get(), shift);
+    }
+    mpz_tdiv_q_2exp(integer.Get(), integer.Get(), 16'000'128);
+    ASSERT_EQ(mpz_cmp_ui(integer.Get(), 17), 0);
+}
+
 TEST(RefOrbitKaratsuba_ProfileProducts_16384) { ProfileProducts(16'384); }
 TEST(RefOrbitKaratsuba_ProfileProducts_33344) { ProfileProducts(33'344); }
 TEST(RefOrbitKaratsuba_ProfileProducts_100096) { ProfileProducts(100'096); }

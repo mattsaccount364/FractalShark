@@ -76,6 +76,9 @@ public:
 
     void ResetDimensions(size_t width, size_t height, uint32_t gpuAntialiasing);
     bool RecenterViewCalc(const PointZoomBBConverter &ptz);
+    // Offline sequences own their schedule and must not retain a copy of every
+    // multi-million-digit view in the interactive Back history. Drain first.
+    void SetOfflineView(const PointZoomBBConverter &ptz);
     bool RecenterViewScreen(Environment::ScreenRect rect);
     bool CenterAtPoint(size_t x, size_t y);
     void ZoomAtCenter(double factor);

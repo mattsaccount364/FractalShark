@@ -8,11 +8,13 @@
 
 #include "BatchCompletion.h"
 #include "BatchFile.h"
+#include "ConsoleLog.h"
 #include "CrashHandler.h"
 #include "Environment.h"
 #include "Fractal.h"
 #include "FractalPalette.h"
 #include "LocalIpc.h"
+#include "MovieRunner.h"
 #include "PointZoomBBConverter.h"
 #include "RefOrbitCalc.h"
 #include "RenderAlgorithm.h"
@@ -120,6 +122,9 @@ struct CliArgs {
     bool Shutdown = false;
     std::string BatchPath;
     bool BatchSet = false;
+    std::string MovieDirectory;
+    std::string MovieConfiguration;
+    std::string Ffmpeg;
 
     ViewSource Source = ViewSource::None;
     size_t BuiltinView = 0;
@@ -189,6 +194,8 @@ PrintUsage()
            "  FractalSharkCli --connect [--endpoint NAME] <the render arguments above>\n"
            "  FractalSharkCli --connect --endpoint NAME --shutdown\n"
            "  FractalSharkCli [--connect [--endpoint NAME]] --batch FILE [--clear-reference-orbits]\n"
+           "  FractalSharkCli --movie JOBDIR [--movie-config FILE] [--ffmpeg PATH]\n"
+           "                  [--no-gpu] [--commit-cap-bytes N]\n"
            "\n"
            "  FractalSharkCli --list-render-algorithms\n"
            "  FractalSharkCli --help\n"
@@ -205,6 +212,9 @@ PrintUsage()
            "                    Linux accepts a socket name or a socket path\n"
            "  --shutdown        Stop the server (requires --connect)\n"
            "  --batch FILE      Read a batch file; put render options in its image sections\n"
+           "  --movie JOBDIR    Create or resume a standalone backward-rendered zoom movie\n"
+           "  --movie-config FILE  Movie INI (required only when creating a job)\n"
+           "  --ffmpeg PATH     Optional FFmpeg executable; archive RGB8 lossless AV1 chunks\n"
            "\n"
            "View and image dimensions:\n"
            "  --width W         Output width in pixels: integer 1-2147483647 (default: 1024)\n"
@@ -403,7 +413,20 @@ ParseArgs(int argc, char *argv[], CliArgs &a, std::ostream &errorOut)
 
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if (arg == "--help" || arg == "-h") {
+        if (arg == "--movie" || arg == "--movie-config" || arg == "--ffmpeg") {
+            const auto value = expectValue(i, argv[i]);
+            if (!value || !*value) {
+                return false;
+            }
+            auto &destination = arg == "--movie"          ? a.MovieDirectory
+                                : arg == "--movie-config" ? a.MovieConfiguration
+                                                          : a.Ffmpeg;
+            if (!destination.empty()) {
+                errorOut << "error: duplicate movie option\n";
+                return false;
+            }
+            destination = value;
+        } else if (arg == "--help" || arg == "-h") {
             a.Help = true;
         } else if (arg == "--list-render-algorithms") {
             a.ListRenderAlgorithms = true;
@@ -661,7 +684,17 @@ ParseHighPrecision(const std::string &text,
         }
     }
 
-    HighPrecision parsed;
+    // Four bits per input character conservatively cover decimal significant
+    // digits. Parse the canonical coordinate before view setup lowers the
+    // process default; reject unsupported requests instead of truncating them.
+    constexpr size_t MaximumInputCharacters = 15'999'000;
+    if (text.size() > MaximumInputCharacters) {
+        error = std::string(flag) + " exceeds supported input precision";
+        return false;
+    }
+    const auto inputBits = static_cast<uint64_t>(text.size()) * 4 + 256;
+    HighPrecision parsed{HighPrecision::SetPrecision::True,
+                         std::max(inputBits, HighPrecision::defaultPrecisionInBits())};
     if (mpf_set_str(parsed.backend(), text.c_str(), 10) != 0) {
         error = std::string(flag) + " is not a valid high-precision decimal";
         return false;
@@ -678,6 +711,10 @@ ParseHighPrecision(const std::string &text,
 bool
 ValidateRenderArgs(const CliArgs &args, std::string &error, bool fromClient)
 {
+    if (!args.MovieDirectory.empty() || !args.MovieConfiguration.empty() || !args.Ffmpeg.empty()) {
+        error = "movie options are not image render requests";
+        return false;
+    }
     if (fromClient) {
         if (args.Mode != CliMode::Client) {
             error = "--connect is required for a client render request";
@@ -1468,6 +1505,52 @@ RunCli(int argc, char *argv[])
     }
 
     std::string validationError;
+    if (!args.MovieDirectory.empty()) {
+        if (args.Mode != CliMode::SingleShot || args.BatchSet || args.Shutdown ||
+            !args.Endpoint.empty() || args.Source != ViewSource::None || args.WidthSet ||
+            args.HeightSet || args.Iterations != 0 || args.Antialiasing != 0 ||
+            !args.RenderAlgorithm.empty() || !args.PerturbationAlg.empty() || !args.OutFile.empty() ||
+            args.Console || args.Color || args.ClearReferenceOrbits || !args.PaletteMapFile.empty() ||
+            args.PaletteDepth || args.LocationIndex != SIZE_MAX || args.Quiet) {
+            FractalSharkLog::Write(
+                "Movie mode is standalone; put render settings in --movie-config", __FILE__, __LINE__);
+            return 2;
+        }
+        return FractalSharkCli::RunMovie(
+            args.MovieDirectory,
+            args.MovieConfiguration,
+            args.Ffmpeg,
+            args.GpuRuntimeMode,
+            args.CommitCapBytes,
+            [&](const FractalSharkCli::MovieConfig &config) {
+                CliArgs movieArgs;
+                std::ostringstream errors;
+                if (!ParseArgs(config.RenderArguments(), movieArgs, errors)) {
+                    throw FractalSharkSeriousException(errors.str());
+                }
+                movieArgs.OutFile = "movie-frame.png"; // satisfies the shared request validator
+                std::string error;
+                if (!ValidateRenderArgs(movieArgs, error, false)) {
+                    throw FractalSharkSeriousException(error);
+                }
+                FractalSharkCli::MovieRenderSettings settings;
+                if (BuildRenderRequest(movieArgs,
+                                       settings.Request,
+                                       error,
+                                       movieArgs.Width,
+                                       movieArgs.Height,
+                                       args.CommitCapBytes) != 0) {
+                    throw FractalSharkSeriousException(error);
+                }
+                settings.Palette = movieArgs.PaletteMapFile;
+                settings.PaletteDepth = movieArgs.PaletteDepth;
+                return settings;
+            });
+    }
+    if (!args.MovieConfiguration.empty() || !args.Ffmpeg.empty()) {
+        FractalSharkLog::Write("--movie-config and --ffmpeg require --movie JOBDIR", __FILE__, __LINE__);
+        return 2;
+    }
     if (args.BatchSet) {
         if (!ValidateBatchArgs(args, validationError)) {
             std::cerr << "error: " << validationError << "\n";

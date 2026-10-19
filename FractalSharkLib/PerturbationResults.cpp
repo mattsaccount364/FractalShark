@@ -777,12 +777,20 @@ requires Introspection::TestPExtras<PExtras>::value
     MapExistingFiles();
 
     if (m_LaReference != nullptr) {
-        if (!m_LaReference->ReadMetadata(metafile)) {
+        // LA generation can allocate backing files and then determine that the
+        // short/escaping orbit has no useful LA table. WriteMetadata deliberately
+        // omits LA metadata in that case. Keep the valid orbit on reload instead
+        // of trying to parse nonexistent LA fields (which throws from stoll).
+        // This changes neither the native format nor reference flush semantics.
+        metafile >> std::ws;
+        if (metafile.peek() == std::char_traits<char>::eof()) {
+            m_LaReference = nullptr;
+        } else if (!m_LaReference->ReadMetadata(metafile)) {
             m_LaReference = nullptr;
             return false;
         }
 
-        if (!m_LaReference->IsValid()) {
+        if (m_LaReference != nullptr && !m_LaReference->IsValid()) {
             m_LaReference = nullptr;
         }
     }

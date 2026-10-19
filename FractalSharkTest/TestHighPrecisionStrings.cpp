@@ -4,6 +4,26 @@
 #include <sstream>
 #include <string>
 
+TEST(HPStr_DecimalOutputBeyondLegacyBuffer)
+{
+    // 14 million bits need over 4 MiB of decimal text. Native orbit metadata
+    // must round-trip that value rather than truncate at the former fixed cap.
+    HighPrecision original{HighPrecision::SetPrecision::True, 14'000'000};
+    mpf_set_ui(original.backend(), 1);
+    mpf_div_ui(original.backend(), original.backend(), 7);
+    const auto text = original.str();
+    ASSERT_TRUE(text.size() > FractalLimits::MaxDigits);
+    HighPrecision restored{HighPrecision::SetPrecision::True, original.precisionInBits()};
+    ASSERT_EQ(mpf_set_str(restored.backend(), text.c_str(), 10), 0);
+    // Decimal formatting rounds at the active precision; compare at a slightly
+    // lower precision to exclude MPIR/GMP's permitted scratch limb differences.
+    HighPrecision delta{HighPrecision::SetPrecision::True, original.precisionInBits()};
+    mpf_sub(delta.backend(), original.backend(), restored.backend());
+    mpf_abs(delta.backend(), delta.backend());
+    mpf_mul_2exp(delta.backend(), delta.backend(), 13'999'800);
+    ASSERT_TRUE(mpf_cmp_ui(delta.backend(), 1) < 0);
+}
+
 // ---------------------------------------------------------------------------
 // Hex64 round-trip tests
 // ---------------------------------------------------------------------------

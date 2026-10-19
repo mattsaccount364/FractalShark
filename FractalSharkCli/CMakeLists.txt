@@ -3,6 +3,9 @@ add_executable(FractalSharkCli
     LocalIpc.cpp
     BatchFile.cpp
     BatchCompletion.cpp
+    MovieJob.cpp
+    MovieRunner.cpp
+    MovieVideo.cpp
 )
 
 # BLA<T> template definitions live in FractalSharkGpuLib/BLA.cuh; mirror

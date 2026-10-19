@@ -33,6 +33,7 @@
 #include <math.h>
 #include <memory>
 #include <sstream>
+#include <stdexcept>
 #include <typeinfo>
 #include <vector>
 
@@ -3226,6 +3227,26 @@ RefOrbitCalc::LoadAllOrbits()
 {
     std::lock_guard lk(m_PerturbationMutex);
 
+    // Each native cache is an independent input boundary. A cache left
+    // incomplete in the existing persistence window must not prevent loading
+    // other saved references or force every later resume to fail on that file.
+    // Do not catch allocation failures or change any save/flush behavior.
+    const auto readMetadata = [](auto &results) {
+        try {
+            return results->ReadMetadata();
+        } catch (const std::invalid_argument &exception) {
+            FractalSharkLog::WriteException(
+                "Skipping incomplete native reference metadata", exception, __FILE__, __LINE__);
+        } catch (const std::out_of_range &exception) {
+            FractalSharkLog::WriteException(
+                "Skipping invalid native reference metadata", exception, __FILE__, __LINE__);
+        } catch (const FractalSharkSeriousException &exception) {
+            FractalSharkLog::WriteException(
+                "Skipping unavailable native reference cache", exception, __FILE__, __LINE__);
+        }
+        return false;
+    };
+
     // Matches the extension of a filename
     auto extmatch = [](std::string fn) -> bool {
         if (fn.substr(fn.find_last_of(".") + 1) == "met") {
@@ -3257,20 +3278,20 @@ RefOrbitCalc::LoadAllOrbits()
         for (const auto &entry : std::filesystem::directory_iterator(path)) {
             auto file = entry.path().string();
             if (extmatch(file)) {
-                auto next_gen = GetNextGenerationNumber();
+                auto nextGeneration = GetNextGenerationNumber();
                 auto stripfn = stripext(file);
                 auto widefn = narrowtowide(stripfn);
                 auto results1 = std::make_unique<PerturbationResults<IterType, double, PExtras>>(
-                    widefn, AddPointOptions::OpenExistingWithSave, next_gen);
-                if (results1->ReadMetadata()) {
+                    widefn, AddPointOptions::OpenExistingWithSave, nextGeneration);
+                if (readMetadata(results1)) {
                     m_C.push_back(std::move(results1));
                     continue;
                 }
                 results1 = nullptr;
 
                 auto results2 = std::make_unique<PerturbationResults<IterType, float, PExtras>>(
-                    widefn, AddPointOptions::OpenExistingWithSave, next_gen);
-                if (results2->ReadMetadata()) {
+                    widefn, AddPointOptions::OpenExistingWithSave, nextGeneration);
+                if (readMetadata(results2)) {
                     m_C.push_back(std::move(results2));
                     continue;
                 }
@@ -3278,8 +3299,8 @@ RefOrbitCalc::LoadAllOrbits()
 
                 auto results3 =
                     std::make_unique<PerturbationResults<IterType, CudaDblflt<MattDblflt>, PExtras>>(
-                        widefn, AddPointOptions::OpenExistingWithSave, next_gen);
-                if (results3->ReadMetadata()) {
+                        widefn, AddPointOptions::OpenExistingWithSave, nextGeneration);
+                if (readMetadata(results3)) {
                     m_C.push_back(std::move(results3));
                     continue;
                 }
@@ -3287,8 +3308,8 @@ RefOrbitCalc::LoadAllOrbits()
 
                 auto results4 =
                     std::make_unique<PerturbationResults<IterType, HDRFloat<double>, PExtras>>(
-                        widefn, AddPointOptions::OpenExistingWithSave, next_gen);
-                if (results4->ReadMetadata()) {
+                        widefn, AddPointOptions::OpenExistingWithSave, nextGeneration);
+                if (readMetadata(results4)) {
                     m_C.push_back(std::move(results4));
                     continue;
                 }
@@ -3296,8 +3317,8 @@ RefOrbitCalc::LoadAllOrbits()
 
                 auto results5 =
                     std::make_unique<PerturbationResults<IterType, HDRFloat<float>, PExtras>>(
-                        widefn, AddPointOptions::OpenExistingWithSave, next_gen);
-                if (results5->ReadMetadata()) {
+                        widefn, AddPointOptions::OpenExistingWithSave, nextGeneration);
+                if (readMetadata(results5)) {
                     m_C.push_back(std::move(results5));
                     continue;
                 }
@@ -3305,8 +3326,8 @@ RefOrbitCalc::LoadAllOrbits()
 
                 auto results6 = std::make_unique<
                     PerturbationResults<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PExtras>>(
-                    widefn, AddPointOptions::OpenExistingWithSave, next_gen);
-                if (results6->ReadMetadata()) {
+                    widefn, AddPointOptions::OpenExistingWithSave, nextGeneration);
+                if (readMetadata(results6)) {
                     m_C.push_back(std::move(results6));
                     continue;
                 }

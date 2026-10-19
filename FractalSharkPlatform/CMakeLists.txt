@@ -2,6 +2,7 @@ add_library(FractalSharkPlatform STATIC)
 
 target_sources(FractalSharkPlatform PRIVATE
     Common/ConsoleLog.cpp
+    Common/MoviePlatform.cpp
 )
 
 if(WIN32)

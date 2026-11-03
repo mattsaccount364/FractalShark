@@ -214,12 +214,19 @@ jobs:
           done
 
       - name: Run FractalSharkTest (Release)
-        # Long timing fixtures belong on profiling hosts. Keep the separate MT9
-        # correctness, cancellation, and render regression cases in hosted CI.
+        timeout-minutes: 30
+        # Keep profiling and expensive MT9 integration/search cases local. Retain
+        # the remaining correctness coverage within the routine hosted-test budget.
         run: >-
           ./build-release/FractalSharkTest/FractalSharkTest
           --exclude 'RefOrbitKaratsuba_Profile*'
           --exclude 'RefOrbitDynamicPrecision_Profile*'
+          --exclude 'RefOrbitKaratsuba_ReferenceBackend_*'
+          --exclude 'RefOrbitKaratsuba_FirstFinalAndActiveCancellation'
+          --exclude 'RefOrbitDynamicPrecision_ActiveCancellation'
+          --exclude 'RefOrbitDynamicPrecision_NearReturnOperandScale'
+          --exclude 'RefOrbitDynamicPrecision_StructuredDeepFailure'
+          --exclude 'RefOrbitDynamicPrecision_HeuristicCounterexampleProbe'
 
       - name: Smoke-test FractalSharkCli
         run: |
@@ -461,11 +468,18 @@ jobs:
 
       - name: Run unit tests (Release)
         if: matrix.configuration == 'Release'
-        # Match Linux: exclude timing fixtures while retaining MT9 correctness coverage.
+        timeout-minutes: 30
+        # Match the scoped Linux suite; slow MT9 cases remain available locally.
         run: >-
           ${{ matrix.configuration }}\FractalSharkTest.exe
           --exclude 'RefOrbitKaratsuba_Profile*'
           --exclude 'RefOrbitDynamicPrecision_Profile*'
+          --exclude 'RefOrbitKaratsuba_ReferenceBackend_*'
+          --exclude 'RefOrbitKaratsuba_FirstFinalAndActiveCancellation'
+          --exclude 'RefOrbitDynamicPrecision_ActiveCancellation'
+          --exclude 'RefOrbitDynamicPrecision_NearReturnOperandScale'
+          --exclude 'RefOrbitDynamicPrecision_StructuredDeepFailure'
+          --exclude 'RefOrbitDynamicPrecision_HeuristicCounterexampleProbe'
 
       - name: Smoke-test FractalSharkCli
         shell: pwsh

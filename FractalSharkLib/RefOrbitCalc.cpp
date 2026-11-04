@@ -51,6 +51,8 @@ namespace {
 constexpr uint64_t AutoMultithreadPrecisionBits = 640;
 constexpr uint64_t AutoReusePrecisionBits = 4'096;
 constexpr uint64_t AutoKaratsubaPrecisionBits = 8'192;
+// MT9 spins eight product workers while the calling thread computes the ninth product.
+constexpr size_t AutoKaratsubaMinimumLogicalProcessors = 9;
 constexpr uint64_t AutoGpuPrecisionBits = 32'768;
 constexpr uint64_t GpuReferenceLimbBits = 32;
 constexpr uint64_t AutoGpuMaximumPrecisionBits =
@@ -3380,13 +3382,14 @@ RefOrbitCalc::GetPerturbationAlg() const
     // eligibility threshold that changes with the selected backend.
     const uint64_t precisionBits = Fractal::GetPrecision(m_Fractal.GetPtz(), false);
     return ResolveAutoPerturbationAlg(
-        precisionBits, !m_Fractal.GpuBypassed(), m_Fractal.GetRenderAlgorithm());
+        precisionBits, !m_Fractal.GpuBypassed(), m_Fractal.GetRenderAlgorithm(), m_NumCpuCores);
 }
 
 RefOrbitCalc::PerturbationAlg
 RefOrbitCalc::ResolveAutoPerturbationAlg(uint64_t precisionBits,
                                          bool gpuAvailable,
-                                         const RenderAlgorithm &renderAlgorithm)
+                                         const RenderAlgorithm &renderAlgorithm,
+                                         size_t logicalProcessorCount)
 {
     if (precisionBits < AutoMultithreadPrecisionBits) {
         return PerturbationAlg::STPeriodicity;
@@ -3404,7 +3407,11 @@ RefOrbitCalc::ResolveAutoPerturbationAlg(uint64_t precisionBits,
         return PerturbationAlg::GPU;
     }
 
-    // We'll just use dynamic unconditionally instead of MTPeriodicity9Karatsuba
+    // Keep eligible GPU generation independent of CPU capacity. Unknown counts (zero)
+    // also use MT3, avoiding nine polling threads when Auto cannot establish capacity.
+    if (logicalProcessorCount < AutoKaratsubaMinimumLogicalProcessors) {
+        return PerturbationAlg::MTPeriodicity3;
+    }
     return PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision;
 }
 

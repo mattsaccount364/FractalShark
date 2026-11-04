@@ -3,6 +3,7 @@
 #include "AbortMonitor.h"
 #include "AlgCmds.h"
 #include "ConsoleLog.h"
+#include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "GpuPrecisionDispatch.h"
@@ -1003,14 +1004,63 @@ TEST(RefOrbitAuto_PrecisionBoundaries)
         SelectionCase{32'768, RefOrbitCalc::PerturbationAlg::GPU},
         SelectionCase{32'769, RefOrbitCalc::PerturbationAlg::GPU}};
     for (const auto &test : cases) {
-        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, true, renderer) ==
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, true, renderer, 9) ==
                     test.Expected);
         const auto withoutGpu =
             test.Expected == RefOrbitCalc::PerturbationAlg::GPU
                 ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision
                 : test.Expected;
-        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, false, renderer) ==
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(test.PrecisionBits, false, renderer, 9) ==
                     withoutGpu);
+    }
+}
+
+TEST(RefOrbitAuto_LogicalProcessorEligibility)
+{
+    const auto renderer = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx64PerturbedLAv2);
+    const auto incompatibleRenderer =
+        GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::GpuHDRx32PerturbedScaled);
+    constexpr uint64_t maximumGpuBits = static_cast<uint64_t>(MaxSupportedLimbCount) * 32;
+    struct SelectionCase {
+        uint64_t PrecisionBits;
+        RefOrbitCalc::PerturbationAlg Expected;
+    };
+    const std::array lowerPrecisionCases{
+        SelectionCase{639, RefOrbitCalc::PerturbationAlg::STPeriodicity},
+        SelectionCase{640, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
+        SelectionCase{4'095, RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
+        SelectionCase{4'096, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
+        SelectionCase{8'191, RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3}};
+
+    // Inject capacities instead of restricting the test process or relying on the host CPU.
+    // In particular, eight workers still need a ninth logical CPU for the calling thread.
+    for (const size_t logicalProcessorCount : {0, 1, 2, 4, 8, 9, 10, 32}) {
+        const auto expectedCpu =
+            logicalProcessorCount >= 9
+                ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision
+                : RefOrbitCalc::PerturbationAlg::MTPeriodicity3;
+        for (const uint64_t bits : {uint64_t{8'192},
+                                    uint64_t{8'193},
+                                    uint64_t{32'767},
+                                    uint64_t{32'768},
+                                    maximumGpuBits,
+                                    maximumGpuBits + 1,
+                                    std::numeric_limits<uint64_t>::max()}) {
+            ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(
+                            bits, false, renderer, logicalProcessorCount) == expectedCpu);
+            ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(
+                            bits, true, incompatibleRenderer, logicalProcessorCount) == expectedCpu);
+            const auto expectedWithGpu = bits >= 32'768 && bits <= maximumGpuBits
+                                             ? RefOrbitCalc::PerturbationAlg::GPU
+                                             : expectedCpu;
+            ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(
+                            bits, true, renderer, logicalProcessorCount) == expectedWithGpu);
+        }
+        for (const auto &test : lowerPrecisionCases) {
+            ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(
+                            test.PrecisionBits, false, renderer, logicalProcessorCount) ==
+                        test.Expected);
+        }
     }
 }
 
@@ -1047,10 +1097,10 @@ TEST(RefOrbitAuto_GpuTypeAndFormatCompatibility)
         const auto expected =
             compatible ? RefOrbitCalc::PerturbationAlg::GPU
                        : RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision;
-        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, true, renderer) == expected);
-        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'767, true, renderer) ==
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, true, renderer, 9) == expected);
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'767, true, renderer, 9) ==
                     RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
-        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, false, renderer) ==
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(32'768, false, renderer, 9) ==
                     RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
     }
 }
@@ -1061,11 +1111,11 @@ TEST(RefOrbitAuto_GpuPrecisionCapacity)
     // GPU buckets store 32-bit limbs. Test the capacity without allocating a viewport at that depth.
     constexpr uint64_t maximumGpuBits = static_cast<uint64_t>(MaxSupportedLimbCount) * 32;
     for (const auto bits : {maximumGpuBits - 1, maximumGpuBits}) {
-        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, true, renderer) ==
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, true, renderer, 9) ==
                     RefOrbitCalc::PerturbationAlg::GPU);
     }
     for (const auto bits : {maximumGpuBits + 1, std::numeric_limits<uint64_t>::max()}) {
-        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, true, renderer) ==
+        ASSERT_TRUE(RefOrbitCalc::ResolveAutoPerturbationAlg(bits, true, renderer, 9) ==
                     RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
     }
 }
@@ -1075,6 +1125,10 @@ TEST(RefOrbitKaratsuba_AutoSelectionAndExplicitOverride)
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
     Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
     fractal.GetRenderPool()->Drain();
+    const auto expectedHighPrecision =
+        Environment::LogicalProcessorCount() >= 9
+            ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision
+            : RefOrbitCalc::PerturbationAlg::MTPeriodicity3;
     for (const auto bits : {uint64_t{400},
                             uint64_t{639},
                             uint64_t{640},
@@ -1093,8 +1147,7 @@ TEST(RefOrbitKaratsuba_AutoSelectionAndExplicitOverride)
         fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::Auto);
         ASSERT_TRUE(fractal.RecenterViewCalc(ViewAtPrecision(bits)));
         if (bits >= 8'192) {
-            ASSERT_TRUE(fractal.GetPerturbationAlg() ==
-                        RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
+            ASSERT_TRUE(fractal.GetPerturbationAlg() == expectedHighPrecision);
         } else if (bits >= 4'096) {
             ASSERT_TRUE(fractal.GetPerturbationAlg() ==
                         RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3);
@@ -2363,13 +2416,16 @@ TEST(RefOrbitDynamicPrecision_ManualMenuAndAutoSelection)
     fractal.GetRenderPool()->Drain();
     ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
     // A deeper view preserves the explicit full-precision override. Returning to Auto
-    // through the menu selects dynamic MT9 at the CPU threshold when CUDA is disabled.
+    // through the menu applies the logical CPU requirement when CUDA is disabled.
     ASSERT_TRUE(fractal.RecenterViewCalc(ViewAtPrecision(8'192)));
     ASSERT_TRUE(fractal.GetPerturbationAlg() == RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
     commands.ExecuteCommand(FractalShark::FractalCommand::PerturbationAuto);
     fractal.GetRenderPool()->Drain();
-    ASSERT_TRUE(fractal.GetPerturbationAlg() ==
-                RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
+    const auto expectedAuto =
+        Environment::LogicalProcessorCount() >= 9
+            ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision
+            : RefOrbitCalc::PerturbationAlg::MTPeriodicity3;
+    ASSERT_TRUE(fractal.GetPerturbationAlg() == expectedAuto);
 }
 
 TEST(RefOrbitDynamicPrecision_RenderAndCompressionRoundtrip)

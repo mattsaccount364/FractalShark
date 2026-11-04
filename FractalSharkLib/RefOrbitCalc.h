@@ -177,9 +177,11 @@ public:
 
     // Resolve Auto from the view's bit estimate without reuse padding. GPU eligibility
     // uses an already resolved renderer and runtime state; no CUDA probe is performed here.
+    // The reported logical CPU count gates MT9 only; zero cannot establish MT9 capacity.
     static PerturbationAlg ResolveAutoPerturbationAlg(uint64_t precisionBits,
                                                       bool gpuAvailable,
-                                                      const RenderAlgorithm &renderAlgorithm);
+                                                      const RenderAlgorithm &renderAlgorithm,
+                                                      size_t logicalProcessorCount);
 
     template <typename IterType, class T, PerturbExtras PExtras>
     PerturbationResults<IterType, T, PExtras> *GetLast();

@@ -94,7 +94,9 @@ arithmetic workers, operand snapshots, and exact integer assembly buffers
 specializations. Both allocate maximum capacity once; the dynamic specialization
 publishes active limb lengths with each batch, after the preceding batch joins.
 \code{RefOrbitPrecisionSchedule} proposes precision and maintains the independent
-error disk and conversion certificate. \code{RefOrbitRawPrecisionGuard} clips
+error disk and conversion certificate. Its \code{AddError} and \code{SubtractError}
+bounds follow the effective magnitude operation and account for the additional
+subtraction limb; zero operands use the copy bound. \code{RefOrbitRawPrecisionGuard} clips
 the state explicitly and restores allocation precision before destruction.
 \code{DescribeWorstCertification} reports each component's tightest checked
 bound and state index without replaying the orbit or changing route counts.
@@ -103,11 +105,17 @@ it is not a measurement of actual error or a running total of rounding losses.
 Schedule and precision-guard lifetimes, together with those of the product workers,
 remain inside the caller's MPIR allocator/TLS scope; workers and every MPIR object must be destroyed before
 their associated TLS arena is shut down. A dynamic attempt enters the reference
-cache only after completion; a failed certificate unwinds all attempt-owned
-arithmetic as the rejection exception propagates. Fixed MT9 requires an explicit
-retry selection. Entering or leaving the manually selected
-dynamic variant invalidates cached reference state. The enclosure argument and
-conversion contract appear in
+cache only after completion. Certification is diagnostic: the first failed
+check prints a warning, and the same dynamic calculation continues without
+restart or precision adjustment caused by the check. Fixed and dynamic MT9
+retain separate enum values and GUI/CLI selections. Entering or leaving either
+manual MT9 choice invalidates cached reference state so an explicit fixed choice
+after Auto recalculates the reference. Movie resume reloads deliberately selected
+native cache data after that invalidation. Statistics retain
+the first warning's reason, state, and working precision, the complete attempt's
+elapsed time, and its generation association through sample-type conversion.
+The log and rendering details identify the certification warning. The enclosure
+argument and conversion contract apply only to passing checks, as described in
 \cref{subsec:ref-orbit-dynamic-enclosure,subsec:ref-orbit-dynamic-certificate}.
 GPU reference generation instead uses the fused \code{HpSharkFloat} recurrence.
 

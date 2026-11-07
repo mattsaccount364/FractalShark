@@ -136,12 +136,13 @@ MT3 as a control. Timing results describe the tested machine and workload,
 not a hardware-independent speedup or an end-to-end accuracy certificate.
 
 \paragraph{Dynamic-precision validation.}
-The \code{RefOrbit\allowbreak DynamicPrecision\_*} cases exercise the optional strategy in
+The \code{RefOrbit\allowbreak DynamicPrecision\_*} cases exercise MT9's dynamic execution and diagnostic warnings in
 \cref{subsec:ref-orbit-dynamic-precision}. They provide evidence for the
 implementation's arithmetic hypotheses and integration behavior; the enclosure
 and accepted-sample arguments are established separately by the derivation.
 \begin{itemize}
-  \item \code{Local\allowbreak RoundingBounds}, \code{Combined\allowbreak StepBounds},
+  \item \code{Local\allowbreak RoundingBounds}, \code{AddSubtract\allowbreak Bounds},
+        \code{Combined\allowbreak StepBounds},
         \code{Bound\allowbreak Arithmetic}, and \code{Finite\allowbreak Recurrence} check primitive
         bounds, the complete update against exact dyadic arithmetic, and outward
         disk propagation against wide MPIR calculations. Invalid and
@@ -154,21 +155,37 @@ and accepted-sample arguments are established separately by the derivation.
         capacity preserves the error already incurred and that the derivative
         recovers after cancellation. \code{NearReturn\allowbreak OperandScale} covers the
         small-result/large-operand precision regression.
-  \item \code{Fallback\allowbreak MatchesFixed} and \code{Structured\allowbreak DeepFallback} cover
-        rejection and restart. \code{StartupStorage\allowbreak AndPeriodicity},
-        \code{Active\allowbreak Cancellation}, \code{ManualMenu\allowbreak AndAutoExclusion}, and
+  \item \code{WarningLogs\allowbreak AndContinues} and
+        \code{Structured\allowbreak DeepFailure} cover one warning per attempt,
+        continued calculation and publication, diagnostic counters, and resource reuse.
+        \code{Fractadyne\allowbreak Period\allowbreak 41722\allowbreak Certified} embeds the complete benchmark
+        coordinates and requires positive certification headroom at $Z_{41722}$,
+        no warning, and the established detected period for both HDR float and
+        HDR double samples. Independent $11{,}264$- and $12{,}288$-bit MPIR oracles
+        copy the same finite production midpoint, including occupied guard limbs;
+        recomputing the midpoint at wider precision would change the input orbit.
+        Their reference conversions must agree through the near return and match
+        every published sample. The expensive exact-coordinate case remains
+        available locally and is excluded from hosted CI; short warning fixtures
+        retain CI coverage.
+        \code{Converted\allowbreak Warning\allowbreak Report} checks reporting after
+        double-float conversion, and \code{Warning\allowbreak Then\allowbreak Cancellation}
+        checks a cancellation request during warning emission.
+        \code{Startup\allowbreak Storage\allowbreak And\allowbreak Periodicity},
+        \code{Active\allowbreak Cancellation}, \code{Manual\allowbreak Menu\allowbreak And\allowbreak Auto\allowbreak Selection}, and
         \code{RenderAnd\allowbreak CompressionRoundtrip} cover publication, cancellation,
-        selection, rendering, and Imagina interchange.
+        the fixed and dynamic MT9 selections, rendering, and Imagina interchange.
 \end{itemize}
 The names above omit the common \code{RefOrbit\allowbreak DynamicPrecision\_} prefix.
-The existing \code{ManualMenu\allowbreak AndAutoExclusion} case encodes the
-earlier manual-only selection policy; its Auto assertions require alignment
-with the current dynamic-MT9 dispatch before they validate that policy.
 For example, the existing focused Windows selection is:
 \begin{lstlisting}[language={}]
 Debug\FractalSharkTest.exe --filter "RefOrbitDynamicPrecision_*"
 \end{lstlisting}
-The selection also includes three growing-derivative profiling fixtures.
+The fixed specialization is exercised through its public selection. Both hosted
+Release test steps have a 40-minute limit. The runner prints and flushes each
+test name before execution to identify an active case if a timeout occurs.
+The selection also includes three growing-derivative
+profiling fixtures.
 Their sample comparisons and precision statistics complement the correctness
 fixtures; elapsed times do not establish a universal speedup. Agreement on
 tested inputs does not replace the enclosure proof or extend its certificate

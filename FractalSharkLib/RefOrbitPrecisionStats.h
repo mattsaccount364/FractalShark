@@ -6,18 +6,23 @@ namespace FractalShark {
 
 enum class RefOrbitPrecisionFailure { None, AmbiguousSample, UnsupportedConversion, InvalidBound };
 
-// Process-wide counts of successful dynamic attempts and certificate failures.
-// Successful startup exits without steps and cancelled attempts are excluded.
+// Counts classify certification, not rendering: a warned attempt counts once as a
+// failure even though calculation continues. Only clean, noncancelled attempts
+// with at least one step count as successes.
 struct RefOrbitDynamicPrecisionCounters {
     uint64_t Successes{};
     uint64_t Failures{};
 };
 
 // Per-attempt diagnostics are deliberately independent of the saved orbit format.
-// Failed-attempt statistics remain available after the exception; their generation
-// identifies the discarded attempt, never a previously cached valid orbit.
+// GenerationNumber identifies the dynamic attempt; PublishedGenerationNumber also
+// follows conversions into another cached sample type. Failure records the first
+// diagnostic warning and does not imply that calculation or publication failed.
 struct RefOrbitDynamicPrecisionStats {
     uint64_t GenerationNumber{};
+    uint64_t PublishedGenerationNumber{};
+    uint64_t FailureIteration{};
+    uint64_t FailureWorkingBits{};
     uint64_t FullBits{};
     uint64_t MinimumBits{};
     uint64_t Steps{};

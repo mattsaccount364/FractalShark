@@ -6,8 +6,8 @@ deep-zoom Mandelbrot rendering.  Perturbation theory
 (\cref{sec:perturbation-concept}) allows every pixel to be rendered at
 low precision, but it requires one orbit---the \emph{reference
 orbit}---whose accuracy resolves the zoom depth. The usual fixed backends
-compute that orbit at the full configured precision. An optional dynamic MT9
-variant reduces working precision when independently certified sample
+compute that orbit at the full configured precision. MT9 first attempts dynamic
+working precision when independently certified sample
 conversions permit it (\cref{subsec:ref-orbit-dynamic-precision}). At
 extreme magnifications this requirement means iterating
 \begin{equation}
@@ -56,16 +56,16 @@ Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, 
         if unset).
   \item Chooses an algorithm from \code{m\_Perturbation\-Alg}.  In
         \code{Auto}, the estimated precision selects \code{STPeriodicity}
-        below $640$ bits, \code{MTPeriodicity3} from $640$ through $6{,}783$ bits,
-        \code{MTPeriodicity3PerturbMTHighMTMed3} from $6{,}784$ through
-        $16{,}383$ bits, and dynamic MT9 from $16{,}384$
-        through $32{,}767$ bits. At $32{,}768$ bits and above, \code{GPU} is
+        below $640$ bits, \code{MTPeriodicity3} from $640$ through $4{,}095$ bits,
+        \code{MTPeriodicity3PerturbMTHighMTMed3} from $4{,}096$ through
+        $8{,}191$ bits, and MT9 from $8{,}192$ bits when at least nine logical
+        processors are available; otherwise that CPU branch uses MT3. At $32{,}768$ bits and above, \code{GPU} is
         selected when CUDA is available and the effective render algorithm
         supports GPU reference generation within its precision capacity;
-        otherwise, dynamic MT9 is selected. The estimate includes the minimum precision
-        margin, excludes reuse padding, and does not depend on hardware concurrency.
-        Explicit selections bypass Auto. Explicit fixed MT9 disables dynamic
-        precision even at depths where Auto selects it.
+        otherwise, the eligible CPU branch applies. The estimate includes the minimum
+        precision margin and excludes reuse padding. Explicit selections bypass Auto.
+        Auto uses dynamic MT9; fixed MT9 remains an explicit selection. A failed
+        dynamic certificate prints a warning and calculation continues.
   \item Allocates a new \code{PerturbationResults} slot, initializes
         metadata and bounds, and runs the chosen orbit kernel until escape,
         periodicity detection, or the maximum iteration count is reached.
@@ -83,10 +83,9 @@ render algorithm. Reuse storage is described in \cref{subsec:ref-orbit-reuse}.
 The legacy menu label ``MT2'' counts the two square workers; the implementation
 name MT3 also counts the calling thread. Explicit selections bypass Auto.
 Every selection name in the catalog is accepted by
-\code{-{}-perturbation-alg}, including
-\code{MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision}.
-The CLI parser and help share one catalog, whose compile-time checks require
-one unique, nonempty name for every algorithm enum value.
+\code{-{}-perturbation-alg}. The CLI parser and help share one catalog, whose
+compile-time checks require one unique, nonempty name for every algorithm enum
+value. Fixed and dynamic MT9 have separate enum values and selection names.
 
 \begin{table}[!htbp]
 \centering
@@ -116,11 +115,10 @@ one unique, nonempty name for every algorithm enum value.
 \code{GPU} & Fused CUDA Ref2/v2 recurrence; explicit or automatic selection. \\
 \code{Auto} & Bit thresholds above; compatible GPU generation from
   $32{,}768$ bits, with dynamic MT9 as the CPU alternative. \\
-\code{MTPeriodicity9\-Karatsuba} & Eight workers plus caller; exact split products,
-  full-precision recurrence additions and subtractions, with periodicity. \\
-\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} & Explicit GUI/CLI or Auto selection;
-  variable working precision with sample certificates and fixed-MT9 restart.
-  Fixed MT9 remains separately selectable. \\
+\code{MTPeriodicity9\-Karatsuba} & Eight workers plus caller; exact split products
+  with periodicity and fixed working precision. \\
+\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} & Variable working precision;
+  independent certification warns on uncertainty and calculation continues. \\
 \hline
 \end{tabularx}
 \end{table}
@@ -133,8 +131,9 @@ compressed double-float rendering lacks the required plain-to-compressed
 materialization before conversion. Those formats use dynamic MT9 in Auto. Requested
 precision above $16{,}777{,}216$ bits also uses dynamic MT9 because the largest GPU
 bucket contains $524{,}288$ 32-bit limbs. Auto therefore avoids selecting a GPU
-bucket that would cap the requested precision. The lower thresholds round the
-former $10^{150}$ and $10^{2000}$ zoom rules to 64-bit limb boundaries.
+bucket that would cap the requested precision. CPU alternatives remain subject
+to the nine-logical-processor requirement. The thresholds are fixed policy
+choices, rather than a hardware benchmark.
 
 \subsection{Single-threaded authoritative orbit}
 \label{subsec:ref-orbit-st}

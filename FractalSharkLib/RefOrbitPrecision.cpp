@@ -84,19 +84,32 @@ ProductQuantum(mpf_srcptr product, int64_t shift)
                : LimbQuantum(static_cast<int64_t>(product->_mp_exp) - retained, shift);
 }
 
+template <bool Subtract>
 int64_t
 SumQuantum(mpf_srcptr left, mpf_srcptr right, mpf_srcptr destination)
 {
     if (!HasBoundableExponent(left) || !HasBoundableExponent(right)) {
         return InvalidQuantum;
     }
+    // Zero addition/subtraction is a copy (possibly negated), retaining pi+1 limbs.
+    // Aliasing can make the operation exact even sooner; the copy bound remains valid.
+    if (left->_mp_size == 0 || right->_mp_size == 0) {
+        return CopyQuantum(left->_mp_size == 0 ? right : left, destination);
+    }
+    const bool sameSign = (left->_mp_size < 0) == (right->_mp_size < 0);
+    const bool subtractMagnitudes = Subtract ? sameSign : !sameSign;
+    // MPIR/GMP magnitude addition clips aligned inputs to pi limbs. Magnitude
+    // subtraction uses pi+1. Its special borrow/cancellation path can retain only
+    // pi limbs, but first lowers the common exponent by at least one limb, so the
+    // original-exponent pi+1 bound still covers that path. Equal-prefix scans can
+    // improve exactness further; no limb scan is needed for this conservative bound.
+    const int64_t retained = static_cast<int64_t>(destination->_mp_prec) + subtractMagnitudes;
     const int64_t high = std::max(left->_mp_exp, right->_mp_exp);
     const int64_t low = std::min(static_cast<int64_t>(left->_mp_exp) - MagnitudeSize(left),
                                  static_cast<int64_t>(right->_mp_exp) - MagnitudeSize(right));
-    // MPIR clips aligned operands to destination precision. Four quanta cover both
-    // operand tails and final truncation, including subtraction near cancellation.
-    return high - low <= destination->_mp_prec ? ZeroQuantum
-                                               : LimbQuantum(high - destination->_mp_prec, 2);
+    // Four quanta enclose both clipped operand tails and result rounding. Matching
+    // the effective operation avoids charging an unnecessary full limb of error.
+    return high - low <= retained ? ZeroQuantum : LimbQuantum(high - retained, 2);
 }
 
 int64_t
@@ -492,11 +505,11 @@ RefOrbitPrecisionSchedule::ComputeStep(mpf_ptr x,
         ProductQuantum(xSquared, 0), ProductQuantum(ySquared, 0), ZeroQuantum, ZeroQuantum};
     std::array<int64_t, 3> imaginary{ProductQuantum(cross, 1), DoublingQuantum(cross), ZeroQuantum};
     mpf_mul_ui(cross, cross, 2);
-    imaginary[2] = SumQuantum(cross, cy, y);
+    imaginary[2] = SumQuantum<false>(cross, cy, y);
     mpf_add(y, cross, cy);
-    real[2] = SumQuantum(xSquared, ySquared, temporary);
+    real[2] = SumQuantum<true>(xSquared, ySquared, temporary);
     mpf_sub(temporary, xSquared, ySquared);
-    real[3] = SumQuantum(temporary, cx, x);
+    real[3] = SumQuantum<false>(temporary, cx, x);
     mpf_add(x, temporary, cx);
     FinishStep(AccumulateRoundingErrors(real), AccumulateRoundingErrors(imaginary));
 }
@@ -575,7 +588,7 @@ RefOrbitPrecisionSchedule::CheckGap(mpf_srcptr larger,
                                     int64_t componentExponent,
                                     CertificationRecord &record)
 {
-    const auto rounding = SumError(larger, smaller, m_Gap.Get());
+    const auto rounding = SubtractError(larger, smaller, m_Gap.Get());
     mpf_sub(m_Gap.Get(), larger, smaller);
     if (mpf_sgn(m_Gap.Get()) <= 0) {
         RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::ZeroGap);
@@ -728,24 +741,34 @@ RefOrbitPrecisionSchedule::CertifyComponentSlow(mpf_srcptr value,
 bool
 RefOrbitPrecisionSchedule::Certify(mpf_srcptr x, mpf_srcptr y, bool nativeDouble)
 {
+    // Keep checking after a warning, but latch its original cause and state. Later
+    // checks and error propagation are diagnostics and never steer the schedule.
+    const auto firstFailure = m_Stats.Failure;
+    bool valid = false;
     if (!m_Error.IsFinite()) {
         m_Stats.Failure = RefOrbitPrecisionFailure::InvalidBound;
         RecordCertificationStatus(m_WorstReal, RefOrbitErrorBudgetStatus::InvalidBound);
         RecordCertificationStatus(m_WorstImaginary, RefOrbitErrorBudgetStatus::InvalidBound);
-        return false;
-    }
-    // For real c, the imaginary recurrence is exactly zero independently of the
-    // real error disk. Preserve that structural fact instead of rejecting every axis.
-    bool valid = CertifyComponent(x, nativeDouble, m_WorstReal);
-    if (valid) {
-        if (m_RealAxis && y->_mp_size == 0) {
-            RecordCertificationStatus(m_WorstImaginary, RefOrbitErrorBudgetStatus::Exact);
-        } else {
-            valid = CertifyComponent(y, nativeDouble, m_WorstImaginary);
+    } else {
+        // A real coordinate has an exactly zero imaginary recurrence independently
+        // of the real error disk.
+        valid = CertifyComponent(x, nativeDouble, m_WorstReal);
+        if (valid) {
+            if (m_RealAxis && y->_mp_size == 0) {
+                RecordCertificationStatus(m_WorstImaginary, RefOrbitErrorBudgetStatus::Exact);
+            } else {
+                valid = CertifyComponent(y, nativeDouble, m_WorstImaginary);
+            }
         }
     }
-    if (!valid && m_Stats.Failure == RefOrbitPrecisionFailure::None) {
-        m_Stats.Failure = RefOrbitPrecisionFailure::AmbiguousSample;
+    if (firstFailure != RefOrbitPrecisionFailure::None) {
+        m_Stats.Failure = firstFailure;
+    } else if (!valid) {
+        if (m_Stats.Failure == RefOrbitPrecisionFailure::None) {
+            m_Stats.Failure = RefOrbitPrecisionFailure::AmbiguousSample;
+        }
+        m_Stats.FailureIteration = m_Stats.Steps + 1;
+        m_Stats.FailureWorkingBits = mpf_get_prec(x);
     }
     return valid;
 }
@@ -871,7 +894,7 @@ RefOrbitPrecisionSchedule::DescribeCertification(mpf_srcptr x, mpf_srcptr y, boo
             }
             mpf_srcptr larger = boundary == 0 ? &magnitude : m_Boundary.Get();
             mpf_srcptr smaller = boundary == 0 ? m_Boundary.Get() : &magnitude;
-            const auto rounding = SumError(larger, smaller, m_Gap.Get());
+            const auto rounding = SubtractError(larger, smaller, m_Gap.Get());
             mpf_sub(m_Gap.Get(), larger, smaller);
             const auto gap = mpf_sgn(m_Gap.Get()) > 0 ? RefOrbitErrorBound::FromMpfLower(m_Gap.Get())
                                                       : RefOrbitErrorBound{};
@@ -931,9 +954,15 @@ RefOrbitPrecisionSchedule::ProductError(mpf_srcptr product)
 }
 
 RefOrbitErrorBound
-RefOrbitPrecisionSchedule::SumError(mpf_srcptr left, mpf_srcptr right, mpf_srcptr destination)
+RefOrbitPrecisionSchedule::AddError(mpf_srcptr left, mpf_srcptr right, mpf_srcptr destination)
 {
-    return QuantumBound(SumQuantum(left, right, destination));
+    return QuantumBound(SumQuantum<false>(left, right, destination));
+}
+
+RefOrbitErrorBound
+RefOrbitPrecisionSchedule::SubtractError(mpf_srcptr left, mpf_srcptr right, mpf_srcptr destination)
+{
+    return QuantumBound(SumQuantum<true>(left, right, destination));
 }
 
 RefOrbitErrorBound

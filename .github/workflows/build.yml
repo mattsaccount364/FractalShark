@@ -214,7 +214,7 @@ jobs:
           done
 
       - name: Run FractalSharkTest (Release)
-        timeout-minutes: 30
+        timeout-minutes: 40
         # Keep profiling and expensive MT9 integration/search cases local. Retain
         # the remaining correctness coverage within the routine hosted-test budget.
         run: >-
@@ -227,12 +227,14 @@ jobs:
           --exclude 'RefOrbitDynamicPrecision_NearReturnOperandScale'
           --exclude 'RefOrbitDynamicPrecision_StructuredDeepFailure'
           --exclude 'RefOrbitDynamicPrecision_HeuristicCounterexampleProbe'
+          --exclude 'RefOrbitDynamicPrecision_FractadynePeriod41722Certified'
 
       - name: Smoke-test FractalSharkCli
         run: |
-          ./build-release/FractalSharkCli/FractalSharkCli --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke-test.png --quiet
-          test -f cli-smoke-test.png || (echo "FractalSharkCli produced no output" && exit 1)
-          rm cli-smoke-test.png
+          # Keep an extra dot in the basename to catch PNG extension stripping.
+          ./build-release/FractalSharkCli/FractalSharkCli --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke.test.png --quiet
+          test -f cli-smoke.test.png || (echo "FractalSharkCli produced no output" && exit 1)
+          rm cli-smoke.test.png
 
         # HpSharkFloatTest is built but not run on CI — it requires a physical
         # CUDA GPU, which GitHub-hosted runners don't provide. Runtime GPU
@@ -468,7 +470,7 @@ jobs:
 
       - name: Run unit tests (Release)
         if: matrix.configuration == 'Release'
-        timeout-minutes: 30
+        timeout-minutes: 40
         # Match the scoped Linux suite; slow MT9 cases remain available locally.
         run: >-
           ${{ matrix.configuration }}\FractalSharkTest.exe
@@ -480,13 +482,15 @@ jobs:
           --exclude 'RefOrbitDynamicPrecision_NearReturnOperandScale'
           --exclude 'RefOrbitDynamicPrecision_StructuredDeepFailure'
           --exclude 'RefOrbitDynamicPrecision_HeuristicCounterexampleProbe'
+          --exclude 'RefOrbitDynamicPrecision_FractadynePeriod41722Certified'
 
       - name: Smoke-test FractalSharkCli
         shell: pwsh
         run: |
-          & "${{ matrix.configuration }}\FractalSharkCli.exe" --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke-test.png --quiet
-          if (-not (Test-Path cli-smoke-test.png)) { throw "FractalSharkCli produced no output" }
-          Remove-Item cli-smoke-test.png
+          # Keep an extra dot in the basename to catch PNG extension stripping.
+          & "${{ matrix.configuration }}\FractalSharkCli.exe" --builtin-view 0 --render-algorithm Cpu64 --out cli-smoke.test.png --quiet
+          if (-not (Test-Path cli-smoke.test.png)) { throw "FractalSharkCli produced no output" }
+          Remove-Item cli-smoke.test.png
 
   release:
     name: Create FractalShark Release

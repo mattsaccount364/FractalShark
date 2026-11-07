@@ -260,17 +260,12 @@ PrintUsage()
     }
     std::cout
         << "                    Auto uses estimated precision bits without reuse padding:\n"
-           "                      <640: STPeriodicity; 640-6783: MTPeriodicity3\n"
-           "                      6784-16383: MTPeriodicity3PerturbMTHighMTMed3\n"
-           "                      16384-32767: MTPeriodicity9KaratsubaDynamicPrecision\n"
-           "                      >=32768: GPU with working CUDA and a compatible HDR renderer\n"
-           "                    At >=32768, unsupported GPU type/format/precision uses dynamic MT9\n"
-           "                    CUDA disabled/unavailable also uses dynamic MT9 at that depth\n"
-           "                    Explicit reference choices bypass Auto\n"
+        << RefOrbitCalc::GetAutoPerturbationPolicyDescription()
+        << "                    Explicit reference choices bypass Auto\n"
            "                    MTPeriodicity9Karatsuba uses eight workers plus the caller\n"
-           "                    Explicit MTPeriodicity9Karatsuba selection works at any depth\n"
-           "                    MTPeriodicity9KaratsubaDynamicPrecision enables certified dynamic\n"
-           "                    samples, restarting with fixed MT9 if certification fails\n"
+           "                    MTPeriodicity9Karatsuba uses fixed precision\n"
+           "                    MTPeriodicity9KaratsubaDynamicPrecision adjusts working precision\n"
+           "                    Certification is diagnostic only: failed checks warn and continue\n"
            "                    GPU uses CUDA with an HDR perturbation render algorithm\n"
            "  --clear-reference-orbits\n"
            "                    Clear all cached reference orbits before each render\n"
@@ -959,13 +954,6 @@ BuildRenderRequest(const CliArgs &args,
 
     if (!args.OutFile.empty()) {
         req.OutPngBasename = ToWStringUtf8(args.OutFile);
-        const std::wstring pngExtension = L".png";
-        if (req.OutPngBasename.size() >= pngExtension.size() &&
-            req.OutPngBasename.compare(req.OutPngBasename.size() - pngExtension.size(),
-                                       pngExtension.size(),
-                                       pngExtension) == 0) {
-            req.OutPngBasename.resize(req.OutPngBasename.size() - pngExtension.size());
-        }
     }
 
     return 0;

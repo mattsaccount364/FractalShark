@@ -211,14 +211,12 @@ single-threaded path in practice, with speedups increasing as precision grows.
 The current \code{Auto} implementation estimates precision in bits, including
 the minimum precision margin and excluding reuse padding. It selects
 \code{STPeriodicity} below $640$ bits, \code{MTPeriodicity3} from $640$ through
-$6{,}783$ bits, and \code{MTPeriodicity3\-PerturbMTHigh\-MTMed3} from $6{,}784$
-through $16{,}383$ bits. At $16{,}384$ through $32{,}767$ bits it selects
-\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision}, without a hardware-concurrency test.
-At $32{,}768$ bits and above it selects GPU reference generation when CUDA,
-the effective renderer's reference format, and the supported precision capacity
-permit it; otherwise it uses dynamic MT9. These are fixed policy thresholds rather
-than a hardware benchmark. Eligibility and precision limits are described in
-\cref{subsec:ref-orbit-pipeline}.
+$4{,}095$ bits, and \code{MTPeriodicity3\-PerturbMTHigh\-MTMed3} from $4{,}096$
+through $8{,}191$ bits. From $8{,}192$ bits, the CPU branch selects
+\code{MTPeriodicity9\-Karatsuba} when at least nine logical processors are
+available; otherwise it selects MT3. From $32{,}768$ bits, eligible GPU reference
+generation takes priority independently of the logical processor count.
+Eligibility and capacity limits appear in \cref{subsec:ref-orbit-pipeline}.
 
 \paragraph{A simple cost model.}
 Let $C_{\mathrm{mul}}$ be one full-precision multiplication's cost,
@@ -272,11 +270,14 @@ Both implementations reconstruct the split integer products exactly.
 Fractadyne additionally uses a derivative-driven adaptive working-precision
 schedule: when the schedule lowers precision, its recurrence products,
 additions, and subtractions round at that reduced precision. FractalShark's
-fixed \code{MTPeriodicity9Karatsuba} backend keeps recurrence addition and
-subtraction at the full configured MPIR precision throughout the orbit. Its
-derivative remains a reduced-precision periodicity estimate. The dynamic
-variant described in \cref{subsec:ref-orbit-dynamic-precision}
-also adjusts the arithmetic precision and independently certifies its samples.
+internal full-precision specialization keeps recurrence addition and
+subtraction at the configured MPIR precision throughout the orbit. MT9 normally
+uses the dynamic execution described in \cref{subsec:ref-orbit-dynamic-precision},
+which adjusts arithmetic precision and independently certifies samples.
+The periodicity derivative remains a reduced-precision termination estimate.
+Fractadyne's derivative schedule has no equivalent propagated-error conversion
+certificate; its precision decision governs subsequent steps, rather than
+producing the diagnostic warnings described here.
 In particular,
 ``half-width'' describes integer multiplication operands, not a reduction of
 the recurrence's configured precision. The comparison refers to the inspected
@@ -371,29 +372,26 @@ There is at most one outstanding job per worker, so generation counters and
 a shared completion counter are unnecessary. Pending arithmetic must finish
 before snapshots are overwritten or workers are stopped.
 Each worker's MPIR scratch lifetime is scoped inside its thread. On normal
-exit, cancellation, or dynamic rejection, outstanding batches complete before
-Stop is published; all eight workers are joined before their owned buffers
-are destroyed. A rejected dynamic attempt is discarded and an application
-exception reports the failure; a caller can explicitly retry with fixed MT9.
-The heuristic schedule can therefore affect cost and acceptance, but cannot
-bypass the accepted-sample certificate derived next. A fixed retry does not
-inherit a certificate from the rejected attempt.
+exit or cancellation, outstanding batches complete before Stop is published;
+all eight workers are joined before their owned buffers are destroyed.
+Certification warnings do not change worker lifetime, precision scheduling,
+sample publication, or termination.
 
-\subsection{Optional dynamic working precision}
+\subsection{Dynamic working precision and diagnostic certification}
 \label{subsec:ref-orbit-dynamic-precision}
 
-\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} is an optional alternative
-to fixed MT9. It uses the same exact split-product algebra, with a variable
-active limb count for the recurrence. The current \code{Auto} policy selects
-the dynamic variant in the MT9 range and when GPU reference generation is
-ineligible. Explicitly selecting fixed MT9 disables dynamic precision.
-The dynamic variant does not alter the other CPU backends, CUDA reference
-generation, or authoritative reuse modes.
-The option appears in the GUI as \emph{MT9 + Periodicity + Karatsuba + Dynamic
-Precision}. The CLI selects it explicitly with
-\code{-{}-perturbation-alg MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision};
-\code{Auto} can also resolve to this backend. Parser and help use a shared
-catalog with compile-time coverage checks over every reference algorithm.
+\code{MTPeriodicity9\-Karatsuba} selects fixed working precision.
+\code{MTPeriodicity9\-Karatsuba\-DynamicPrecision} selects the same exact
+split-product algebra with a variable active limb count. Both choices remain
+available in the GUI and CLI. Auto selects the dynamic specialization when
+the CPU precision and processor-count requirements are met; eligible GPU
+reference generation retains priority.
+
+The GUI entries are \emph{MT9 + Periodicity + Karatsuba} and
+\emph{MT9 + Periodicity + Karatsuba + Dynamic Precision}. Parser and help use
+a shared catalog with compile-time coverage checks over every reference algorithm.
+A failed dynamic certificate prints a warning and calculation continues.
+The check is diagnostic: no restart or full-precision recovery occurs.
 
 Two mathematical arguments have different roles. Parameter sensitivity predicts
 a working precision likely to be economical. An independent enclosure of the
@@ -618,12 +616,21 @@ The estimates consumed by \code{ComputeStep} are as follows:
        destination's $\pi+1$ retained limbs. Otherwise its discarded tail
        is less than $\beta^{e-(\pi+1)}$. The same rule bounds explicit
        state clipping.
- \item For addition/subtraction, let $e_{\max}$ be the larger operand
-       exponent and let $e_{\min}$ be the lowest occupied operand-limb
-       position. If $e_{\max}-e_{\min}\le\pi$, the occupied span fits and
-       the operation is exact. Otherwise $4\beta^{e_{\max}-\pi}$ bounds
-       aligned operand tails and final truncation. Cancellation does not
-       reduce those operand-tail bounds.
+ \item Addition and subtraction use operation-specific bounds. Opposite-sign
+       addition and same-sign subtraction perform magnitude subtraction; the
+       other nonzero sign combinations perform magnitude addition. Let $k=\pi$
+       for magnitude addition and $k=\pi+1$ for magnitude subtraction.
+       With $e_{\max}$ the larger operand-limb exponent and $e_{\min}$ the
+       lowest occupied operand-limb position, an aligned span
+       $e_{\max}-e_{\min}\le k$ is exact. Otherwise
+       $4\beta^{e_{\max}-k}$ bounds operand tails and final truncation.
+       A zero operand reduces the operation to the copy bound above.
+       MPIR/GMP magnitude subtraction scans equal leading limbs before
+       truncation. Its special borrow path can retain only $\pi$ limbs,
+       but first lowers the common exponent by at least one limb; the
+       original-exponent $\pi+1$ bound therefore remains conservative.
+       The estimator uses only sign, size, exponent, and precision metadata;
+       it does not scan the limbs or assume that every subtraction is exact.
  \item Doubling is exact when the occupied source fits $\pi$ limbs.
        Otherwise $4\beta^{e-\pi}$ conservatively bounds guard-limb clipping.
 \end{itemize}
@@ -643,8 +650,9 @@ Nonnegative bounds use normalized binary64 significands with checked
 operations round outward, including when a small aligned addend is lost.
 The implementation assumes IEEE binary64, precise floating-point evaluation,
 and the supported x64 square-root rounding behavior. Exponents outside the
-supported range and invalid bounds reject an attempt; they cannot silently
-turn into zero. These arithmetic hypotheses are part of the certificate.
+supported range and invalid bounds fail the certificate and produce diagnostic
+warnings; they cannot silently turn into zero within the enclosure. These
+arithmetic hypotheses are part of the certificate.
 
 \paragraph{Enclosure proposition and proof.}
 For any permitted sequence of working precisions, suppose that coordinate
@@ -659,7 +667,7 @@ The result is an arithmetic enclosure theorem, conditional on the stated
 primitive bounds and floating-point behavior; it is not a claim of formal
 verification of the machine code.
 
-\subsubsection{Conversion certificates and rejection}
+\subsubsection{Conversion certificates and diagnostic warnings}
 \label{subsec:ref-orbit-dynamic-certificate}
 
 A small error bound alone does not establish identical stored conversions.
@@ -721,25 +729,48 @@ any allowed precision schedule. An approximate derivative can affect the
 amount of work or the likelihood of rejection, but cannot invalidate an
 accepted sample when the theorem's hypotheses hold.
 
-Each sampled state is certified before it supplies input to the existing
-publication, periodicity, or escape pipeline. A dynamic attempt remains private
-until completion. An ambiguous conversion or invalid bound rejects the attempt;
-the implementation records diagnostics and throws an application exception.
-Workers, precision guards, and TLS-owned arithmetic objects unwind, and a
-caller may explicitly select fixed MT9 afterward. No automatic full-precision
-retry is performed. Cancellation publishes only
-the already certified prefix and does not start another attempt.
+Each sampled state is checked before it supplies input to the existing
+publication, periodicity, or escape pipeline. An ambiguous conversion, unsupported
+conversion, or invalid bound records a diagnostic failure. The first failure
+prints a warning with its reason, state index, working precision, error budgets,
+and coordinates. Later checks continue, but do not emit additional warnings.
+The same dynamic attempt continues and publishes its samples normally,
+including samples that could not be certified. The theorem therefore applies
+only to components whose checks pass, rather than to every published sample.
+Cancellation retains the existing prefix behavior; unrelated exceptions propagate
+through the existing application boundary.
 
-The certificate applies to samples entering storage/compression. Compression
-retains its established error contract. The periodicity test remains a
-termination heuristic, and downstream pixel arithmetic has its own errors.
-An explicitly requested fixed retry retains fixed MT9's existing numerical
-contract; its output does not inherit the dynamic attempt's certificate. Likewise, agreement with
-fixed MT9 in regression fixtures is evidence about those fixtures, rather
-than a universal identity between two finite-precision algorithms.
+\paragraph{Near-return limitation.}
+A near-nucleus return can make a component much smaller than the incoming
+absolute error enclosure. A failed certificate therefore establishes uncertainty,
+rather than measuring an incorrect sample. Increasing precision later cannot
+reconstruct previously discarded state. Fixed MT9 remains an explicit choice
+when a full-precision reference is desired.
+
+The period-$41{,}722$ Fractadyne benchmark location at approximately $10^{3000}$
+magnification demonstrates an avoidable false warning. The earlier shared
+addition and subtraction estimate warned at $Z_{41722}$ after $41{,}721$ updates,
+using $5{,}248$ of $10{,}112$ configured bits. Its real-component budget
+$10112.80/10056.34$ represented approximately $-56.46$ bits of headroom.
+Independent wider calculations from the same finite production midpoint
+confirmed that both components converted correctly to binary64.
+The measured real error had approximately $7.11$ bits of margin to the
+conversion boundary; the old bound overstated that component's error by
+approximately $63.57$ bits. Distinguishing the effective addition and
+subtraction capacities removes approximately $58.3$ bits of overestimation
+in the captured trace. The regression requires successful certification with
+positive headroom for both HDR sample types while retaining diagnostic-only
+behavior for genuinely inconclusive checks.
+
+Certification diagnoses the conversions entering storage/compression; it does
+not gate them. Compression retains its established error contract. The periodicity
+test remains a termination heuristic, and downstream pixel arithmetic has its
+own errors. Fixed MT9 does not perform dynamic certification. Agreement with
+fixed MT9 in regression fixtures is evidence about those fixtures, rather than
+a universal identity between two finite-precision algorithms.
 
 \paragraph{Reading the worst checked error budgets.}
-The completion and rejection summaries retain each component's tightest
+The completion and warning summaries retain each component's tightest
 checked certificate across the attempt. They do not substitute the final
 computed pipeline state, which can be ahead of the last stored sample.
 For a nonzero component with normalized binary exponent $s$, define its full
@@ -788,6 +819,14 @@ An affected component's failure supersedes an earlier finite record; a
 component skipped after another component rejects retains its earlier record
 or remains \code{not\_checked}.
 
+Statistics retain the first diagnostic failure's reason, state index, and working
+precision while step counts and elapsed time cover the complete dynamic attempt.
+The published generation associates those diagnostics with the reference selected
+by the renderer, including a converted sample type. Rendering details identify
+a \emph{certification warning}. A warned attempt counts once as a certificate
+failure and is not also counted as a certificate success; the counter describes
+certification rather than rendering success.
+
 \subsubsection{Allocation, cost, and provenance}
 
 The dynamic specialization allocates its maximum operand, worker, and assembly
@@ -805,8 +844,8 @@ attempt costs approximately
 $\sum_n C_{\mathrm{step}}(P_n)$ plus certification and scheduling overhead,
 instead of $N C_{\mathrm{step}}(P_{\mathrm{full}})$. Reduced limb counts can
 save substantial product work in a favorable growth regime. Conservative
-enclosures or conversion boundaries can instead reject an attempt, with a
-subsequent full fixed retry available by explicit selection. The strategy
+enclosures or conversion boundaries can instead produce diagnostic warnings.
+Certification overhead can outweigh arithmetic savings. The strategy
 therefore offers a workload-dependent trade-off, with no universal speedup
 implied by derivative growth.
 

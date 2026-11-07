@@ -243,6 +243,8 @@ template PerturbationResults<uint64_t, double, PerturbExtras::Disable> *RefOrbit
     GetLast<uint64_t, double, PerturbExtras::Disable>();
 template PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::Disable> *RefOrbitCalc::
     GetLast<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
+template PerturbationResults<uint64_t, HDRFloat<float>, PerturbExtras::Disable> *RefOrbitCalc::
+    GetLast<uint64_t, HDRFloat<float>, PerturbExtras::Disable>();
 // Storage-mode inspection uses these HDR variants outside this translation unit as well.
 template PerturbationResults<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression> *
 RefOrbitCalc::GetLast<uint64_t, HDRFloat<double>, PerturbExtras::SimpleCompression>();
@@ -1388,12 +1390,6 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
     std::unique_ptr<std::thread> tZx(DEBUG_NEW std::thread(ThreadSqZx, ThreadZxMemory));
     std::unique_ptr<std::thread> tZy(DEBUG_NEW std::thread(ThreadSqZy, ThreadZyMemory));
 
-    ScopedAffinity scopedAffinity{*this,
-                                  Environment::GetCurrentThreadHandle(),
-                                  reinterpret_cast<void *>(tZx->native_handle()),
-                                  reinterpret_cast<void *>(tZy->native_handle()),
-                                  nullptr};
-
     ThreadZxData *expectedZx = nullptr;
     ThreadZyData *expectedZy = nullptr;
 
@@ -1910,13 +1906,6 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 std::unique_ptr<std::thread>(DEBUG_NEW std::thread(ThreadReused, ThreadReusedMemory));
         }
 
-        ScopedAffinity scopedAffinity{
-            *this,
-            Environment::GetCurrentThreadHandle(),
-            reinterpret_cast<void *>(tZx->native_handle()),
-            reinterpret_cast<void *>(tZy->native_handle()),
-            tReuse ? reinterpret_cast<void *>(tReuse->native_handle()) : nullptr};
-
         ThreadZxData *expectedZx = nullptr;
         ThreadZyData *expectedZy = nullptr;
         ThreadReusedData *expectedReused = nullptr;
@@ -2292,24 +2281,21 @@ MT9WorstErrorBudgets(const FractalShark::RefOrbitWorstCertificationDiagnostics &
     return message.str();
 }
 
-[[noreturn]] void
-ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
-                             FractalShark::RefOrbitDynamicPrecisionStats &stats,
-                             BenchmarkData &dynamicTimer,
-                             const HighPrecision &cx,
-                             const HighPrecision &cy,
-                             mpf_srcptr x,
-                             uint64_t generation,
-                             IterTypeFull orbitIteration,
-                             IterTypeFull iterationLimit,
-                             const char *sampleType)
+void
+RecordMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
+                              FractalShark::RefOrbitDynamicPrecisionStats &stats,
+                              const HighPrecision &cx,
+                              const HighPrecision &cy,
+                              mpf_srcptr x,
+                              uint64_t generation,
+                              IterTypeFull orbitIteration,
+                              IterTypeFull iterationLimit,
+                              const char *sampleType)
 {
-    // Record the discarded attempt before unwinding. No failed orbit enters
-    // the cache, and the existing worker/TLS RAII handles exception cleanup.
+    // A failed certificate reports uncertainty only. The caller continues the same
+    // arithmetic and sample publication path, and reports at most once per orbit.
     stats = schedule.GetStats();
     stats.GenerationNumber = generation;
-    dynamicTimer.StopTimer();
-    stats.ElapsedMilliseconds = dynamicTimer.GetDeltaInMs();
     if constexpr (EnableMT9DynamicPrecisionCounters) {
         MT9DynamicPrecisionFailures.fetch_add(1, std::memory_order_relaxed);
     }
@@ -2327,7 +2313,7 @@ ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
             break;
     }
     std::ostringstream summary;
-    summary << "MT9 dynamic precision rejected: " << reason << ", Z" << orbitIteration
+    summary << "MT9 dynamic precision warning: " << reason << ", Z" << orbitIteration
             << ", steps=" << stats.Steps << '/' << iterationLimit << ", bits=" << mpf_get_prec(x) << '/'
             << stats.FullBits;
     const auto margin = schedule.DescribeWorstCertification();
@@ -2338,7 +2324,7 @@ ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
             << ", certification_fast_components=" << stats.FastCertifiedComponents
             << ", certification_regular_components=" << stats.RegularCertificationComponents
             << ", certification_fast_percent=" << MT9FastCertificationPercent(stats)
-            << ", elapsed_ms=" << stats.ElapsedMilliseconds << ", sample_type=" << sampleType << ", "
+            << ", continuing dynamic orbit with uncertified samples, sample_type=" << sampleType << ", "
             << MT9WorstErrorBudgets(margin, ", ");
 
     AppendMT9Coordinate(message, "cx", cx.backend());
@@ -2348,9 +2334,6 @@ ThrowMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
         message << ", totals: successes=" << counters->Successes << " failures=" << counters->Failures;
     }
     FractalSharkLog::Write(message.str(), __FILE__, __LINE__);
-    // The exception has a fixed-size buffer; the console retains the full
-    // coordinates and statistics rather than truncating them to that buffer.
-    throw FractalSharkSeriousException(summary.str());
 }
 
 } // namespace
@@ -2383,15 +2366,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                                         HighPrecision cx,
                                                         HighPrecision cy)
 {
-    // Experiment: skip sample certification but retain propagated-error tracking if false.
-    constexpr bool EnablePrecisionCertification = true;
-
     auto newArray = std::make_unique<PerturbationResults<IterType, T, PExtras>>(
         m_RefOrbitOptions, GetNextGenerationNumber());
     auto *results = newArray.get();
-    if constexpr (!DynamicPrecision) {
-        PushbackResults(std::move(newArray));
-    }
     std::conditional_t<DynamicPrecision, BenchmarkData, std::monostate> dynamicTimer;
     std::conditional_t<DynamicPrecision,
                        FractalShark::RefOrbitWorstCertificationDiagnostics,
@@ -2449,6 +2426,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                    cross.backend(),
                                    temporary.backend());
         }
+        [[maybe_unused]] bool certificationWarningReported = false;
         FractalShark::RefOrbitKaratsubaProductsT<DynamicPrecision> products(mpf_get_prec(zx.backend()));
         const T cxCast = ConvertMT9Sample<T, SubType>(cxMpf.backend());
         const T cyCast = ConvertMT9Sample<T, SubType>(cyMpf.backend());
@@ -2468,20 +2446,21 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             // Peel iteration zero: capture Z1=c and advance once without publishing a sample
             // or updating the periodicity derivative. The steady loop has a preceding sample, so
             // its publication and periodicity work need no per-iteration startup condition.
-            if constexpr (DynamicPrecision && EnablePrecisionCertification) {
+            if constexpr (DynamicPrecision) {
                 if (!schedule->Certify(zx.backend(),
                                        zy.backend(),
-                                       std::is_same_v<T, double> || std::is_same_v<T, float>)) {
-                    ThrowMT9CertificationFailure(*schedule,
-                                                 *m_LastDynamicPrecisionStats,
-                                                 dynamicTimer,
-                                                 cx,
-                                                 cy,
-                                                 zx.backend(),
-                                                 results->GetGenerationNumber(),
-                                                 1,
-                                                 iterationLimit,
-                                                 typeid(T).name());
+                                       std::is_same_v<T, double> || std::is_same_v<T, float>) &&
+                    !certificationWarningReported) {
+                    RecordMT9CertificationFailure(*schedule,
+                                                  *m_LastDynamicPrecisionStats,
+                                                  cx,
+                                                  cy,
+                                                  zx.backend(),
+                                                  results->GetGenerationNumber(),
+                                                  1,
+                                                  iterationLimit,
+                                                  typeid(T).name());
+                    certificationWarningReported = true;
                 }
             }
             const T firstX = ConvertMT9Sample<T, SubType>(zx.backend());
@@ -2522,20 +2501,21 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                     AbortMonitor::GetStopCalculatingGlobal()) {
                     break;
                 }
-                if constexpr (DynamicPrecision && EnablePrecisionCertification) {
+                if constexpr (DynamicPrecision) {
                     if (!schedule->Certify(zx.backend(),
                                            zy.backend(),
-                                           std::is_same_v<T, double> || std::is_same_v<T, float>)) {
-                        ThrowMT9CertificationFailure(*schedule,
-                                                     *m_LastDynamicPrecisionStats,
-                                                     dynamicTimer,
-                                                     cx,
-                                                     cy,
-                                                     zx.backend(),
-                                                     results->GetGenerationNumber(),
-                                                     i + 1,
-                                                     iterationLimit,
-                                                     typeid(T).name());
+                                           std::is_same_v<T, double> || std::is_same_v<T, float>) &&
+                        !certificationWarningReported) {
+                        RecordMT9CertificationFailure(*schedule,
+                                                      *m_LastDynamicPrecisionStats,
+                                                      cx,
+                                                      cy,
+                                                      zx.backend(),
+                                                      results->GetGenerationNumber(),
+                                                      i + 1,
+                                                      iterationLimit,
+                                                      typeid(T).name());
+                        certificationWarningReported = true;
                     }
                 }
                 const T currentX = ConvertMT9Sample<T, SubType>(zx.backend());
@@ -2631,17 +2611,16 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
     }
 
     // Every normal exit, including startup and cancellation, completes metadata once.
-    // An exception bypasses this block and destroys the unpublished dynamic result.
+    // Certification is diagnostic; warned samples retain the normal publication path.
     if constexpr (PExtras == PerturbExtras::Bad) {
         results->SetBad(false);
     }
     results->template CompleteResults<ReuseMode::DontSaveForReuse>(nullptr);
     m_GuessReserveSize = results->GetCompressedOrUncompressedOrbitSize();
-    if constexpr (DynamicPrecision) {
-        PushbackResults(std::move(newArray));
-    }
+    PushbackResults(std::move(newArray));
     if constexpr (DynamicPrecision) {
         m_LastDynamicPrecisionStats->GenerationNumber = results->GetGenerationNumber();
+        m_LastDynamicPrecisionStats->PublishedGenerationNumber = results->GetGenerationNumber();
         dynamicTimer.StopTimer();
         m_LastDynamicPrecisionStats->ElapsedMilliseconds = dynamicTimer.GetDeltaInMs();
         // Report each component's tightest checked certificate, including its limit
@@ -2654,7 +2633,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             << m_LastDynamicPrecisionStats->GenerationNumber
             << " steps=" << m_LastDynamicPrecisionStats->Steps
             << " reduced_steps=" << m_LastDynamicPrecisionStats->ReducedSteps
-            << " certification_enabled=" << static_cast<int>(EnablePrecisionCertification)
+            << " certification_enabled=1 certification_diagnostic_only=1"
             << " certification_fast_components=" << m_LastDynamicPrecisionStats->FastCertifiedComponents
             << " certification_regular_components="
             << m_LastDynamicPrecisionStats->RegularCertificationComponents
@@ -2662,7 +2641,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             << MT9FastCertificationPercent(*m_LastDynamicPrecisionStats) << ' '
             << MT9WorstErrorBudgets(certification, " ");
         if constexpr (EnableMT9DynamicPrecisionCounters) {
-            if (m_LastDynamicPrecisionStats->Steps != 0 && !AbortMonitor::GetStopCalculatingGlobal()) {
+            if (m_LastDynamicPrecisionStats->Steps != 0 &&
+                m_LastDynamicPrecisionStats->Failure == FractalShark::RefOrbitPrecisionFailure::None &&
+                !AbortMonitor::GetStopCalculatingGlobal()) {
                 MT9DynamicPrecisionSuccesses.fetch_add(1, std::memory_order_relaxed);
             }
             // One snapshot per completed attempt; neither atomics nor logging enter
@@ -2858,12 +2839,12 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
         (PExtras == PerturbExtras::SimpleCompression) ? PerturbExtras::Disable : PExtras;
     bool added = false;
 
-    auto GenLAResults = [&](auto &results, AddPointOptions options_to_use) {
+    auto GenLAResults = [&](auto &results, AddPointOptions optionsToUse) {
         if (results->GetLaReference() == nullptr) {
             if constexpr (Introspection::TestPExtras<PExtras>::value) {
                 auto temp = std::make_unique<LAReference<IterType, T, SubType, PExtras>>(
                     m_Fractal.GetLAParameters(),
-                    options_to_use,
+                    optionsToUse,
                     results->GenFilename(GrowableVectorTypes::LAInfoDeep, L"", true),
                     results->GenFilename(GrowableVectorTypes::LAStageInfo, L"", true));
 
@@ -2949,11 +2930,11 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
         }
 
         if constexpr (UsingDblflt) {
-            PerturbationResults<IterType, ConvertTType, PExtras> *results_converted =
+            PerturbationResults<IterType, ConvertTType, PExtras> *resultsConverted =
                 GetUsefulPerturbationResultsMutable<IterType, ConvertTType, false, PExtras>();
 
-            if (results_converted != nullptr) {
-                return results_converted;
+            if (resultsConverted != nullptr) {
+                return resultsConverted;
             }
         }
 
@@ -2999,7 +2980,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
     // This is a weird case.  Suppose you generate a Perturbation-only set of results
     // with things set to DontSave.  Then you generate a an LA-enabled orbit with
     // things set to EnableWithSave.  The LA-enabled orbit will not be saved.
-    AddPointOptions options_to_use = m_RefOrbitOptions;
+    AddPointOptions optionsToUse = m_RefOrbitOptions;
 
     if (results == nullptr) {
         throw FractalSharkSeriousException("So it seems there's a bug.  Unexpected nullptr results.");
@@ -3009,7 +2990,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
         (m_RefOrbitOptions == AddPointOptions::EnableWithSave ||
          m_RefOrbitOptions == AddPointOptions::EnableWithoutSave)) {
 
-        options_to_use = AddPointOptions::DontSave;
+        optionsToUse = AddPointOptions::DontSave;
     }
 
     if constexpr (std::is_same<T, float>::value || // TODO: these are new.  Maybe OK to keep here.
@@ -3018,15 +2999,15 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
         if constexpr (Ex == Extras::IncludeLAv2) {
             static_assert(
                 PExtras == PerturbExtras::Disable || PExtras == PerturbExtras::SimpleCompression, "!");
-            GenLAResults(results, options_to_use);
+            GenLAResults(results, optionsToUse);
         } else {
             results->ClearLaReference();
         }
     }
 
     auto OptionalSave = [&](const auto *results) {
-        if ((options_to_use == AddPointOptions::EnableWithSave ||
-             options_to_use == AddPointOptions::EnableWithoutSave) &&
+        if ((optionsToUse == AddPointOptions::EnableWithSave ||
+             optionsToUse == AddPointOptions::EnableWithoutSave) &&
             added) {
             results->WriteMetadata();
         }
@@ -3048,7 +3029,7 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
 
             // Now generate the 2x32 results:
             auto results2(std::make_unique<PerturbationResults<IterType, ConvertTType, PExtras>>(
-                options_to_use, GetNextGenerationNumber()));
+                optionsToUse, GetNextGenerationNumber()));
             results2->template CopyPerturbationResults<true>(*results);
 
             auto *results2Raw = results2.get();
@@ -3057,7 +3038,18 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
 
             // Save those.
             OptionalSave(results2Raw);
+            // Cache insertion may retire the source type under memory pressure.
+            // Read its generation before insertion can release that source.
+            const bool tracksPrecisionAttempt =
+                m_LastDynamicPrecisionStats.has_value() &&
+                m_LastDynamicPrecisionStats->PublishedGenerationNumber == results->GetGenerationNumber();
             PushbackResults(std::move(results2));
+            if (tracksPrecisionAttempt) {
+                // Double-float consumers receive a new cached generation after conversion.
+                // Keep warning diagnostics attached to that final render reference.
+                m_LastDynamicPrecisionStats->PublishedGenerationNumber =
+                    results2Raw->GetGenerationNumber();
+            }
             return results2Raw;
         } else {
             m_LastUsedRefOrbit = resultsExisting;
@@ -3350,9 +3342,11 @@ void
 RefOrbitCalc::SetPerturbationAlg(PerturbationAlg alg)
 {
     if (alg != m_PerturbationAlg) {
-        // Entering or leaving the manual dynamic strategy must not reuse an orbit
-        // generated by the comparison backend. Auto's resolution policy is unchanged.
-        if (alg == PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision ||
+        // Explicit fixed/dynamic choices must recalculate rather than reuse an orbit
+        // from the previous backend, including one generated while Auto was selected.
+        if (alg == PerturbationAlg::MTPeriodicity9Karatsuba ||
+            alg == PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision ||
+            m_PerturbationAlg == PerturbationAlg::MTPeriodicity9Karatsuba ||
             m_PerturbationAlg == PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision) {
             ClearPerturbationResults(PerturbationResultType::All);
         }
@@ -3413,6 +3407,25 @@ RefOrbitCalc::ResolveAutoPerturbationAlg(uint64_t precisionBits,
         return PerturbationAlg::MTPeriodicity3;
     }
     return PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision;
+}
+
+std::string
+RefOrbitCalc::GetAutoPerturbationPolicyDescription()
+{
+    // The same constants drive selection and its CLI description. Hardware and
+    // format eligibility are stated separately from these fixed precision ranges.
+    std::ostringstream policy;
+    policy << "                      <" << AutoMultithreadPrecisionBits << ": STPeriodicity; "
+           << AutoMultithreadPrecisionBits << '-' << AutoReusePrecisionBits - 1 << ": MTPeriodicity3\n"
+           << "                      " << AutoReusePrecisionBits << '-' << AutoKaratsubaPrecisionBits - 1
+           << ": MTPeriodicity3PerturbMTHighMTMed3\n"
+           << "                      >=" << AutoKaratsubaPrecisionBits
+           << ": MTPeriodicity9KaratsubaDynamicPrecision with at least "
+           << AutoKaratsubaMinimumLogicalProcessors << " logical processors; otherwise MTPeriodicity3\n"
+           << "                      " << AutoGpuPrecisionBits << '-' << AutoGpuMaximumPrecisionBits
+           << ": eligible GPU reference generation takes priority\n"
+           << "                    GPU eligibility requires working CUDA and a compatible HDR format\n";
+    return policy.str();
 }
 
 std::string
@@ -3492,12 +3505,16 @@ RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const
         uint64_t orbitMilliseconds = arg->GetBenchmarkOrbit();
         if (GetPerturbationAlg() == PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision &&
             m_LastDynamicPrecisionStats.has_value() &&
-            m_LastDynamicPrecisionStats->GenerationNumber == arg->GetGenerationNumber()) {
+            m_LastDynamicPrecisionStats->PublishedGenerationNumber == arg->GetGenerationNumber()) {
             const auto &stats = *m_LastDynamicPrecisionStats;
             orbitMilliseconds = stats.ElapsedMilliseconds;
-            algStr += " [min " + std::to_string(stats.MinimumBits) + " bits, " +
-                      std::to_string(stats.ReducedSteps) + " reduced steps";
-            algStr += "]";
+            if (stats.Failure != FractalShark::RefOrbitPrecisionFailure::None) {
+                algStr += " [certification warning at Z" + std::to_string(stats.FailureIteration) +
+                          ", " + std::to_string(stats.FullBits) + " bits]";
+            } else {
+                algStr += " [min " + std::to_string(stats.MinimumBits) + " bits, " +
+                          std::to_string(stats.ReducedSteps) + " reduced steps]";
+            }
         }
 
         details = {arg->GetPeriodMaybeZero(),
@@ -4246,73 +4263,6 @@ RefOrbitCalc::ShutdownAllocatorsIfNeeded(std::unique_ptr<MPIRBoundedAllocator> &
     } else {
         bumpAllocator->ShutdownTls();
     }
-}
-
-RefOrbitCalc::ScopedAffinity::ScopedAffinity(
-    RefOrbitCalc &refOrbitCalc, void *thread1, void *thread2, void *thread3, void *thread4)
-    : m_RefOrbitCalc(refOrbitCalc), m_Thread1(thread1), m_Thread2(thread2), m_Thread3(thread3),
-      m_Thread4(thread4)
-{
-
-    // SetCpuAffinityAsNeeded();
-}
-
-RefOrbitCalc::ScopedAffinity::~ScopedAffinity()
-{
-    // Note, ignore threads 2/3/4 -- they're temporaries in RefOrbitCalc.
-    Environment::SetThreadAffinity(m_Thread1, 0xFFFFFFFF);
-
-    // Reset to default priority:
-    // SetThreadPriority(m_Thread1, THREAD_PRIORITY_NORMAL);
-}
-
-void
-RefOrbitCalc::ScopedAffinity::SetCpuAffinityAsNeeded()
-{
-
-    if ((m_RefOrbitCalc.m_HyperthreadingEnabled == false && m_RefOrbitCalc.m_NumCpuCores < 4) ||
-        (m_RefOrbitCalc.m_HyperthreadingEnabled == true && m_RefOrbitCalc.m_NumCpuCores < 8)) {
-        return;
-    }
-
-    if (m_RefOrbitCalc.m_HyperthreadingEnabled) {
-        if (m_Thread1) {
-            Environment::SetThreadAffinity(m_Thread1, 0x1 << 3);
-        }
-
-        if (m_Thread2) {
-            Environment::SetThreadAffinity(m_Thread2, 0x1 << 5);
-        }
-
-        if (m_Thread3) {
-            Environment::SetThreadAffinity(m_Thread3, 0x1 << 7);
-        }
-
-        if (m_Thread4) {
-            Environment::SetThreadAffinity(m_Thread4, 0x1 << 9);
-        }
-    } else {
-        if (m_Thread1) {
-            Environment::SetThreadAffinity(m_Thread1, 0x1 << 1);
-        }
-
-        if (m_Thread2) {
-            Environment::SetThreadAffinity(m_Thread2, 0x1 << 2);
-        }
-
-        if (m_Thread3) {
-            Environment::SetThreadAffinity(m_Thread3, 0x1 << 3);
-        }
-
-        if (m_Thread4) {
-            Environment::SetThreadAffinity(m_Thread4, 0x1 << 4);
-        }
-    }
-
-    // SetThreadPriority(m_Thread1, THREAD_PRIORITY_ABOVE_NORMAL);
-    // SetThreadPriority(m_Thread2, THREAD_PRIORITY_ABOVE_NORMAL);
-    // SetThreadPriority(m_Thread3, THREAD_PRIORITY_ABOVE_NORMAL);
-    // SetThreadPriority(m_Thread4, THREAD_PRIORITY_ABOVE_NORMAL);
 }
 
 #include "RefOrbitCalcTemplates.h"

@@ -131,7 +131,9 @@ public:
 
     static RefOrbitErrorBound CopyError(mpf_srcptr source, mpf_srcptr destination);
     static RefOrbitErrorBound ProductError(mpf_srcptr product);
-    static RefOrbitErrorBound SumError(mpf_srcptr left, mpf_srcptr right, mpf_srcptr destination);
+    // Bounds follow the effective magnitude operation, including sign reversal and zeros.
+    static RefOrbitErrorBound AddError(mpf_srcptr left, mpf_srcptr right, mpf_srcptr destination);
+    static RefOrbitErrorBound SubtractError(mpf_srcptr left, mpf_srcptr right, mpf_srcptr destination);
     static RefOrbitErrorBound DoublingError(mpf_srcptr source);
 
 private:

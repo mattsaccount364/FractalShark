@@ -261,6 +261,8 @@ RunTests(std::span<const TestCase> tests,
             ++skipped;
             continue;
         }
+        // Flush before execution so a runner timeout identifies the active test.
+        output << "  RUN: " << test.name << '\n' << std::flush;
         try {
             test.func();
             if (test.Golden && options.GenerateGoldens) {

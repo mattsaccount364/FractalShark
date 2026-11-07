@@ -178,6 +178,9 @@ public:
     // Resolve Auto from the view's bit estimate without reuse padding. GPU eligibility
     // uses an already resolved renderer and runtime state; no CUDA probe is performed here.
     // The reported logical CPU count gates MT9 only; zero cannot establish MT9 capacity.
+    // Human-readable CLI policy, generated from the resolver's own thresholds.
+    static std::string GetAutoPerturbationPolicyDescription();
+
     static PerturbationAlg ResolveAutoPerturbationAlg(uint64_t precisionBits,
                                                       bool gpuAvailable,
                                                       const RenderAlgorithm &renderAlgorithm,
@@ -399,22 +402,6 @@ private:
     void GetEstimatedPrecision(uint64_t authoritativePrecisionInBits,
                                int64_t &deltaPrecision,
                                int64_t &extraPrecision) const;
-
-    class ScopedAffinity {
-    public:
-        ScopedAffinity(
-            RefOrbitCalc &refOrbitCalc, void *thread1, void *thread2, void *thread3, void *thread4);
-        ~ScopedAffinity();
-
-        void SetCpuAffinityAsNeeded();
-
-    private:
-        RefOrbitCalc &m_RefOrbitCalc;
-        void *m_Thread1;
-        void *m_Thread2;
-        void *m_Thread3;
-        void *m_Thread4;
-    };
 
     PerturbationAlg m_PerturbationAlg;
     std::optional<FractalShark::RefOrbitDynamicPrecisionStats> m_LastDynamicPrecisionStats;

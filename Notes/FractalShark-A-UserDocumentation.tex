@@ -451,11 +451,12 @@ choice and triggers any necessary reconfiguration.
 
       \item \emph{Auto (default)} (radio): Automatically selects the perturbation
       algorithm using estimated precision bits. It selects ST below 640 bits,
-      MT3 from 640 through 6,783 bits, MT3 with compressed reference reuse from
-      6,784 through 16,383 bits, and dynamic MT9 from 16,384 through 32,767 bits.
-      At 32,768 bits and above it selects GPU reference generation when CUDA
-      and the reference format and precision are supported; otherwise it uses
-      dynamic MT9. Explicitly select fixed MT9 to disable dynamic precision.
+      MT3 from 640 through 4,095 bits, and MT3 with compressed reference reuse
+      from 4,096 through 8,191 bits. From 8,192 bits the CPU branch selects MT9
+      with at least nine logical processors, or MT3 otherwise. At 32,768 bits
+      and above, supported GPU reference generation takes priority when CUDA
+      is available; otherwise the eligible CPU branch applies.
+      MT9 automatically recovers at full precision if its dynamic check fails.
       See \cref{subsec:ref-orbit-pipeline} for eligibility details.
       Recommended for most use.
       \item \emph{Single Thread (ST)} (radio): Uses a single-threaded
@@ -478,23 +479,20 @@ choice and triggers any necessary reconfiguration.
       \item \emph{MT5 + Periodicity} (command): The disabled MT5 entry point
       delegates to periodic MT3.
       \item \emph{MT9 + Periodicity + Karatsuba} (radio): Eight workers plus
-      the caller compute exact split products, with full-precision recurrence
-      add/subtract operations. See \cref{subsec:ref-orbit-mt9}.
-
+      the caller compute exact split products at fixed working precision.
+      The CLI name is \code{MTPeriodicity9\allowbreak Karatsuba}.
       \item \emph{MT9 + Periodicity + Karatsuba + Dynamic Precision} (radio):
-      Optional MT9 strategy that proposes fewer working bits as the parameter
-      derivative grows. An independent propagated bound on current state error
-      certifies sample conversions. If certification fails, the unpublished attempt is discarded
-      and an application exception reports the rejection. Fixed MT9 can be
-      explicitly selected for a retry; it is not started automatically.
-      Certification overhead can outweigh the arithmetic savings. Auto selects
-      this variant in its MT9 range and when GPU reference generation is ineligible.
+      Adjusts working precision using the parameter derivative and independently
+      checks conversion error bounds. A failed certificate prints a warning,
+      including the failing state and precision, and calculation continues with
+      potentially uncertified samples. Certification does not trigger a restart
+      or change the precision schedule. Rendering details identify the warning.
+      Select fixed MT9 explicitly when fixed working precision is desired.
       The CLI name is
-      \code{MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision},
-      supplied to \code{-{}-perturbation-alg}; the CLI's \code{Auto} selection
-      can also use it. See
-      \cref{subsec:ref-orbit-dynamic-precision} for the mathematical argument
-      and the certificate's precise scope.
+      \code{MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision};
+      \code{Auto} selects this dynamic variant when eligible.
+      See \cref{subsec:ref-orbit-mt9,subsec:ref-orbit-dynamic-precision} for
+      the numerical contracts and the scope of the sample certificate.
 
       \item \emph{GPU-Accelerated (see README)} (radio): Selects the fused
       Ref2/v2 implementation, which evaluates the complete high-precision
@@ -1093,9 +1091,10 @@ API names differ from the descriptive labels in the graphical menu.
     Supersampling factor ($\ge 1$).
 
   \item[\code{-{}-perturbation-alg NAME}]
-    Reference-orbit algorithm. All valid strings are listed below;
+    Reference-orbit algorithm. Canonical selection strings are listed below;
     \cref{tab:reference-backends} explains their actual dispatch.
     GPU reference generation requires CUDA and an HDR perturbation render algorithm.
+    Fixed and dynamic MT9 are separate explicit selections; Auto uses dynamic MT9.
 \par\noindent
 \begin{minipage}{\linewidth}
 \begin{lstlisting}[language={}]
@@ -1122,8 +1121,9 @@ GPU
     a server; clients cannot change the cap for individual requests.
 
   \item[\code{-{}-out FILE.png}]
-    Write the rendered image as a PNG. This option can be combined with either
-    console-output mode.
+    Write the rendered image as a PNG. The requested filename is preserved,
+    including dots before its extension; a filename without an extension receives
+    \code{.png}. This option can be combined with either console-output mode.
 
   \item[\code{-{}-console}]
     Print a monochrome ASCII representation of the rendered view to standard

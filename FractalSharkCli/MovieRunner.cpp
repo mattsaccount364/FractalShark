@@ -173,9 +173,10 @@ RunMovieJob(const std::filesystem::path &directory,
     fractal.SetResultsAutosave(AddPointOptions::EnableWithSave);
     // A loaded native cache is an optimization, not a durability prerequisite
     // for movie progress. Normal Fractal destruction retains its old semantics.
-    // Construction already loads native caches. Selecting the manual dynamic
-    // backend explicitly clears that cache, so only that case needs a reload.
-    if (target.Perturbation == RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision) {
+    // Construction already loads native caches. Either explicit MT9 choice clears
+    // that cache, so restore the movie's intentionally selected native resume data.
+    if (target.Perturbation == RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba ||
+        target.Perturbation == RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision) {
         fractal.LoadPerturbationOrbits();
     }
     std::future<MovieChunk> encoding;

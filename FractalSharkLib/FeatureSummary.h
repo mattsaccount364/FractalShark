@@ -7,6 +7,7 @@
 #include "FeatureFinderMode.h"
 #include "HDRFloat.h"
 #include "HighPrecision.h"
+#include "RenderOverlaySnapshot.h"
 
 class Fractal;
 class PointZoomBBConverter;
@@ -78,8 +79,10 @@ public:
 
     const HighPrecision &GetIntrinsicRadius() const;
 
-    void EstablishScreenCoordinates(const Fractal &fractal);
-    void GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEnd, int &outYEnd) const;
+    // Called only while the worker owns the feature; the returned geometry is independent.
+    FractalShark::RenderOverlayLine ComputeScreenCoordinates(const PointZoomBBConverter &view,
+                                                             size_t width,
+                                                             size_t height) const;
     static HighPrecision ComputeZoomFactorForRadius(const HighPrecision &radius);
     HighPrecision ComputeZoomFactor(const PointZoomBBConverter &ptz) const;
     void SetRefined();
@@ -103,11 +106,6 @@ private:
     IterTypeFull Period{};
     HDRFloat<double> Residual2{};
     IterTypeFull NumIterationsAtFind{};
-
-    uint64_t screenXStart{0};
-    uint64_t screenYStart{0};
-    uint64_t screenXEnd{0};
-    uint64_t screenYEnd{0};
 
     bool Refined{false};
 };

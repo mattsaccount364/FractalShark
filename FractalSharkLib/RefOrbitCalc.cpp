@@ -4150,66 +4150,37 @@ RefOrbitCalc::LoadOrbitConstInternal(OrbitParameterPack &params,
     }
 }
 
-template <typename IterType, class T, PerturbExtras PExtras>
 void
-RefOrbitCalc::DrawPerturbationResultsHelper()
+RefOrbitCalc::CollectPerturbationOverlay(const PointZoomBBConverter &view,
+                                         size_t width,
+                                         size_t height,
+                                         IterTypeFull numIterations,
+                                         FractalShark::RenderOverlaySnapshot &overlay) const
 {
-    // TODO can we just integrate all this with DrawFractal
-
-    for (size_t i = 0; i < m_C.size(); i++) {
-        const auto *curResult = GetElt<IterType, T, PExtras>(i);
-
-        if (IsPerturbationResultUsefulHere<IterType, T, false, PExtras>(i)) {
-            glColor3f((GLfloat)255, (GLfloat)255, (GLfloat)255);
-
-            const GLint scrnX =
-                Convert<HighPrecision, GLint>(m_Fractal.XFromCalcToScreen(curResult->GetHiX()));
-            const GLint scrnY =
-                static_cast<GLint>(m_Fractal.GetRenderHeight()) -
-                Convert<HighPrecision, GLint>(m_Fractal.YFromCalcToScreen(curResult->GetHiY()));
-
-            // Coordinates are weird in OGL mode.
-            glVertex2i(scrnX, scrnY);
-        }
+    std::lock_guard lock(m_PerturbationMutex);
+    // Visit the same stored scalar/compression variants as the former GL draw loop.
+    // Use the frame's view and iteration limit, not potentially newer live state.
+    for (const auto &stored : m_C) {
+        std::visit(
+            [&](const auto &result) {
+                if (!result || result->GetHiX() < view.GetMinX() || result->GetHiX() > view.GetMaxX() ||
+                    result->GetHiY() < view.GetMinY() || result->GetHiY() > view.GetMaxY()) {
+                    return;
+                }
+                if (result->GetMaxIterations() <= result->GetCountOrbitEntries() &&
+                    result->GetMaxIterations() < numIterations) {
+                    return;
+                }
+                const int screenX =
+                    Convert<HighPrecision, int>(view.XFromCalcToScreen(result->GetHiX(), width));
+                // Reference markers historically use height - y; feature lines use height - 1 - y.
+                const int screenY =
+                    static_cast<int>(height) -
+                    Convert<HighPrecision, int>(view.YFromCalcToScreen(result->GetHiY(), height));
+                overlay.ReferencePoints.push_back({screenX, screenY});
+            },
+            stored);
     }
-}
-
-void
-RefOrbitCalc::DrawPerturbationResults()
-{
-    std::lock_guard lk(m_PerturbationMutex);
-
-    auto drawbatch = [&]<typename IterType>() {
-        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::Disable>();
-        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::Disable>();
-        DrawPerturbationResultsHelper<IterType, CudaDblflt<MattDblflt>, PerturbExtras::Disable>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::Disable>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::Disable>();
-        DrawPerturbationResultsHelper<IterType,
-                                      HDRFloat<CudaDblflt<MattDblflt>>,
-                                      PerturbExtras::Disable>();
-
-        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::Bad>();
-        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::Bad>();
-        DrawPerturbationResultsHelper<IterType, CudaDblflt<MattDblflt>, PerturbExtras::Bad>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::Bad>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::Bad>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<CudaDblflt<MattDblflt>>, PerturbExtras::Bad>();
-
-        DrawPerturbationResultsHelper<IterType, double, PerturbExtras::SimpleCompression>();
-        DrawPerturbationResultsHelper<IterType, float, PerturbExtras::SimpleCompression>();
-        DrawPerturbationResultsHelper<IterType,
-                                      CudaDblflt<MattDblflt>,
-                                      PerturbExtras::SimpleCompression>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<double>, PerturbExtras::SimpleCompression>();
-        DrawPerturbationResultsHelper<IterType, HDRFloat<float>, PerturbExtras::SimpleCompression>();
-        DrawPerturbationResultsHelper<IterType,
-                                      HDRFloat<CudaDblflt<MattDblflt>>,
-                                      PerturbExtras::SimpleCompression>();
-    };
-
-    drawbatch.template operator()<uint32_t>();
-    drawbatch.template operator()<uint64_t>();
 }
 
 template <RefOrbitCalc::ReuseMode Reuse>

@@ -1706,7 +1706,7 @@ Fractal::ToggleRepainting()
 }
 
 static inline void
-DrawFilledCircle2i(int cx, int cy, int radius, int segments = 24)
+DrawFilledCircle2i(int cx, int cy, int radius, int segments)
 {
     if (segments < 8)
         segments = 8;
@@ -1724,61 +1724,71 @@ DrawFilledCircle2i(int cx, int cy, int radius, int segments = 24)
     glEnd();
 }
 
-void
-Fractal::DrawAllPerturbationResults(bool LeaveScreen)
+FractalShark::RenderOverlaySnapshot
+Fractal::CaptureRenderOverlay(const PointZoomBBConverter &view,
+                              size_t width,
+                              size_t height,
+                              IterTypeFull numIterations) const
 {
-    if (!LeaveScreen) {
+    FractalShark::RenderOverlaySnapshot overlay;
+    if (width == 0 || height == 0) {
+        return overlay;
+    }
+
+    // Lock order is calculation state (held by the caller), then orbit storage.
+    // No MPIR data or feature ownership crosses the frame-queue boundary.
+    m_RefOrbit.CollectPerturbationOverlay(view, width, height, numIterations, overlay);
+
+    const auto &featureSummaries = m_FeatureOrchestrator->GetFeatureSummaries();
+    const bool showLines = featureSummaries.size() == 1;
+    for (const auto &feature : featureSummaries) {
+        if (feature) {
+            const auto line = feature->ComputeScreenCoordinates(view, width, height);
+            if (showLines) {
+                overlay.FeatureLines.push_back(line);
+            } else {
+                overlay.FeatureCenters.push_back(line.End);
+            }
+        }
+    }
+    return overlay;
+}
+
+void
+Fractal::DrawRenderOverlay(const FractalShark::RenderOverlaySnapshot &overlay, bool leaveScreen)
+{
+    if (!leaveScreen) {
         glClear(GL_COLOR_BUFFER_BIT);
     }
 
+    glColor3f(1.0f, 1.0f, 1.0f);
     glBegin(GL_POINTS);
-    m_RefOrbit.DrawPerturbationResults();
+    for (const auto &point : overlay.ReferencePoints) {
+        glVertex2i(point.X, point.Y);
+    }
     glEnd();
 
-    auto &featureSummaries = m_FeatureOrchestrator->GetFeatureSummaries();
-    if (!featureSummaries.empty()) {
-
+    if (!overlay.FeatureLines.empty() || !overlay.FeatureCenters.empty()) {
         glEnable(GL_COLOR_LOGIC_OP);
         glLogicOp(GL_INVERT);
 
-        bool showLines = (featureSummaries.size() == 1);
-        if (showLines) {
+        if (!overlay.FeatureLines.empty()) {
             glLineWidth(2.0f);
-
             glBegin(GL_LINES);
-            for (auto &fsPtr : featureSummaries) {
-                if (!fsPtr)
-                    continue;
-
-                int x0, y0, x1, y1;
-                fsPtr->EstablishScreenCoordinates(*this);
-                fsPtr->GetScreenCoordinates(x0, y0, x1, y1);
-
-                glVertex2i(x0, y0);
-                glVertex2i(x1, y1);
+            for (const auto &line : overlay.FeatureLines) {
+                glVertex2i(line.Start.X, line.Start.Y);
+                glVertex2i(line.End.X, line.End.Y);
             }
             glEnd();
-
-            glLineWidth(1.0f); // restore default (optional)
-        } else {
-            // Filled inverted circles around the FOUND point (line end)
-            // Tweak radius as desired (in pixels)
-            const int radiusPx = 6;
-            const int segments = 28;
-
-            for (auto &fsPtr : featureSummaries) {
-                if (!fsPtr)
-                    continue;
-
-                int x0, y0, x1, y1;
-                fsPtr->EstablishScreenCoordinates(*this);
-                fsPtr->GetScreenCoordinates(x0, y0, x1, y1);
-
-                // Use end point as "found" center
-                DrawFilledCircle2i(x1, y1, radiusPx, segments);
-            }
+            glLineWidth(1.0f);
         }
 
+        // Preserve the existing six-pixel, 28-segment found-feature markers.
+        constexpr int featureRadiusPixels = 6;
+        constexpr int featureCircleSegments = 28;
+        for (const auto &center : overlay.FeatureCenters) {
+            DrawFilledCircle2i(center.X, center.Y, featureRadiusPixels, featureCircleSegments);
+        }
         glDisable(GL_COLOR_LOGIC_OP);
     }
 

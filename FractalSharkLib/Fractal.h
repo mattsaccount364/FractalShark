@@ -221,7 +221,13 @@ public:
 
     FractalPalette &GetPalette();
 
-    void DrawAllPerturbationResults(bool LeaveScreen);
+    // The caller must serialize capture with mutations (the render pool holds
+    // m_CalcFractalMutex). Drawing the resulting value needs no Fractal access.
+    FractalShark::RenderOverlaySnapshot CaptureRenderOverlay(const PointZoomBBConverter &view,
+                                                             size_t width,
+                                                             size_t height,
+                                                             IterTypeFull numIterations) const;
+    static void DrawRenderOverlay(const FractalShark::RenderOverlaySnapshot &overlay, bool leaveScreen);
     void DrawFeatureFinderResults();
 
     // Queue saves and return 0 after submission. Workers log encoding and file errors;

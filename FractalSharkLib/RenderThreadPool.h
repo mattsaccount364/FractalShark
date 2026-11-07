@@ -5,6 +5,7 @@
 #include "OpenGLContext.h"
 #include "PointZoomBBConverter.h"
 #include "RenderAlgorithm.h"
+#include "RenderOverlaySnapshot.h"
 
 #include <atomic>
 #include <chrono>
@@ -67,6 +68,9 @@ struct RenderWorkItem {
 
     // GPU antialiasing (1=none, 2=4x, 3=9x, 4=16x)
     uint32_t GpuAntialiasing;
+
+    // Captured under the calculation lock, then copied into produced frames.
+    FractalShark::RenderOverlaySnapshot Overlay;
 
     // Changed flags
     bool ChangedWindow;
@@ -137,6 +141,8 @@ struct RenderFrame {
     RenderPresentationMode PresentationMode;
     uint64_t PresentationGroup;
     std::optional<PresentedViewState> ViewState;
+
+    FractalShark::RenderOverlaySnapshot Overlay;
 
     // Actual allocation size of ColorData (may be larger than
     // OutputWidth*OutputHeight due to GPU block-rounding).
@@ -356,6 +362,9 @@ public:
     void SetDragRect(bool active, int x0, int y0, int x1, int y1);
 
 private:
+    // Headless regression tests consume the same completed frames as GL presentation.
+    friend class RenderOverlayTestAccess;
+
     static constexpr size_t NumWorkers = NumRenderers;
     static constexpr size_t PacedAnimationPreRollFrames = 4;
     static constexpr auto PacedAnimationPreRollTimeout = std::chrono::milliseconds(500);

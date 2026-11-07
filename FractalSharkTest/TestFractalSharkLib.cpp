@@ -10,6 +10,7 @@
 #include "PointZoomBBConverter.h"
 #include "RecommendedSettings.h"
 #include "RenderAlgorithm.h"
+#include "RenderThreadPool.h"
 #include "RenderToConsole.h"
 #include "RenderToPng.h"
 #include "TestFramework.h"
@@ -29,6 +30,15 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+class RenderOverlayTestAccess {
+public:
+    static bool
+    PopFrame(RenderThreadPool &pool, uint64_t sequenceNumber, RenderFrame &frame)
+    {
+        return pool.m_FrameQueue.TryPopNextInOrder(sequenceNumber, frame);
+    }
+};
 
 namespace {
 
@@ -352,21 +362,175 @@ TEST(FractalSharkLib_FeatureSummaryTracksCandidatesAndScreenCoordinates)
         HighPrecision{0}, HighPrecision{0}, HighPrecision{1}, PointZoomBBConverter::TestMode::Enabled);
     ASSERT_TRUE(summary.ComputeZoomFactor(view) >= view.GetZoomFactor());
 
-    Fractal fractal(
-        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
-    summary.EstablishScreenCoordinates(fractal);
-    int xStart = 0;
-    int yStart = 0;
-    int xEnd = 0;
-    int yEnd = 0;
-    summary.GetScreenCoordinates(xStart, yStart, xEnd, yEnd);
-    ASSERT_TRUE(xStart >= 0 && xStart < static_cast<int>(fractal.GetRenderWidth()));
-    ASSERT_TRUE(xEnd >= 0 && xEnd < static_cast<int>(fractal.GetRenderWidth()));
-    ASSERT_TRUE(yStart >= 0 && yStart < static_cast<int>(fractal.GetRenderHeight()));
-    ASSERT_TRUE(yEnd >= 0 && yEnd < static_cast<int>(fractal.GetRenderHeight()));
+    const auto line = summary.ComputeScreenCoordinates(view, 32, 32);
+    ASSERT_TRUE(line.Start.X >= 0 && line.Start.X < 32);
+    ASSERT_TRUE(line.End.X >= 0 && line.End.X < 32);
+    ASSERT_TRUE(line.Start.Y >= 0 && line.Start.Y < 32);
+    ASSERT_TRUE(line.End.Y >= 0 && line.End.Y < 32);
 
     summary.ClearCandidate();
     ASSERT_FALSE(summary.HasCandidate());
+}
+
+TEST(FractalSharkLib_OverlayProjectionClipsUsingExplicitViewport)
+{
+    const PointZoomBBConverter view(HighPrecision{-1},
+                                    HighPrecision{-1},
+                                    HighPrecision{1},
+                                    HighPrecision{1},
+                                    PointZoomBBConverter::TestMode::Enabled);
+    FeatureSummary feature(HighPrecision{-2}, HighPrecision{0}, HighPrecision{1}, FeatureFinderMode::LA);
+    feature.SetFound(HighPrecision{2}, HighPrecision{0}, 2, HDRFloat<double>{0}, HighPrecision{1});
+    const auto line = feature.ComputeScreenCoordinates(view, 32, 16);
+    ASSERT_EQ(line.Start.X, 0);
+    ASSERT_EQ(line.End.X, 31);
+    ASSERT_EQ(line.Start.Y, 7);
+    ASSERT_EQ(line.End.Y, 7);
+
+    const auto resized = feature.ComputeScreenCoordinates(view, 64, 32);
+    ASSERT_EQ(resized.End.X, 63);
+    ASSERT_EQ(resized.End.Y, 15);
+    ASSERT_TRUE(feature.ComputeScreenCoordinates(view, 0, 16) == FractalShark::RenderOverlayLine{});
+    ASSERT_TRUE(feature.ComputeScreenCoordinates(view, 32, 0) == FractalShark::RenderOverlayLine{});
+
+    // A rejected segment can have arbitrarily large endpoints. Clamp before integer conversion.
+    FeatureSummary offscreen(
+        HighPrecision{"1e1000"}, HighPrecision{0}, HighPrecision{1}, FeatureFinderMode::LA);
+    const auto rejected = offscreen.ComputeScreenCoordinates(view, 32, 16);
+    ASSERT_EQ(rejected.Start.X, 31);
+    ASSERT_EQ(rejected.End.X, 31);
+    feature.SetFound(HighPrecision{0}, HighPrecision{1}, 2, HDRFloat<double>{0}, HighPrecision{1});
+    ASSERT_EQ(feature.ComputeScreenCoordinates(view, 32, 16).End.Y, 15);
+    // The previous result is an owned value, unaffected by subsequent refinement.
+    ASSERT_EQ(line.End.X, 31);
+    ASSERT_EQ(line.End.Y, 7);
+}
+
+TEST(FractalSharkLib_OverlayFramesSurviveSearchClearScanAndResize)
+{
+    Fractal fractal(
+        32, 32, nullptr, false, std::numeric_limits<uint64_t>::max(), true, GpuMode::Disabled);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64)));
+    fractal.SetNumIterations<uint32_t>(128);
+    const PointZoomBBConverter view(
+        HighPrecision{-1}, HighPrecision{0}, HighPrecision{8}, PointZoomBBConverter::TestMode::Enabled);
+    ASSERT_TRUE(fractal.RecenterViewCalc(view));
+    ASSERT_TRUE(fractal.CaptureRenderOverlay(view, 32, 32, 128).FeatureLines.empty());
+    fractal.CalcFractal(true);
+    fractal
+        .EnqueueCommand(
+            "find overlay fixture",
+            [](Fractal &value) { value.TryFindPeriodicPoint(16, 16, FeatureFinderMode::LA); },
+            false)
+        .Wait();
+
+    RenderFrame displayed{};
+    ASSERT_TRUE(RenderOverlayTestAccess::PopFrame(*fractal.GetRenderPool(), 0, displayed));
+    ASSERT_EQ(displayed.Overlay.FeatureLines.size(), size_t{1});
+    ASSERT_TRUE(displayed.Overlay.FeatureCenters.empty());
+    ASSERT_FALSE(displayed.Overlay.ReferencePoints.empty());
+    const auto retained = displayed.Overlay;
+
+    // Stop each worker after destruction of the old summaries. Reading the cached
+    // overlay at this barrier reproduces the original overlap without timing sleeps.
+    constexpr uint64_t repeatedSearches = 8;
+    for (uint64_t sequenceNumber = 1; sequenceNumber <= repeatedSearches; ++sequenceNumber) {
+        std::promise<void> cleared;
+        auto clearedFuture = cleared.get_future();
+        std::promise<void> repaintRead;
+        auto repaintFuture = repaintRead.get_future();
+        auto job = fractal.EnqueueCommand(
+            "replace overlay fixture",
+            [&](Fractal &value) {
+                value.ClearAllFoundFeatures();
+                cleared.set_value();
+                repaintFuture.wait();
+                value.TryFindPeriodicPoint(16, 16, FeatureFinderMode::LA);
+            },
+            false);
+        clearedFuture.wait();
+        const bool cachedOverlayUnchanged = displayed.Overlay == retained;
+        repaintRead.set_value();
+        job.Wait();
+        ASSERT_TRUE(cachedOverlayUnchanged);
+        RenderFrame next{};
+        ASSERT_TRUE(RenderOverlayTestAccess::PopFrame(*fractal.GetRenderPool(), sequenceNumber, next));
+        ASSERT_EQ(next.Overlay.FeatureLines.size(), size_t{1});
+        ASSERT_EQ(next.OutputWidth, size_t{32});
+        ASSERT_TRUE(displayed.Overlay == retained);
+    }
+
+    fractal
+        .EnqueueCommand(
+            "scan overlay fixture",
+            [](Fractal &value) { value.TryFindPeriodicPoint(16, 16, FeatureFinderMode::LAScan); },
+            false)
+        .Wait();
+    RenderFrame scan{};
+    ASSERT_TRUE(RenderOverlayTestAccess::PopFrame(*fractal.GetRenderPool(), repeatedSearches + 1, scan));
+    ASSERT_TRUE(scan.Overlay.FeatureLines.empty());
+    ASSERT_TRUE(scan.Overlay.FeatureCenters.size() > 1);
+
+    fractal
+        .EnqueueCommand(
+            "clear and resize overlay fixture",
+            [](Fractal &value) {
+                value.ClearAllFoundFeatures();
+                value.ResetDimensions(48, 24, 1);
+            },
+            false)
+        .Wait();
+    RenderFrame cleared{};
+    ASSERT_TRUE(
+        RenderOverlayTestAccess::PopFrame(*fractal.GetRenderPool(), repeatedSearches + 2, cleared));
+    ASSERT_EQ(cleared.OutputWidth, size_t{48});
+    ASSERT_EQ(cleared.OutputHeight, size_t{24});
+    ASSERT_TRUE(cleared.Overlay.FeatureLines.empty());
+    ASSERT_TRUE(cleared.Overlay.FeatureCenters.empty());
+    ASSERT_TRUE(displayed.Overlay == retained);
+    ASSERT_TRUE(fractal.CaptureRenderOverlay(view, 0, 24, 128) == FractalShark::RenderOverlaySnapshot{});
+
+    fractal
+        .EnqueuePaletteRecolor(
+            "recolor overlay fixture",
+            [](Fractal &value) { value.TryFindPeriodicPoint(24, 12, FeatureFinderMode::LA); },
+            false)
+        .Wait();
+    RenderFrame recolored{};
+    ASSERT_TRUE(
+        RenderOverlayTestAccess::PopFrame(*fractal.GetRenderPool(), repeatedSearches + 3, recolored));
+    ASSERT_EQ(recolored.Overlay.FeatureLines.size(), size_t{1});
+    ASSERT_EQ(recolored.OutputWidth, size_t{48});
+    fractal.GetRenderPool()->Drain();
+}
+
+TEST(FractalSharkLib_OverlayQueuePreservesFrameAssociation)
+{
+    FrameCompletionQueue queue;
+    // Out-of-order completion must retain each frame's own geometry, including
+    // progressive/final copies from the same work item and move into a cached frame.
+    RenderWorkItem item{};
+    item.Overlay.ReferencePoints.push_back({3, 4});
+    for (uint64_t sequenceNumber : {uint64_t{1}, uint64_t{0}}) {
+        RenderFrame frame{};
+        frame.SequenceNumber = sequenceNumber;
+        frame.IsFinal = sequenceNumber == 1;
+        frame.IsProgressive = !frame.IsFinal;
+        frame.Overlay = item.Overlay;
+        frame.Overlay.FeatureCenters.push_back({static_cast<int>(sequenceNumber), 7});
+        queue.Push(std::move(frame));
+    }
+    item.Overlay = {};
+    RenderFrame progressive{};
+    ASSERT_TRUE(queue.TryPopNextInOrder(0, progressive));
+    ASSERT_EQ(progressive.Overlay.FeatureCenters.front().X, 0);
+    ASSERT_EQ(progressive.Overlay.ReferencePoints.front().Y, 4);
+    RenderFrame final{};
+    ASSERT_TRUE(queue.TryPopNextInOrder(1, final));
+    RenderFrame cached = std::move(final);
+    ASSERT_EQ(cached.Overlay.FeatureCenters.front().X, 1);
+    ASSERT_EQ(cached.Overlay.ReferencePoints.front().X, 3);
+    queue.Shutdown();
 }
 
 TEST(FractalSharkLib_LAFeatureFinderAgreesWithPerturbationNearPeriodTwo)

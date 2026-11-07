@@ -2,6 +2,7 @@
 
 #include "HDRFloat.h"
 #include "RefOrbitPrecisionStats.h"
+#include "RenderOverlaySnapshot.h"
 #include "Vectors.h"
 #include <mutex>
 #include <optional>
@@ -272,7 +273,12 @@ public:
                                                          std::wstring imagFilename,
                                                          RecommendedSettings *recommendedSettings) const;
 
-    void DrawPerturbationResults();
+    // Caller holds the calculation lock; collection also locks orbit storage.
+    void CollectPerturbationOverlay(const PointZoomBBConverter &view,
+                                    size_t width,
+                                    size_t height,
+                                    IterTypeFull numIterations,
+                                    FractalShark::RenderOverlaySnapshot &overlay) const;
 
 private:
     static constexpr size_t MaxStoredOrbits = 64;
@@ -381,8 +387,6 @@ private:
                      const PointZoomBBConverter &ptz,
                      const HighPrecision &initX,
                      const HighPrecision &initY);
-
-    template <typename IterType, class T, PerturbExtras PExtras> void DrawPerturbationResultsHelper();
 
     template <RefOrbitCalc::ReuseMode Reuse>
     void InitAllocatorsIfNeeded(std::unique_ptr<MPIRBoundedAllocator> &boundedAllocator,

@@ -73,6 +73,7 @@
     <ClInclude Include="RefOrbitCalcTemplates.h" />
     <ClInclude Include="RefOrbitDetails.h" />
     <ClInclude Include="RenderAlgorithm.h" />
+    <ClInclude Include="RenderOverlaySnapshot.h" />
     <ClInclude Include="RenderToPng.h" />
     <ClInclude Include="RenderToConsole.h" />
     <ClInclude Include="ScopedMpir.h" />

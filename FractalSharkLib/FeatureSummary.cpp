@@ -1,7 +1,6 @@
 #include "stdafx.h"
 
 #include "FeatureSummary.h"
-#include "Fractal.h" // needed for EstablishScreenCoordinates()
 #include "PointZoomBBConverter.h"
 
 FeatureSummary::FeatureSummary(const HighPrecision &origX,
@@ -151,14 +150,19 @@ FeatureSummary::GetNumIterationsAtFind() const
     return NumIterationsAtFind;
 }
 
-void
-FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
+FractalShark::RenderOverlayLine
+FeatureSummary::ComputeScreenCoordinates(const PointZoomBBConverter &view,
+                                         size_t width,
+                                         size_t height) const
 {
-    HighPrecision sxHP = fractal.XFromCalcToScreen(OrigX);
-    HighPrecision syHP = fractal.YFromCalcToScreen(OrigY);
+    if (width == 0 || height == 0) {
+        return {};
+    }
+    HighPrecision sxHP = view.XFromCalcToScreen(OrigX, width);
+    HighPrecision syHP = view.YFromCalcToScreen(OrigY, height);
 
-    HighPrecision fxHP = fractal.XFromCalcToScreen(FoundX);
-    HighPrecision fyHP = fractal.YFromCalcToScreen(FoundY);
+    HighPrecision fxHP = view.XFromCalcToScreen(FoundX, width);
+    HighPrecision fyHP = view.YFromCalcToScreen(FoundY, height);
 
     // Pick the higher precision of the two points for clipping
     uint64_t precForClipping = std::max({sxHP.precisionInBits(),
@@ -171,27 +175,14 @@ FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
     fxHP.precisionInBits(precForClipping);
     fyHP.precisionInBits(precForClipping);
 
-    const int64_t W = static_cast<int64_t>(fractal.GetRenderWidth());
-    const int64_t H = static_cast<int64_t>(fractal.GetRenderHeight());
-
-    if (W <= 0 || H <= 0) {
-        screenXStart = screenYStart = screenXEnd = screenYEnd = 0;
-        return;
-    }
+    const int64_t pixelWidth = static_cast<int64_t>(width);
+    const int64_t pixelHeight = static_cast<int64_t>(height);
 
     // Clip rectangle in UI space (top-left origin)
     const HighPrecision xmin{0};
     const HighPrecision ymin{0};
-    const HighPrecision xmax{W - 1};
-    const HighPrecision ymax{H - 1};
-
-    auto clamp_i64 = [](int64_t v, int64_t lo, int64_t hi) -> int64_t {
-        if (v < lo)
-            return lo;
-        if (v > hi)
-            return hi;
-        return v;
-    };
+    const HighPrecision xmax{pixelWidth - 1};
+    const HighPrecision ymax{pixelHeight - 1};
 
     // Cohen-Sutherland outcodes
     constexpr int INSIDE = 0;
@@ -293,44 +284,24 @@ FeatureSummary::EstablishScreenCoordinates(const Fractal &fractal)
 
     const bool ok = clipLineToRect(x0, y0, x1, y1);
 
-    // Convert to integer pixels in UI space
-    int64_t ix0 = static_cast<int64_t>(static_cast<double>(x0));
-    int64_t iy0 = static_cast<int64_t>(static_cast<double>(y0));
-    int64_t ix1 = static_cast<int64_t>(static_cast<double>(x1));
-    int64_t iy1 = static_cast<int64_t>(static_cast<double>(y1));
-
-    // If no intersection, keep safe (fallback); you can also choose to mark invalid instead.
-    if (!ok) {
-        // fall back to clamping original endpoints (or set both to same point)
-        ix0 = clamp_i64(static_cast<int64_t>(static_cast<double>(sxHP)), 0, W - 1);
-        iy0 = clamp_i64(static_cast<int64_t>(static_cast<double>(syHP)), 0, H - 1);
-        ix1 = clamp_i64(static_cast<int64_t>(static_cast<double>(fxHP)), 0, W - 1);
-        iy1 = clamp_i64(static_cast<int64_t>(static_cast<double>(fyHP)), 0, H - 1);
-    } else {
-        // Numerical safety clamp
-        ix0 = clamp_i64(ix0, 0, W - 1);
-        iy0 = clamp_i64(iy0, 0, H - 1);
-        ix1 = clamp_i64(ix1, 0, W - 1);
-        iy1 = clamp_i64(iy1, 0, H - 1);
-    }
-
-    auto flipY = [&](int64_t y_ui) -> int64_t {
-        return (H - 1) - y_ui; // UI top-left -> GL bottom-left
+    // Clamp in high precision before conversion: offscreen deep-zoom endpoints can
+    // exceed the floating-point/integer range even when the viewport is small.
+    const auto toPixel = [](const HighPrecision &coordinate, const HighPrecision &maximum) {
+        if (coordinate < HighPrecision{0}) {
+            return 0;
+        }
+        if (coordinate > maximum) {
+            return static_cast<int>(static_cast<double>(maximum));
+        }
+        return static_cast<int>(static_cast<double>(coordinate));
     };
 
-    screenXStart = static_cast<uint64_t>(ix0);
-    screenYStart = static_cast<uint64_t>(flipY(iy0));
-    screenXEnd = static_cast<uint64_t>(ix1);
-    screenYEnd = static_cast<uint64_t>(flipY(iy1));
-}
-
-void
-FeatureSummary::GetScreenCoordinates(int &outXStart, int &outYStart, int &outXEnd, int &outYEnd) const
-{
-    outXStart = static_cast<int>(screenXStart);
-    outYStart = static_cast<int>(screenYStart);
-    outXEnd = static_cast<int>(screenXEnd);
-    outYEnd = static_cast<int>(screenYEnd);
+    const int xStart = toPixel(ok ? x0 : sxHP, xmax);
+    const int yStart = toPixel(ok ? y0 : syHP, ymax);
+    const int xEnd = toPixel(ok ? x1 : fxHP, xmax);
+    const int yEnd = toPixel(ok ? y1 : fyHP, ymax);
+    const int lastRow = static_cast<int>(pixelHeight - 1);
+    return {{xStart, lastRow - yStart}, {xEnd, lastRow - yEnd}};
 }
 
 HighPrecision

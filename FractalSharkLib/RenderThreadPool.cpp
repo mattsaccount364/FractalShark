@@ -1073,6 +1073,10 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
     // Ptz and ItersMemory travel through CalcContext — no swap needed.
     CalcContext ctx{item.Ptz, workerIters, item.ResetStopCalculatingBeforeRender};
     fractal->CalcFractal(rendererIdx, false, ctx);
+    // Capture before another worker can clear features or replace the view/orbits.
+    // The presenter remains independent of this lock even during long searches.
+    item.Overlay = fractal->CaptureRenderOverlay(
+        item.Ptz, workerIters.m_OutputWidth, workerIters.m_OutputHeight, item.NumIterations);
     return CalcRenderResult::Rendered;
 }
 
@@ -1658,6 +1662,8 @@ RenderThreadPool::ExecuteRecolorCurrentFrame(RenderWorkItem &item, RendererIndex
             memcpy(colorData.get(),
                    curIters.m_RoundedOutputColorMemory.get(),
                    totalPixels * sizeof(Color16));
+            item.Overlay =
+                fractal->CaptureRenderOverlay(item.Ptz, outputWidth, outputHeight, item.NumIterations);
         }
     }
 
@@ -1681,6 +1687,7 @@ RenderThreadPool::ExecuteRecolorCurrentFrame(RenderWorkItem &item, RendererIndex
     frame.PresentationMode = item.PresentationMode;
     frame.PresentationGroup = item.PresentationGroup;
     frame.ViewState = PresentedViewState{item.Ptz, item.NumIterations};
+    frame.Overlay = item.Overlay;
     frame.BufferPixelCount = roundedColorTotal;
 
     m_FrameQueue.Push(std::move(frame));
@@ -1957,6 +1964,7 @@ RenderThreadPool::GlConsumerLoop()
     size_t lastFrameWidth = 0;
     size_t lastFrameHeight = 0;
     bool lastFrameWasRepaintPlaceholder = false;
+    FractalShark::RenderOverlaySnapshot lastOverlay;
     const bool isSoftwareRenderer = glContext->IsSoftwareRenderer();
 
     while (!m_ShutdownFlag.load()) {
@@ -1973,7 +1981,7 @@ RenderThreadPool::GlConsumerLoop()
             // No new frame — must be overlay-only wakeup.
             if (overlayDirty && lastTex != 0) {
                 RedrawLastTexture(*glContext, lastTex, lastFrameWidth, lastFrameHeight);
-                m_Fractal->DrawAllPerturbationResults(true);
+                Fractal::DrawRenderOverlay(lastOverlay, true);
                 DrawDragRectOverlay(lastFrameHeight);
                 glContext->SwapBuffers();
             } else if (overlayDirty && lastFrameWasRepaintPlaceholder) {
@@ -1986,7 +1994,7 @@ RenderThreadPool::GlConsumerLoop()
         if (!IsPresentationReady(nextExpectedSeqNum, frameInfo, std::chrono::steady_clock::now())) {
             if (overlayDirty && lastTex != 0) {
                 RedrawLastTexture(*glContext, lastTex, lastFrameWidth, lastFrameHeight);
-                m_Fractal->DrawAllPerturbationResults(true);
+                Fractal::DrawRenderOverlay(lastOverlay, true);
                 DrawDragRectOverlay(lastFrameHeight);
                 glContext->SwapBuffers();
             } else if (overlayDirty && lastFrameWasRepaintPlaceholder) {
@@ -2014,6 +2022,7 @@ RenderThreadPool::GlConsumerLoop()
             }
             lastFrameWidth = 0;
             lastFrameHeight = 0;
+            lastOverlay = {};
             lastFrameWasRepaintPlaceholder = true;
             glContext->DrawGlBox(false);
             glContext->SwapBuffers();
@@ -2038,9 +2047,10 @@ RenderThreadPool::GlConsumerLoop()
         lastFrameWidth = frame.OutputWidth;
         lastFrameHeight = frame.OutputHeight;
         lastFrameWasRepaintPlaceholder = false;
+        lastOverlay = std::move(frame.Overlay);
 
         if (frame.IsFinal) {
-            m_Fractal->DrawAllPerturbationResults(true);
+            Fractal::DrawRenderOverlay(lastOverlay, true);
         }
         DrawDragRectOverlay(lastFrameHeight);
 
@@ -2144,7 +2154,7 @@ RenderThreadPool::TryPresentTick(OpenGlContext &glContext)
                     perturbationStart = std::chrono::steady_clock::now();
                 }
 
-                m_Fractal->DrawAllPerturbationResults(true);
+                Fractal::DrawRenderOverlay(m_HostLastFrame.Overlay, true);
 
                 if (diagnosePerturbationOverlay) {
                     char buf[128];
@@ -2201,7 +2211,7 @@ RenderThreadPool::RepresentLastFrame(OpenGlContext &glContext)
     }
     RenderFrameToGL(glContext, m_HostLastFrame);
     if (m_HostLastFrame.IsFinal) {
-        m_Fractal->DrawAllPerturbationResults(true);
+        Fractal::DrawRenderOverlay(m_HostLastFrame.Overlay, true);
     }
     return true;
 }
@@ -2309,6 +2319,7 @@ RenderThreadPool::ProduceFrame(const RenderWorkItem &item,
     frame.PresentationMode = item.PresentationMode;
     frame.PresentationGroup = item.PresentationGroup;
     frame.ViewState = PresentedViewState{item.Ptz, item.NumIterations};
+    frame.Overlay = item.Overlay;
     frame.BufferPixelCount = roundedColorTotal;
 
     m_FrameQueue.Push(std::move(frame));

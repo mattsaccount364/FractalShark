@@ -49,6 +49,9 @@
     <ResourceCompile>
       <Culture>0x0409</Culture>
     </ResourceCompile>
+    <Manifest>
+      <AdditionalManifestFiles>$(ProjectDir)FractalShark.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
+    </Manifest>
     <Link>
       <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
       <SubSystem>Windows</SubSystem>
@@ -75,6 +78,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ResourceCompile Include="FractalShark.rc" />
+    <None Include="FractalShark.manifest" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="..\Pics\Bing generated Fractal Shark.jpg" />

@@ -2,6 +2,7 @@
 // This is the ONLY file in the library projects that should include <windows.h>.
 
 #include "Environment.h"
+#include "WindowDpi.h"
 
 #include <array>
 #include <conio.h>
@@ -48,6 +49,49 @@ constexpr std::array<ImaginaResourceEntry, 6> kImaginaResources{{
 }};
 
 } // namespace
+
+uint32_t
+GetWindowDpi(void *nativeWindow) noexcept
+{
+    return ::GetDpiForWindow(static_cast<HWND>(nativeWindow));
+}
+
+int32_t
+ScaleWindowUiPixels(void *nativeWindow, int32_t logicalPixels) noexcept
+{
+    const uint32_t dpi = GetWindowDpi(nativeWindow);
+    if (dpi == 0) {
+        return logicalPixels;
+    }
+
+    return ::MulDiv(logicalPixels, static_cast<int>(dpi), USER_DEFAULT_SCREEN_DPI);
+}
+
+bool
+ApplyWindowDpiChange(void *nativeWindow, const ScreenRect &suggestedBounds, bool fullscreen) noexcept
+{
+    RECT bounds{
+        suggestedBounds.left, suggestedBounds.top, suggestedBounds.right, suggestedBounds.bottom};
+    if (fullscreen) {
+        // Use the suggested destination, since the HWND may still belong to its previous monitor
+        // while WM_DPICHANGED is being handled. Monitor coordinates are already physical pixels.
+        const HMONITOR monitor = ::MonitorFromRect(&bounds, MONITOR_DEFAULTTONEAREST);
+        MONITORINFO monitorInfo{};
+        monitorInfo.cbSize = sizeof(monitorInfo);
+        if (!::GetMonitorInfoW(monitor, &monitorInfo)) {
+            return false;
+        }
+        bounds = monitorInfo.rcMonitor;
+    }
+
+    return ::SetWindowPos(static_cast<HWND>(nativeWindow),
+                          nullptr,
+                          bounds.left,
+                          bounds.top,
+                          bounds.right - bounds.left,
+                          bounds.bottom - bounds.top,
+                          SWP_NOZORDER | SWP_NOACTIVATE) != FALSE;
+}
 
 } // namespace Environment
 

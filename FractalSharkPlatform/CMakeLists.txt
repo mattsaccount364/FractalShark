@@ -9,6 +9,7 @@ if(WIN32)
     target_sources(FractalSharkPlatform PRIVATE
         Win32/WaitCursorWin32.cpp
         Win32/EnvironmentWin32.cpp
+        Win32/WindowDpi.h
         Win32/CrashHandlerWin32.cpp
         Win32/JobObjectWin32.cpp
         Win32/LocalIpcTransportWin32.cpp

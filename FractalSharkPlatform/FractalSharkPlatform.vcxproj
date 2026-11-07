@@ -52,6 +52,7 @@
     <ClInclude Include="Common\LocalIpcTransport.h" />
     <ClInclude Include="Common\LocalIpcTransportDetail.h" />
     <ClInclude Include="Common\PlatformTypes.h" />
+    <ClInclude Include="Win32\WindowDpi.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

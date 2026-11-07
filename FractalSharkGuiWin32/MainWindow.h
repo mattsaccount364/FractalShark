@@ -111,6 +111,7 @@ private:
     void ApplyBorderlessWindowedStyle();
     void ApplyBorderlessFullscreenStyle();
     void SetModeWindowed(bool windowed);
+    void QueueClientResize();
     static LRESULT CALLBACK StaticWndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam);
     LRESULT CALLBACK WndProc(UINT message, WPARAM wParam, LPARAM lParam);
     void UnInit();

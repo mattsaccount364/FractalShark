@@ -8,6 +8,7 @@
 #include "Environment.h"
 #include "Exceptions.h"
 #include "Fractal.h"
+#include "FractalSharkPlatform/Win32/WindowDpi.h"
 #include "GuiFileOperations.h"
 #include "GuiHelp.h"
 #include "JobObject.h"
@@ -418,6 +419,30 @@ MainWindow::SetModeWindowed(bool enableWindowed)
     }
 }
 
+void
+MainWindow::QueueClientResize()
+{
+    if (!gFractal || IsIconic(hWnd)) {
+        return;
+    }
+
+    // PerMonitorV2 makes the client rectangle and mouse input use physical pixels. Read the full
+    // rectangle rather than WM_SIZE's 16-bit dimensions, and never DPI-scale the render size again.
+    RECT clientRect{};
+    if (!GetClientRect(hWnd, &clientRect)) {
+        return;
+    }
+    const LONG width = clientRect.right - clientRect.left;
+    const LONG height = clientRect.bottom - clientRect.top;
+    if (width <= 0 || height <= 0) {
+        return;
+    }
+
+    gFractal->EnqueueCommand("resize window", [width, height](Fractal &fractal) {
+        fractal.ResetDimensions(static_cast<size_t>(width), static_cast<size_t>(height), UINT32_MAX);
+    });
+}
+
 //
 // Performs all cleanup operations
 //
@@ -660,7 +685,8 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             if (!gWindowed)
                 break;
 
-            constexpr int resizeBorder = 8; // pixels
+            constexpr int32_t resizeBorderAt96Dpi = 8;
+            const int32_t resizeBorder = Environment::ScaleWindowUiPixels(hWnd, resizeBorderAt96Dpi);
             POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
             ScreenToClient(hWnd, &pt);
 
@@ -724,12 +750,25 @@ MainWindow::WndProc(UINT message, WPARAM wParam, LPARAM lParam)
             return 0;
         }
 
+        case WM_DPICHANGED: {
+            // A selection rectangle belongs to the old client geometry. Cancel it before the
+            // platform applies new bounds and synchronously sends any resulting WM_SIZE.
+            SendMessage(hWnd, WM_CANCELMODE, 0, 0);
+            lastMenuPtClient_ = {-1, -1};
+
+            const RECT &suggestedRect = *reinterpret_cast<const RECT *>(lParam);
+            const Environment::ScreenRect suggestedBounds{
+                suggestedRect.left, suggestedRect.top, suggestedRect.right, suggestedRect.bottom};
+            if (!Environment::ApplyWindowDpiChange(hWnd, suggestedBounds, !gWindowed)) {
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "Failed to apply window DPI change: " << Environment::GetLastOSError();
+            }
+            return 0;
+        }
+
         case WM_SIZE: {
-            if (gFractal) {
-                auto w = LOWORD(lParam);
-                auto h = HIWORD(lParam);
-                gFractal->EnqueueCommand("resize window",
-                                         [w, h](Fractal &f) { f.ResetDimensions(w, h, UINT32_MAX); });
+            if (wParam != SIZE_MINIMIZED) {
+                QueueClientResize();
             }
             return 0;
         }
@@ -1006,14 +1045,7 @@ MainWindow::MenuWindowed(bool square)
 
         SetModeWindowed(true);
 
-        if (gFractal) {
-            RECT rt;
-            GetClientRect(hWnd, &rt);
-            auto w = rt.right;
-            auto h = rt.bottom;
-            gFractal->EnqueueCommand("resize window",
-                                     [w, h](Fractal &f) { f.ResetDimensions(w, h, UINT32_MAX); });
-        }
+        QueueClientResize();
     } else {
         int width = GetSystemMetrics(SM_CXSCREEN);
         int height = GetSystemMetrics(SM_CYSCREEN);
@@ -1033,14 +1065,7 @@ MainWindow::MenuWindowed(bool square)
 
         SetModeWindowed(false);
 
-        if (gFractal) {
-            RECT rt;
-            GetClientRect(hWnd, &rt);
-            auto w = rt.right;
-            auto h = rt.bottom;
-            gFractal->EnqueueCommand("resize window",
-                                     [w, h](Fractal &f) { f.ResetDimensions(w, h, UINT32_MAX); });
-        }
+        QueueClientResize();
     }
 }
 

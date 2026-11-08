@@ -353,7 +353,7 @@ Caller & $X_HY_H$ & Assemble $XY$, join both square leads, update both
 
 After product completion, the caller forms $y_{n+1}=2x_ny_n+c_y$ and
 $x_{n+1}=x_n^2-y_n^2+c_x$ from the same old-state batch. Low-precision
-derivative tracking, scheduling, propagation of the state-error enclosure, and conversion
+derivative tracking, scheduling, propagation of the fixed-MT9 difference enclosure, and conversion
 certification all run on the caller. The last three activities are present
 only in the dynamic variant; no worker independently chooses a precision.
 
@@ -395,7 +395,8 @@ The check is diagnostic: no restart or full-precision recovery occurs.
 
 Two mathematical arguments have different roles. Parameter sensitivity predicts
 a working precision likely to be economical. An independent enclosure of the
-current orbit-state error certifies the conversions actually consumed downstream.
+difference from fixed MT9 certifies equal conversions to the configured
+full-precision MT9 calculation using the same copied coordinates.
 The precision proposal is heuristic; the acceptance condition has a proof under
 the arithmetic assumptions stated below. In particular, the proof applies to
 any permitted sequence of working precisions, including one selected with an
@@ -543,22 +544,37 @@ $P_{\mathrm{full}}=16{,}384$, $w=64$, unit operand scale, and derivative norm
 $2^{8192}$ give $Q=256$ and $a=8304$, hence a request of $8448$ bits.
 These values illustrate tier rounding rather than a measured orbit.
 Raising a subsequent request restores arithmetic capacity; the precision change
-alone does not restore discarded state or reduce the current state-error enclosure.
+alone does not restore discarded state or reduce the fixed-MT9 difference enclosure.
 Later recurrence updates can contract that enclosure, as described below.
 
 \subsubsection{A schedule-independent enclosure proof}
 \label{subsec:ref-orbit-dynamic-enclosure}
 
-Let $E_n\ge|\varepsilon_n|$, let $R_n\ge|\widetilde z_n^\star|$, and let
-$\tau_n\ge|\rho_n|$ bound the complete local residual. The second identity in
-\eqref{eq:dynamic-exact-error} implies
+The implemented certificate compares two finite-precision algorithms, rather
+than either algorithm with the exact mathematical orbit. Let $z_n^{\mathrm F}$
+denote fixed MT9 at $P_{\mathrm{full}}$ bits, using the same once-copied
+coordinates $\widetilde c$ as the dynamic calculation. Define
+$\varepsilon_n^{\mathrm F}=\widetilde z_n^\star-z_n^{\mathrm F}$ and write
+the complete local arithmetic residuals as $\rho_n^{\mathrm D}$ and
+$\rho_n^{\mathrm F}$. Subtracting their recurrences gives
+\[
+ \varepsilon_{n+1}^{\mathrm F}
+ =2\widetilde z_n^\star\varepsilon_n^{\mathrm F}
+  -(\varepsilon_n^{\mathrm F})^2+\rho_n^{\mathrm D}-\rho_n^{\mathrm F}.
+\]
+Let $E_n\ge|\varepsilon_n^{\mathrm F}|$, let
+$R_n\ge|\widetilde z_n^\star|$, and let
+$\tau_n^{\mathrm D},\tau_n^{\mathrm F}$ bound the respective local residuals.
+Then
 \begin{equation}
- |\varepsilon_{n+1}|\le2R_nE_n+E_n^2+\tau_n.
+ |\varepsilon_{n+1}^{\mathrm F}|
+ \le2R_nE_n+E_n^2+\tau_n^{\mathrm D}+\tau_n^{\mathrm F}.
  \label{eq:dynamic-disk-inequality}
 \end{equation}
 Choosing
 \begin{equation}
- E_{n+1}=\operatorname{up}(2R_nE_n+E_n^2+\tau_n)
+ E_{n+1}=\operatorname{up}
+   (2R_nE_n+E_n^2+\tau_n^{\mathrm D}+\tau_n^{\mathrm F})
  \label{eq:dynamic-disk-update}
 \end{equation}
 therefore preserves the enclosure. Here $\operatorname{up}$ means evaluating
@@ -568,9 +584,9 @@ introduce artificial growth under repeated rotations. Disk propagation for
 the Mandelbrot polynomial also appears in~\cite{MandelbrotNotes2018}.
 
 \paragraph{Meaning of the propagated bound.}
-The radius $E_n$ bounds the error in the current working state, including the
-transported effects of earlier residuals. It is neither a measurement of the
-unknown error $\varepsilon_n$ nor a running sum of rounding-error magnitudes.
+The radius $E_n$ bounds the current difference from fixed MT9, including the
+transported effects of earlier residual differences. It is neither a measurement
+of the unknown difference nor a running sum of rounding-error magnitudes.
 One disk bounds both real and imaginary component errors. Local arithmetic
 bounds and outward rounding propagate the entire enclosure; an oracle orbit
 is not required for the bound calculation. A separately computed oracle can
@@ -578,19 +594,23 @@ instead test whether an implementation respects that enclosure.
 
 The update can amplify or contract the radius. At a computed state
 $\widetilde z_n^\star=0$, with no newly introduced residual, every possible
-exact state lies within $|z_n^\star|\le E_n$, so squaring maps the disk into a
+fixed state lies within $|z_n^{\mathrm F}|\le E_n$, so squaring maps the disk into a
 disk of radius $E_n^2$. For example, $E_n=2^{-100}$ permits a next radius of
 $2^{-200}$ when the subsequent arithmetic and coordinate addition are exact.
 For a nonzero working state, the linear term $2R_nE_n$ and the new residual
-bound $\tau_n$ also contribute. Such contraction follows from the recurrence;
+bounds $\tau_n^{\mathrm D}+\tau_n^{\mathrm F}$ also contribute. Such contraction
+follows from the recurrence;
 it does not reconstruct the discarded earlier state. A small final radius
 therefore does not establish how tight the certificate was at earlier states.
 
 The initialization and precision changes require explicit accounting. The
 working coordinates $\widetilde c$ are copied once at full working precision.
-Their copy-error norm $C_{\mathrm{copy}}\ge|\widetilde c-c_\star|$ initializes
-$E_1$, since the prologue starts from $\widetilde z_1^\star=\widetilde c$.
-The same coordinate error contributes to $\tau_n$ on every later addition.
+Both algorithms start from that same finite value, so $E_1=0$. Until the first
+precision reduction, identical arithmetic makes their residuals cancel exactly;
+the enclosure remains zero rather than accumulating common roundoff.
+After the first reduction, every subsequent step propagates the difference,
+including steps that restore full precision. Coordinate-copy error cancels
+because the copied coordinates remain identical in both recurrences.
 If changing precision clips the state to $\overline z_n^\star$, first set
 \[
  \overline E_n=\operatorname{up}
@@ -639,11 +659,27 @@ subtraction and coordinate-addition bounds to obtain $a_n$. For the imaginary
 update, sum twice the cross-product bound, the doubling bound, and the
 coordinate-addition bound to obtain $b_n$. Then use
 \[
- \tau_n=\operatorname{up}\left(\sqrt{a_n^2+b_n^2}+C_{\mathrm{copy}}\right).
+ \tau_n^{\mathrm D}=\operatorname{up}\left(\sqrt{a_n^2+b_n^2}\right).
 \]
 Rounding metadata is captured before its operands are overwritten. Each
 primitive estimate is zero or a power of two; the four real and three
 imaginary terms are accumulated outward before updating the disk.
+
+The hypothetical fixed step is bounded without computing a second orbit.
+Its input magnitude is at most $U_n=\operatorname{up}(R_n+E_n)$. Set
+$S_n^{\mathrm F}=\operatorname{up}(U_n^2+|\widetilde c|_{\mathrm{upper}})$,
+$\pi_{\mathrm F}=P_{\mathrm{full}}/w+1$, and $\beta=2^w$.
+For nonzero $S_n^{\mathrm F}$, choose the smallest integer $K$ satisfying
+$8S_n^{\mathrm F}<\beta^K$ and define
+\[
+ q=\beta^{K-\pi_{\mathrm F}},\qquad \tau_n^{\mathrm F}=16q.
+\]
+The scale $8S_n^{\mathrm F}$ bounds the exact intermediates and the operands
+of the rounded additions and subtraction. The primitive estimates above bound
+each component's complete residual by $10q$; their Euclidean norm is therefore
+less than $16q$. The all-zero case has zero allowance. The normalized bound's
+binary exponent supplies $K$ directly, with floor division for negative
+exponents; no logarithm, limb search, or fixed reference calculation is required.
 
 Nonnegative bounds use normalized binary64 significands with checked
 64-bit exponents, separately from the renderer's HDR arithmetic. The bound
@@ -655,11 +691,12 @@ warnings; they cannot silently turn into zero within the enclosure. These
 arithmetic hypotheses are part of the certificate.
 
 \paragraph{Enclosure proposition and proof.}
-For any permitted sequence of working precisions, suppose that coordinate
-copying and state clipping are enclosed as above, every local residual bound
-is sound, and every bound operation rounds outward without an undetected
-range failure. Then $|\widetilde z_n^\star-z_n^\star|\le E_n$ at every
-certified state. The coordinate-copy bound proves the base case. The triangle
+For any permitted sequence of working precisions, suppose that both algorithms
+use identical copied coordinates, state clipping is enclosed as above, every
+local residual bound is sound, and every bound operation rounds outward without an undetected
+range failure. Then $|\widetilde z_n^\star-z_n^{\mathrm F}|\le E_n$ at every
+certified state. Identical initialization and the common full-precision prefix
+prove the base case. The triangle
 inequality preserves it during state clipping. Equation~\eqref{eq:dynamic-disk-inequality}
 and outward evaluation prove the induction step. Neither derivative accuracy,
 monotonic derivative growth, nor omission of the nonlinear term is needed.
@@ -713,16 +750,16 @@ The bin boundaries are exact dyadics. Boundary scratch has $256$ bits;
 gap scratch has the full working precision plus two limbs, allowing exact
 subtraction even for a gap far below the leading limb. A defensive subtraction
 bound is added to $E_n$ before comparison with a lower bound for the gap.
-Native subnormal/overflow cases and unsupported HDR exponents reject the
-dynamic attempt. For exactly real $c_\star$, the imaginary orbit remains exactly
-zero by the recurrence, independently of the real-component error radius;
+Native subnormal/overflow cases and unsupported HDR exponents leave the
+check uncertain. For exactly real copied $\widetilde c$, both imaginary orbits
+remain exactly zero by the recurrence, independently of the real-component error radius;
 the implementation preserves that structural exception.
 
 \paragraph{Accepted-sample theorem.}
 Under the enclosure proposition's hypotheses and the supported conversion
 semantics, every component accepted by the conversion test equals the
-conversion of the exact orbit for the finite input coordinates. The proof is
-enclosure containment in one conversion bin, with the exact-zero cases above.
+conversion of fixed MT9 at the configured precision and identical copied
+coordinates. The proof is enclosure containment in one conversion bin, with the exact-zero cases above.
 Certifying the normalized binary64/exponent pair also certifies the existing
 deterministic casts to the renderer's sample types. This theorem holds for
 any allowed precision schedule. An approximate derivative can affect the
@@ -732,8 +769,10 @@ accepted sample when the theorem's hypotheses hold.
 Each sampled state is checked before it supplies input to the existing
 publication, periodicity, or escape pipeline. An ambiguous conversion, unsupported
 conversion, or invalid bound records a diagnostic failure. The first failure
-prints a warning with its reason, state index, working precision, error budgets,
-and coordinates. Later checks continue, but do not emit additional warnings.
+prints \emph{Cannot guarantee equivalence to fixed MT9}, with its reason, state
+index, full and working precision, error budgets, limiting component and boundary,
+headroom, sample type, and exact finite source coordinates. Later checks continue,
+but do not emit additional warnings.
 The same dynamic attempt continues and publishes its samples normally,
 including samples that could not be certified. The theorem therefore applies
 only to components whose checks pass, rather than to every published sample.
@@ -741,26 +780,15 @@ Cancellation retains the existing prefix behavior; unrelated exceptions propagat
 through the existing application boundary.
 
 \paragraph{Near-return limitation.}
-A near-nucleus return can make a component much smaller than the incoming
-absolute error enclosure. A failed certificate therefore establishes uncertainty,
-rather than measuring an incorrect sample. Increasing precision later cannot
-reconstruct previously discarded state. Fixed MT9 remains an explicit choice
-when a full-precision reference is desired.
-
-The period-$41{,}722$ Fractadyne benchmark location at approximately $10^{3000}$
-magnification demonstrates an avoidable false warning. The earlier shared
-addition and subtraction estimate warned at $Z_{41722}$ after $41{,}721$ updates,
-using $5{,}248$ of $10{,}112$ configured bits. Its real-component budget
-$10112.80/10056.34$ represented approximately $-56.46$ bits of headroom.
-Independent wider calculations from the same finite production midpoint
-confirmed that both components converted correctly to binary64.
-The measured real error had approximately $7.11$ bits of margin to the
-conversion boundary; the old bound overstated that component's error by
-approximately $63.57$ bits. Distinguishing the effective addition and
-subtraction capacities removes approximately $58.3$ bits of overestimation
-in the captured trace. The regression requires successful certification with
-positive headroom for both HDR sample types while retaining diagnostic-only
-behavior for genuinely inconclusive checks.
+A near-nucleus return can make a component much smaller than accumulated
+roundoff shared by fixed and dynamic MT9. Such common error against the exact
+mathematical orbit is outside this certificate's contract. The differential
+bound asks whether dynamic precision can change a stored sample relative to
+fixed MT9; agreement does not establish accuracy against the mathematical orbit.
+A failed check establishes uncertainty rather than an observed incorrect sample.
+No magnitude-based exemption suppresses an uncertain near-zero conversion.
+The warning retains coordinates for subsequent focused validation. Production
+continues one orbit without a verification orbit, restart, or automatic fallback.
 
 Certification diagnoses the conversions entering storage/compression; it does
 not gate them. Compression retains its established error contract. The periodicity
@@ -776,7 +804,8 @@ computed pipeline state, which can be ahead of the last stored sample.
 For a nonzero component with normalized binary exponent $s$, define its full
 precision unit as $u_v=2^{s-P_{\mathrm{full}}}$. At a checked boundary $b$,
 let $G_b$ be the gap lower bound and let $E_{\mathrm{cmp},b}$ be the propagated
-radius plus the outward-rounded gap-subtraction allowance. The printed pair is
+fixed-MT9 difference radius plus the outward-rounded gap-subtraction allowance.
+The printed pair is
 \begin{equation}
  b_{\mathrm{current}}=\log_2(E_{\mathrm{cmp},b}/u_v),
  \qquad b_{\mathrm{max}}=\log_2(G_b/u_v).
@@ -823,7 +852,7 @@ Statistics retain the first diagnostic failure's reason, state index, and workin
 precision while step counts and elapsed time cover the complete dynamic attempt.
 The published generation associates those diagnostics with the reference selected
 by the renderer, including a converted sample type. Rendering details identify
-a \emph{certification warning}. A warned attempt counts once as a certificate
+\emph{fixed-MT9 equivalence uncertain}. A warned attempt counts once as a certificate
 failure and is not also counted as a certificate success; the counter describes
 certification rather than rendering success.
 

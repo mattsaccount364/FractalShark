@@ -183,12 +183,21 @@ NCU or GPU/architecture change, confirm the metric families exist with
 
 ## Notes And Generated Files
 
+Do not create or update investigation notes, ad hoc analysis Markdown, validation reports, or
+similar documents unless the user explicitly requests them. Report findings and validation results
+in the conversation instead. Leave existing investigation notes untouched unless requested.
+
+Continue updating relevant `.tex` documentation when implementation changes warrant it. Describe
+FractalShark's current algorithms, behavior, rationale, and known limitations. Do not append historical
+debugging narratives, experiment diaries, or temporary investigation results. Document implemented
+behavior rather than presenting proposed or test-only prototypes as production features.
+
 The LaTeX master is `Notes/FractalShark.tex`. Always use `build.ps1` from the `Notes`
 directory for Notes builds; do not run the LaTeX and bibliography passes manually. The script
 performs the required passes and opens `Notes/FractalShark.pdf`. It also closes running Acrobat
 processes before building, so save unrelated open documents first. Main and engineering
-prose uses formal third-person American English; user documentation and development history may be
-informal. Avoid sensationalized language and bare `This` followed by a verb. Use pure TikZ figures,
+prose uses formal third-person American English; user documentation may be informal. Avoid
+sensationalized language and bare `This` followed by a verb. Use pure TikZ figures,
 `\caption[short]{long}`, `\cref{}` for cross-references, `\eqref{}` where appropriate, `\code{}` for
 inline code, and `lstlisting` for blocks. Keep canonical notation from the master notation table and
 spell the prose name as `LA~v2` (`LAv2` only in identifiers).

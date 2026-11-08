@@ -456,7 +456,7 @@ choice and triggers any necessary reconfiguration.
       with at least nine logical processors, or MT3 otherwise. At 32,768 bits
       and above, supported GPU reference generation takes priority when CUDA
       is available; otherwise the eligible CPU branch applies.
-      MT9 automatically recovers at full precision if its dynamic check fails.
+      MT9 warns when equivalence to fixed MT9 is uncertain and continues the same calculation.
       See \cref{subsec:ref-orbit-pipeline} for eligibility details.
       Recommended for most use.
       \item \emph{Single Thread (ST)} (radio): Uses a single-threaded
@@ -483,10 +483,13 @@ choice and triggers any necessary reconfiguration.
       The CLI name is \code{MTPeriodicity9\allowbreak Karatsuba}.
       \item \emph{MT9 + Periodicity + Karatsuba + Dynamic Precision} (radio):
       Adjusts working precision using the parameter derivative and independently
-      checks conversion error bounds. A failed certificate prints a warning,
-      including the failing state and precision, and calculation continues with
-      potentially uncertified samples. Certification does not trigger a restart
-      or change the precision schedule. Rendering details identify the warning.
+      checks whether stored conversions are guaranteed to match fixed MT9 at
+      the configured precision. An inconclusive check warns that equivalence
+      cannot be guaranteed and includes the state, precision, and exact coordinates.
+      Calculation continues with potentially uncertified samples. The check does
+      not run a second orbit, restart, or change the precision schedule.
+      Rendering details identify fixed-MT9 equivalence as uncertain. Equivalence
+      does not establish accuracy against the exact mathematical orbit or final image.
       Select fixed MT9 explicitly when fixed working precision is desired.
       The CLI name is
       \code{MTPeriodicity9\allowbreak Karatsuba\allowbreak DynamicPrecision};

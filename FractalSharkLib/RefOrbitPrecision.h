@@ -4,6 +4,7 @@
 #include "RefOrbitKaratsuba.h"
 #include "RefOrbitPrecisionStats.h"
 
+#include <array>
 #include <cstdint>
 #include <limits>
 #include <span>
@@ -95,13 +96,54 @@ struct RefOrbitCertificationDiagnostics {
     RefOrbitPrecisionFailure Failure{RefOrbitPrecisionFailure::None};
 };
 
-// MT9 only: the derivative proposes a work precision, while an independent forward
-// error enclosure certifies the actual conversion. Neither derivative growth nor
-// raising precision is interpreted as recovering information that was discarded.
+// Bounds for the update that produced the currently checked state. Primitive order
+// is x*x, y*y, real subtraction, real coordinate addition, 2*x*y product,
+// cross-product doubling, imaginary coordinate addition. Capture is explicitly enabled
+// by an MT9 observer; ordinary rendering does not populate this diagnostic record.
+struct RefOrbitStepDiagnostics {
+    RefOrbitErrorBound InputError;
+    RefOrbitErrorBound ClipX;
+    RefOrbitErrorBound ClipY;
+    RefOrbitErrorBound Linear;
+    RefOrbitErrorBound Quadratic;
+    RefOrbitErrorBound FixedRoundingAllowance;
+    RefOrbitErrorBound LocalX;
+    RefOrbitErrorBound LocalY;
+    RefOrbitErrorBound OutputError;
+    std::array<RefOrbitErrorBound, 7> PrimitiveErrors;
+};
+
+// All arithmetic pointers are borrowed until the synchronous callback returns.
+// StateIteration numbers mathematical states: Z1 is the finite input coordinate.
+// A fixed MT9 state has no certificate or step-bound record.
+struct RefOrbitMT9StateView {
+    uint64_t StateIteration;
+    mpf_srcptr X;
+    mpf_srcptr Y;
+    mpf_srcptr Cx;
+    mpf_srcptr Cy;
+    mp_bitcnt_t WorkingBits;
+    bool Certified;
+    const RefOrbitCertificationDiagnostics *Certification;
+    const RefOrbitStepDiagnostics *Step;
+};
+
+class RefOrbitMT9DiagnosticObserver {
+public:
+    virtual ~RefOrbitMT9DiagnosticObserver() = default;
+    virtual void OnState(const RefOrbitMT9StateView &state) = 0;
+    // The input is already clipped, but no multiplication has overwritten it.
+    virtual void OnStepInput(uint64_t stateIteration, mpf_srcptr x, mpf_srcptr y) = 0;
+};
+
+// MT9 only: enclose divergence from the fixed full-precision MT9 computation
+// using the same finite copied coordinates. No fixed orbit is calculated here.
+// The derivative only proposes precision; restoring full width never erases an
+// accumulated difference. Conversion certification concerns fixed equivalence,
+// not the exact mathematical orbit or the accuracy of downstream rendering.
 class RefOrbitPrecisionSchedule {
 public:
-    RefOrbitPrecisionSchedule(
-        mp_bitcnt_t fullBits, mpf_srcptr cx, mpf_srcptr cy, mpf_srcptr copiedCx, mpf_srcptr copiedCy);
+    RefOrbitPrecisionSchedule(mp_bitcnt_t fullBits, mpf_srcptr copiedCx, mpf_srcptr copiedCy);
     ~RefOrbitPrecisionSchedule();
     RefOrbitPrecisionSchedule(const RefOrbitPrecisionSchedule &) = delete;
     RefOrbitPrecisionSchedule &operator=(const RefOrbitPrecisionSchedule &) = delete;
@@ -121,10 +163,13 @@ public:
                      mpf_srcptr cy);
     bool Certify(mpf_srcptr x, mpf_srcptr y, bool nativeDouble);
     const RefOrbitDynamicPrecisionStats &GetStats() const;
+    // Difference from fixed MT9, including state clipping and transported residuals.
     RefOrbitErrorBound GetError() const;
+    void EnableDiagnosticCapture(bool enabled);
+    const RefOrbitStepDiagnostics &GetStepDiagnostics() const;
     // Formats stored bounds without replaying any state or changing route counters.
     RefOrbitWorstCertificationDiagnostics DescribeWorstCertification() const;
-    // Reuses certification scratch only at termination; never changes attempt status.
+    // On-demand diagnostic replay for a warning or observer; never changes attempt status.
     RefOrbitCertificationDiagnostics DescribeCertification(mpf_srcptr x,
                                                            mpf_srcptr y,
                                                            bool nativeDouble);
@@ -151,6 +196,7 @@ private:
     };
 
     static RefOrbitErrorBound AccumulateRoundingErrors(std::span<const int64_t> quanta);
+    RefOrbitErrorBound FixedRoundingAllowance(RefOrbitErrorBound fixedRadius) const;
     void RecordCertificationStatus(CertificationRecord &record, RefOrbitErrorBudgetStatus status);
     void RecordCertification(CertificationRecord &record,
                              RefOrbitErrorBound comparison,
@@ -173,13 +219,17 @@ private:
     double m_DerivativeY{};
     int64_t m_DerivativeExponent{};
     RefOrbitErrorBound m_CScale;
-    RefOrbitErrorBound m_CError;
-    // Current forward-error radius, including transported earlier residuals. The
-    // recurrence can contract this radius; it is not a running sum of lost bits.
+    RefOrbitErrorBound m_FixedCoordinateScale;
+    // Zero through the identical full-width prefix; thereafter the radius of the
+    // dynamic-minus-fixed difference. Contraction is possible, reset is not.
     RefOrbitErrorBound m_Error;
     RefOrbitErrorBound m_StepRadius;
+    RefOrbitErrorBound m_DifferenceRadius;
+    bool m_DivergenceActive{};
     bool m_RealAxis;
     RefOrbitDynamicPrecisionStats m_Stats;
+    bool m_DiagnosticCapture{};
+    RefOrbitStepDiagnostics m_StepDiagnostics;
     CertificationRecord m_WorstReal;
     CertificationRecord m_WorstImaginary;
     // The boundary is a short exact dyadic; the gap has enough preallocated limbs

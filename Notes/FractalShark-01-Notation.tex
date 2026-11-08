@@ -154,12 +154,15 @@ $R_x,\;R_y$      & parameter-offset bounds       & reference-relative screen cov
                   \cref{subsec:ref-orbit-view-bounds} \\
 $\widetilde z_n^\star$ & dynamic working orbit & distinct from the compression shadow
                   $\hat z_n$; \cref{subsec:ref-orbit-dynamic-precision} \\
-$\varepsilon_n,\;E_n$ & state error / propagated radius
-                  & $\varepsilon_n=\widetilde z_n^\star-z_n^\star$,
-                    $|\varepsilon_n|\le E_n$; the shared disk radius can grow or contract;
+$\varepsilon_n$ & mathematical state error
+                  & $\widetilde z_n^\star-z_n^\star$ in the precision-proposal analysis;
                     distinct from replay error $e_n$ \\
+$z_n^{\mathrm F},\;E_n$ & fixed-MT9 state / difference radius
+                  & $|\widetilde z_n^\star-z_n^{\mathrm F}|\le E_n$;
+                    the shared disk radius can grow or contract \\
 $\rho_n,\;\tau_n$ & local residual / magnitude bound
-                  & $|\rho_n|\le\tau_n$, including coordinate-copy error \\
+                  & superscripts $\mathrm D$ and $\mathrm F$ distinguish dynamic and fixed arithmetic;
+                    shared coordinate-copy error cancels in their difference \\
 $P_{\mathrm{full}},\;P_n,\;Q$ & full / active bits / tier quantum
                   & MT9 dynamic working precision; period retains the symbol $p$ \\
 \hline

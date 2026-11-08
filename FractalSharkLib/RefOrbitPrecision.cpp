@@ -129,6 +129,14 @@ QuantumBound(int64_t quantum)
     return quantum == ZeroQuantum ? RefOrbitErrorBound{} : RefOrbitErrorBound::PowerOfTwo(quantum);
 }
 
+RefOrbitErrorBound
+MpfMagnitudeUpper(mpf_srcptr value)
+{
+    // Exact zero must remain zero in differential accounting. The scheduling
+    // estimate deliberately retains its existing conversion/rounding behavior.
+    return value->_mp_size == 0 ? RefOrbitErrorBound{} : RefOrbitErrorBound::FromMpfUpper(value);
+}
+
 } // namespace
 
 RefOrbitErrorBound
@@ -314,17 +322,20 @@ RefOrbitErrorBound::Log2() const
     return std::log2(m_Value.getMantissa() * 0.5) + static_cast<double>(m_Value.getExp() + 1);
 }
 
-RefOrbitPrecisionSchedule::RefOrbitPrecisionSchedule(
-    mp_bitcnt_t fullBits, mpf_srcptr cx, mpf_srcptr cy, mpf_srcptr copiedCx, mpf_srcptr copiedCy)
+RefOrbitPrecisionSchedule::RefOrbitPrecisionSchedule(mp_bitcnt_t fullBits,
+                                                     mpf_srcptr copiedCx,
+                                                     mpf_srcptr copiedCy)
     : m_FullBits(fullBits),
       m_Quantum(std::max(mp_bitcnt_t{GMP_NUMB_BITS},
                          fullBits / (ScheduleTierCount * GMP_NUMB_BITS) * GMP_NUMB_BITS)),
       m_CScale(RefOrbitErrorBound::Norm(RefOrbitErrorBound::FromMpfUpper(copiedCx),
                                         RefOrbitErrorBound::FromMpfUpper(copiedCy))),
-      m_CError(RefOrbitErrorBound::Norm(CopyError(cx, copiedCx), CopyError(cy, copiedCy))),
-      m_Error(m_CError), m_RealAxis(cy->_mp_size == 0), m_Boundary(CertificationBits),
+      m_FixedCoordinateScale(
+          RefOrbitErrorBound::Norm(MpfMagnitudeUpper(copiedCx), MpfMagnitudeUpper(copiedCy))),
+      m_RealAxis(copiedCy->_mp_size == 0), m_Boundary(CertificationBits),
       m_Gap(fullBits + GapGuardLimbs * GMP_NUMB_BITS)
 {
+    assert(fullBits >= GMP_NUMB_BITS && fullBits % GMP_NUMB_BITS == 0);
     m_Stats.FullBits = fullBits;
     m_Stats.MinimumBits = fullBits;
     // A bin boundary differs from the state's limb exponent by at most one.
@@ -349,6 +360,10 @@ RefOrbitPrecisionSchedule::Scratch::Get()
 mp_bitcnt_t
 RefOrbitPrecisionSchedule::BeginStep(mpf_srcptr x, mpf_srcptr y, bool allowReduction)
 {
+    if (m_DiagnosticCapture) {
+        m_StepDiagnostics = {};
+        m_StepDiagnostics.InputError = m_Error;
+    }
     // Evaluate 2*Z*D+1 with one shared exponent per complex number. This tracker
     // only proposes work; dropping a very small aligned term never certifies a sample.
     double zx;
@@ -405,6 +420,11 @@ RefOrbitPrecisionSchedule::BeginStep(mpf_srcptr x, mpf_srcptr y, bool allowReduc
     }
     m_StepRadius = RefOrbitErrorBound::Norm(RefOrbitErrorBound::FromMpfUpper(x),
                                             RefOrbitErrorBound::FromMpfUpper(y));
+    // Reuse the scheduling radius for ordinary complex states. A structural zero
+    // needs no second norm: the remaining component's magnitude is its exact norm.
+    m_DifferenceRadius = x->_mp_size == 0   ? MpfMagnitudeUpper(y)
+                         : y->_mp_size == 0 ? MpfMagnitudeUpper(x)
+                                            : m_StepRadius;
     // The infinity norm underestimates |D| by at most sqrt(2), conservatively asking
     // for up to one extra bit. This derivative is only a proposal, never the certificate.
     const double derivativeLog = std::log2(std::max(std::abs(m_DerivativeX), std::abs(m_DerivativeY))) +
@@ -418,6 +438,7 @@ RefOrbitPrecisionSchedule::BeginStep(mpf_srcptr x, mpf_srcptr y, bool allowReduc
         bits = std::min(m_FullBits, static_cast<mp_bitcnt_t>(tiers) * m_Quantum);
     }
     ++m_Stats.Steps;
+    m_DivergenceActive = m_DivergenceActive || bits < m_FullBits;
     m_Stats.ReducedSteps += bits < m_FullBits ? 1 : 0;
     m_Stats.MinimumBits = std::min(m_Stats.MinimumBits, static_cast<uint64_t>(bits));
     m_Stats.MeanBits +=
@@ -428,33 +449,98 @@ RefOrbitPrecisionSchedule::BeginStep(mpf_srcptr x, mpf_srcptr y, bool allowReduc
 void
 RefOrbitPrecisionSchedule::AddStateTruncation(RefOrbitErrorBound xError, RefOrbitErrorBound yError)
 {
+    if (m_DiagnosticCapture) {
+        m_StepDiagnostics.ClipX = xError;
+        m_StepDiagnostics.ClipY = yError;
+    }
     m_Error = RefOrbitErrorBound::Add(m_Error, RefOrbitErrorBound::Norm(xError, yError));
+    // Also permits direct accounting of a known truncation in bound tests. A zero
+    // allowance during a precision increase does not recover discarded information.
+    m_DivergenceActive = m_DivergenceActive || !xError.IsZero() || !yError.IsZero();
+}
+
+RefOrbitErrorBound
+RefOrbitPrecisionSchedule::FixedRoundingAllowance(RefOrbitErrorBound fixedRadius) const
+{
+    const auto scale = RefOrbitErrorBound::Add(RefOrbitErrorBound::Multiply(fixedRadius, fixedRadius),
+                                               m_FixedCoordinateScale);
+    if (!scale.IsFinite() || scale.IsZero()) {
+        return scale;
+    }
+    // S=U^2+|c| covers products and coordinates of every hypothetical fixed
+    // state in the current disk. All intermediate magnitudes fit below 8*S.
+    // For pi>=2, q<=8*S/beta^(pi-1) makes the primitive <=4*q errors too small
+    // to exhaust that slack. This uses MPIR's full limb precision pi=P/w+1.
+    constexpr int IntermediateMagnitudeShift = 3;
+    const auto intermediate = RefOrbitErrorBound::ScaleByPowerOfTwo(scale, IntermediateMagnitudeShift);
+    if (!intermediate.IsFinite()) {
+        return intermediate;
+    }
+    // HDR mantissas are in [1,2). K=floor(e/w)+1 therefore gives the smallest
+    // strict limb-power upper bound, including exact powers and negative e.
+    // No logarithm, search, or MPIR arithmetic is required in this hot path.
+    const int64_t exponent = intermediate.m_Value.getExp();
+    const int64_t limbExponent = exponent / GMP_NUMB_BITS - (exponent % GMP_NUMB_BITS < 0) + 1;
+    const int64_t fullLimbs = static_cast<int64_t>(m_FullBits / GMP_NUMB_BITS) + 1;
+    const auto quantum = RefOrbitErrorBound::LimbPower(limbExponent - fullLimbs);
+    // Real: (1+1+4+4)*q. Imaginary: (2+4+4)*q. The Euclidean local
+    // residual is <=sqrt(10^2+10^2)*q<16*q. Copied coordinates are identical
+    // in both trajectories, so their common copy error is not divergence.
+    constexpr int LocalNormAllowanceShift = 4;
+    return RefOrbitErrorBound::ScaleByPowerOfTwo(quantum, LocalNormAllowanceShift);
 }
 
 void
 RefOrbitPrecisionSchedule::FinishStep(RefOrbitErrorBound localXError, RefOrbitErrorBound localYError)
 {
+    if (m_DiagnosticCapture) {
+        m_StepDiagnostics.LocalX = localXError;
+        m_StepDiagnostics.LocalY = localYError;
+    }
+    if (!m_DivergenceActive) {
+        // Both specializations have the same inputs and operation order here.
+        // Common rounding does not introduce any dynamic-minus-fixed difference.
+        return;
+    }
     // Validate once at the finite kernel's boundary. Nonzero input exponents are
     // bounded by L = INT64_MAX/8; nonzero intermediates stay within +/- (2*L+8).
     // Zero's sorting exponent is about -4*L, so alignment differences are at most
     // 6*L+12 and still fit int64_t. Only the final exponent needs another check.
     // An invalid term must never disappear through a zero.
-    if (!m_Error.IsFinite() || !m_StepRadius.IsFinite() || !m_CError.IsFinite() ||
-        !localXError.IsFinite() || !localYError.IsFinite()) {
+    if (!m_Error.IsFinite() || !m_DifferenceRadius.IsFinite() || !localXError.IsFinite() ||
+        !localYError.IsFinite()) {
         m_Error = RefOrbitErrorBound::Invalid();
+        if (m_DiagnosticCapture) {
+            m_StepDiagnostics.OutputError = m_Error;
+        }
         return;
     }
-    // If z = zHat - e, the next error is 2*zHat*e - e^2 + localError.
-    // A Euclidean disk preserves complex multiplication's norm exactly; propagating
-    // independent absolute component errors would spuriously amplify every rotation.
-    auto twiceRadius = m_StepRadius;
+    const auto fixedAllowance =
+        FixedRoundingAllowance(RefOrbitErrorBound::Add(m_DifferenceRadius, m_Error));
+    if (!fixedAllowance.IsFinite()) {
+        m_Error = RefOrbitErrorBound::Invalid();
+        if (m_DiagnosticCapture) {
+            m_StepDiagnostics.OutputError = m_Error;
+        }
+        return;
+    }
+    // e=d-f gives eNext=2*d*e-e^2+rhoDynamic-rhoFixed. Bound both
+    // residuals independently after divergence; shared-prefix rounding cancels.
+    // The Euclidean disk does not amplify complex rotations spuriously.
+    auto twiceRadius = m_DifferenceRadius;
     twiceRadius.m_Value.multiply2_mutable();
     const auto linear = RefOrbitErrorBound::MultiplyFinite(twiceRadius, m_Error);
     const auto quadratic = RefOrbitErrorBound::MultiplyFinite(m_Error, m_Error);
     const auto local = RefOrbitErrorBound::AddFinite(
-        RefOrbitErrorBound::NormFinite(localXError, localYError), m_CError);
+        RefOrbitErrorBound::NormFinite(localXError, localYError), fixedAllowance);
     m_Error = RefOrbitErrorBound::Checked(
         RefOrbitErrorBound::AddFinite(RefOrbitErrorBound::AddFinite(linear, quadratic), local));
+    if (m_DiagnosticCapture) {
+        m_StepDiagnostics.Linear = linear;
+        m_StepDiagnostics.Quadratic = quadratic;
+        m_StepDiagnostics.FixedRoundingAllowance = fixedAllowance;
+        m_StepDiagnostics.OutputError = m_Error;
+    }
 }
 
 RefOrbitErrorBound
@@ -511,7 +597,27 @@ RefOrbitPrecisionSchedule::ComputeStep(mpf_ptr x,
     mpf_sub(temporary, xSquared, ySquared);
     real[3] = SumQuantum<false>(temporary, cx, x);
     mpf_add(x, temporary, cx);
+    if (m_DiagnosticCapture) {
+        for (size_t index = 0; index < real.size(); ++index) {
+            m_StepDiagnostics.PrimitiveErrors[index] = QuantumBound(real[index]);
+        }
+        for (size_t index = 0; index < imaginary.size(); ++index) {
+            m_StepDiagnostics.PrimitiveErrors[real.size() + index] = QuantumBound(imaginary[index]);
+        }
+    }
     FinishStep(AccumulateRoundingErrors(real), AccumulateRoundingErrors(imaginary));
+}
+
+void
+RefOrbitPrecisionSchedule::EnableDiagnosticCapture(bool enabled)
+{
+    m_DiagnosticCapture = enabled;
+}
+
+const RefOrbitStepDiagnostics &
+RefOrbitPrecisionSchedule::GetStepDiagnostics() const
+{
+    return m_StepDiagnostics;
 }
 
 void

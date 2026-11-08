@@ -25,6 +25,10 @@ class MPIRBoundedAllocator;
 class MPIRBumpAllocator;
 class PointZoomBBConverter;
 
+namespace FractalShark {
+class RefOrbitMT9DiagnosticObserver;
+}
+
 class RefOrbitCalc {
 public:
     using AwesomeVariant = std::variant<
@@ -172,6 +176,9 @@ public:
     PerturbationAlg GetPerturbationAlg() const;
     std::string GetPerturbationAlgStr() const;
     std::optional<FractalShark::RefOrbitDynamicPrecisionStats> GetLastDynamicPrecisionStats() const;
+    // Non-owning, opt-in observer. Set only while idle; callbacks run under this
+    // calculator's lock and must not reenter it or retain borrowed arithmetic pointers.
+    void SetMT9DiagnosticObserver(FractalShark::RefOrbitMT9DiagnosticObserver *observer);
     // Independent atomic totals, shared across instances and template specializations.
     // Returns no snapshot when the compile-time MT9 instrumentation is disabled.
     static std::optional<FractalShark::RefOrbitDynamicPrecisionCounters> GetDynamicPrecisionCounters();
@@ -409,6 +416,7 @@ private:
 
     PerturbationAlg m_PerturbationAlg;
     std::optional<FractalShark::RefOrbitDynamicPrecisionStats> m_LastDynamicPrecisionStats;
+    FractalShark::RefOrbitMT9DiagnosticObserver *m_MT9DiagnosticObserver{};
     const Fractal &m_Fractal;
     HighPrecision m_PerturbationGuessCalcX;
     HighPrecision m_PerturbationGuessCalcY;

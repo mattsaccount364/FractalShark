@@ -94,19 +94,23 @@ arithmetic workers, operand snapshots, and exact integer assembly buffers
 specializations. Both allocate maximum capacity once; the dynamic specialization
 publishes active limb lengths with each batch, after the preceding batch joins.
 \code{RefOrbitPrecisionSchedule} proposes precision and maintains the independent
-error disk and conversion certificate. Its \code{AddError} and \code{SubtractError}
+difference disk and conversion certificate relative to fixed MT9 at the configured
+precision and identical copied coordinates. The common full-precision prefix
+has zero difference; after the first reduction the disk includes clipping,
+dynamic arithmetic, and a bounded hypothetical fixed step. No fixed orbit is run.
+Its \code{AddError} and \code{SubtractError}
 bounds follow the effective magnitude operation and account for the additional
 subtraction limb; zero operands use the copy bound. \code{RefOrbitRawPrecisionGuard} clips
 the state explicitly and restores allocation precision before destruction.
 \code{DescribeWorstCertification} reports each component's tightest checked
 bound and state index without replaying the orbit or changing route counts.
-The propagated radius bounds current state error and can grow or contract;
+The propagated radius bounds the current difference from fixed MT9 and can grow or contract;
 it is not a measurement of actual error or a running total of rounding losses.
 Schedule and precision-guard lifetimes, together with those of the product workers,
 remain inside the caller's MPIR allocator/TLS scope; workers and every MPIR object must be destroyed before
 their associated TLS arena is shut down. A dynamic attempt enters the reference
 cache only after completion. Certification is diagnostic: the first failed
-check prints a warning, and the same dynamic calculation continues without
+check prints \emph{Cannot guarantee equivalence to fixed MT9}, and the same dynamic calculation continues without
 restart or precision adjustment caused by the check. Fixed and dynamic MT9
 retain separate enum values and GUI/CLI selections. Entering or leaving either
 manual MT9 choice invalidates cached reference state so an explicit fixed choice
@@ -114,7 +118,8 @@ after Auto recalculates the reference. Movie resume reloads deliberately selecte
 native cache data after that invalidation. Statistics retain
 the first warning's reason, state, and working precision, the complete attempt's
 elapsed time, and its generation association through sample-type conversion.
-The log and rendering details identify the certification warning. The enclosure
+The log preserves exact finite coordinates, the limiting component, boundary,
+and headroom; rendering details identify fixed-MT9 equivalence as uncertain. The enclosure
 argument and conversion contract apply only to passing checks, as described in
 \cref{subsec:ref-orbit-dynamic-enclosure,subsec:ref-orbit-dynamic-certificate}.
 GPU reference generation instead uses the fused \code{HpSharkFloat} recurrence.

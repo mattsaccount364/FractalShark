@@ -2287,6 +2287,8 @@ RecordMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
                               const HighPrecision &cx,
                               const HighPrecision &cy,
                               mpf_srcptr x,
+                              mpf_srcptr y,
+                              bool nativeDouble,
                               uint64_t generation,
                               IterTypeFull orbitIteration,
                               IterTypeFull iterationLimit,
@@ -2313,19 +2315,24 @@ RecordMT9CertificationFailure(FractalShark::RefOrbitPrecisionSchedule &schedule,
             break;
     }
     std::ostringstream summary;
-    summary << "MT9 dynamic precision warning: " << reason << ", Z" << orbitIteration
-            << ", steps=" << stats.Steps << '/' << iterationLimit << ", bits=" << mpf_get_prec(x) << '/'
-            << stats.FullBits;
+    summary << "MT9 dynamic precision warning: Cannot guarantee equivalence to fixed MT9: " << reason
+            << ", Z" << orbitIteration << ", steps=" << stats.Steps << '/' << iterationLimit
+            << ", bits=" << mpf_get_prec(x) << '/' << stats.FullBits;
     const auto margin = schedule.DescribeWorstCertification();
+    // Extra gap replay and formatting happen only for the first warning. Both
+    // source components are still live, so the limiting budget belongs to this state.
+    const auto current = schedule.DescribeCertification(x, y, nativeDouble);
     std::ostringstream message;
     message << std::setprecision(std::numeric_limits<double>::max_digits10) << summary.str()
-            << ", generation=" << stats.GenerationNumber << ", min_bits=" << stats.MinimumBits
-            << ", mean_bits=" << stats.MeanBits << ", reduced_steps=" << stats.ReducedSteps
+            << ", certification_target=fixed_mt9, generation=" << stats.GenerationNumber
+            << ", min_bits=" << stats.MinimumBits << ", mean_bits=" << stats.MeanBits
+            << ", reduced_steps=" << stats.ReducedSteps
             << ", certification_fast_components=" << stats.FastCertifiedComponents
             << ", certification_regular_components=" << stats.RegularCertificationComponents
             << ", certification_fast_percent=" << MT9FastCertificationPercent(stats)
             << ", continuing dynamic orbit with uncertified samples, sample_type=" << sampleType << ", "
-            << MT9WorstErrorBudgets(margin, ", ");
+            << MT9WorstErrorBudgets(margin, ", ") << ", limiting_component=" << current.Component
+            << ", limiting_boundary=" << current.Boundary << ", headroom_bits=" << current.HeadroomBits;
 
     AppendMT9Coordinate(message, "cx", cx.backend());
     AppendMT9Coordinate(message, "cy", cy.backend());
@@ -2414,11 +2421,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                            std::monostate>
             precisionGuard;
         if constexpr (DynamicPrecision) {
-            schedule.emplace(mpf_get_prec(zx.backend()),
-                             cx.backend(),
-                             cy.backend(),
-                             cxMpf.backend(),
-                             cyMpf.backend());
+            schedule.emplace(mpf_get_prec(zx.backend()), cxMpf.backend(), cyMpf.backend());
+            schedule->EnableDiagnosticCapture(m_MT9DiagnosticObserver != nullptr);
             precisionGuard.emplace(zx.backend(),
                                    zy.backend(),
                                    zxSquared.backend(),
@@ -2427,6 +2431,31 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                    temporary.backend());
         }
         [[maybe_unused]] bool certificationWarningReported = false;
+        // Observe the same live state that is converted below. Diagnostic scratch
+        // replay does not affect certification counters or precision proposals.
+        const auto observeState = [&](uint64_t stateIteration, bool certified) {
+            if (m_MT9DiagnosticObserver == nullptr) {
+                return;
+            }
+            FractalShark::RefOrbitCertificationDiagnostics diagnostics;
+            const FractalShark::RefOrbitCertificationDiagnostics *certificate = nullptr;
+            const FractalShark::RefOrbitStepDiagnostics *step = nullptr;
+            if constexpr (DynamicPrecision) {
+                diagnostics = schedule->DescribeCertification(
+                    zx.backend(), zy.backend(), std::is_same_v<T, double> || std::is_same_v<T, float>);
+                certificate = &diagnostics;
+                step = &schedule->GetStepDiagnostics();
+            }
+            m_MT9DiagnosticObserver->OnState({stateIteration,
+                                              zx.backend(),
+                                              zy.backend(),
+                                              cx.backend(),
+                                              cy.backend(),
+                                              mpf_get_prec(zx.backend()),
+                                              certified,
+                                              certificate,
+                                              step});
+        };
         FractalShark::RefOrbitKaratsubaProductsT<DynamicPrecision> products(mpf_get_prec(zx.backend()));
         const T cxCast = ConvertMT9Sample<T, SubType>(cxMpf.backend());
         const T cyCast = ConvertMT9Sample<T, SubType>(cyMpf.backend());
@@ -2446,16 +2475,18 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             // Peel iteration zero: capture Z1=c and advance once without publishing a sample
             // or updating the periodicity derivative. The steady loop has a preceding sample, so
             // its publication and periodicity work need no per-iteration startup condition.
+            bool firstCertified = true;
             if constexpr (DynamicPrecision) {
-                if (!schedule->Certify(zx.backend(),
-                                       zy.backend(),
-                                       std::is_same_v<T, double> || std::is_same_v<T, float>) &&
-                    !certificationWarningReported) {
+                firstCertified = schedule->Certify(
+                    zx.backend(), zy.backend(), std::is_same_v<T, double> || std::is_same_v<T, float>);
+                if (!firstCertified && !certificationWarningReported) {
                     RecordMT9CertificationFailure(*schedule,
                                                   *m_LastDynamicPrecisionStats,
                                                   cx,
                                                   cy,
                                                   zx.backend(),
+                                                  zy.backend(),
+                                                  std::is_same_v<T, double> || std::is_same_v<T, float>,
                                                   results->GetGenerationNumber(),
                                                   1,
                                                   iterationLimit,
@@ -2463,12 +2494,16 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                     certificationWarningReported = true;
                 }
             }
+            observeState(1, firstCertified);
             const T firstX = ConvertMT9Sample<T, SubType>(zx.backend());
             const T firstY = ConvertMT9Sample<T, SubType>(zy.backend());
             // Keep this short sequence identical to the full-width update in the steady
             // loop. Explicit duplication avoids relying on a helper being inlined here.
             if constexpr (DynamicPrecision) {
                 schedule->BeginStep(zx.backend(), zy.backend(), false);
+                if (m_MT9DiagnosticObserver != nullptr) {
+                    m_MT9DiagnosticObserver->OnStepInput(1, zx.backend(), zy.backend());
+                }
                 products.Compute(zxSquared.backend(),
                                  zySquared.backend(),
                                  cross.backend(),
@@ -2483,6 +2518,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                       cxMpf.backend(),
                                       cyMpf.backend());
             } else {
+                if (m_MT9DiagnosticObserver != nullptr) {
+                    m_MT9DiagnosticObserver->OnStepInput(1, zx.backend(), zy.backend());
+                }
                 products.Compute(zxSquared.backend(),
                                  zySquared.backend(),
                                  cross.backend(),
@@ -2501,23 +2539,28 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                     AbortMonitor::GetStopCalculatingGlobal()) {
                     break;
                 }
+                bool certified = true;
                 if constexpr (DynamicPrecision) {
-                    if (!schedule->Certify(zx.backend(),
-                                           zy.backend(),
-                                           std::is_same_v<T, double> || std::is_same_v<T, float>) &&
-                        !certificationWarningReported) {
-                        RecordMT9CertificationFailure(*schedule,
-                                                      *m_LastDynamicPrecisionStats,
-                                                      cx,
-                                                      cy,
-                                                      zx.backend(),
-                                                      results->GetGenerationNumber(),
-                                                      i + 1,
-                                                      iterationLimit,
-                                                      typeid(T).name());
+                    certified = schedule->Certify(zx.backend(),
+                                                  zy.backend(),
+                                                  std::is_same_v<T, double> || std::is_same_v<T, float>);
+                    if (!certified && !certificationWarningReported) {
+                        RecordMT9CertificationFailure(
+                            *schedule,
+                            *m_LastDynamicPrecisionStats,
+                            cx,
+                            cy,
+                            zx.backend(),
+                            zy.backend(),
+                            std::is_same_v<T, double> || std::is_same_v<T, float>,
+                            results->GetGenerationNumber(),
+                            i + 1,
+                            iterationLimit,
+                            typeid(T).name());
                         certificationWarningReported = true;
                     }
                 }
+                observeState(i + 1, certified);
                 const T currentX = ConvertMT9Sample<T, SubType>(zx.backend());
                 const T currentY = ConvertMT9Sample<T, SubType>(zy.backend());
                 T doubleZx = doubleZxLast;
@@ -2560,6 +2603,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                 if constexpr (DynamicPrecision) {
                     const auto bits = schedule->BeginStep(zx.backend(), zy.backend(), true);
                     precisionGuard->Set(bits, *schedule);
+                    if (m_MT9DiagnosticObserver != nullptr) {
+                        m_MT9DiagnosticObserver->OnStepInput(i + 1, zx.backend(), zy.backend());
+                    }
                     products.Compute(zxSquared.backend(),
                                      zySquared.backend(),
                                      cross.backend(),
@@ -2574,6 +2620,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                           cxMpf.backend(),
                                           cyMpf.backend());
                 } else {
+                    if (m_MT9DiagnosticObserver != nullptr) {
+                        m_MT9DiagnosticObserver->OnStepInput(i + 1, zx.backend(), zy.backend());
+                    }
                     // Fixed split buffers accommodate changing occupied widths, including zero
                     // after cancellation; every iteration follows the same product path.
                     products.Compute(zxSquared.backend(),
@@ -2634,6 +2683,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             << " steps=" << m_LastDynamicPrecisionStats->Steps
             << " reduced_steps=" << m_LastDynamicPrecisionStats->ReducedSteps
             << " certification_enabled=1 certification_diagnostic_only=1"
+            << " certification_target=fixed_mt9"
             << " certification_fast_components=" << m_LastDynamicPrecisionStats->FastCertifiedComponents
             << " certification_regular_components="
             << m_LastDynamicPrecisionStats->RegularCertificationComponents
@@ -3364,6 +3414,13 @@ RefOrbitCalc::GetLastDynamicPrecisionStats() const
     return m_LastDynamicPrecisionStats;
 }
 
+void
+RefOrbitCalc::SetMT9DiagnosticObserver(FractalShark::RefOrbitMT9DiagnosticObserver *observer)
+{
+    std::lock_guard lock(m_PerturbationMutex);
+    m_MT9DiagnosticObserver = observer;
+}
+
 RefOrbitCalc::PerturbationAlg
 RefOrbitCalc::GetPerturbationAlg() const
 {
@@ -3509,8 +3566,9 @@ RefOrbitCalc::GetSomeDetails(RefOrbitDetails &details) const
             const auto &stats = *m_LastDynamicPrecisionStats;
             orbitMilliseconds = stats.ElapsedMilliseconds;
             if (stats.Failure != FractalShark::RefOrbitPrecisionFailure::None) {
-                algStr += " [certification warning at Z" + std::to_string(stats.FailureIteration) +
-                          ", " + std::to_string(stats.FullBits) + " bits]";
+                algStr += " [fixed-MT9 equivalence uncertain at Z" +
+                          std::to_string(stats.FailureIteration) + ", " +
+                          std::to_string(stats.FullBits) + " bits]";
             } else {
                 algStr += " [min " + std::to_string(stats.MinimumBits) + " bits, " +
                           std::to_string(stats.ReducedSteps) + " reduced steps]";

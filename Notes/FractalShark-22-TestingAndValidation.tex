@@ -144,8 +144,8 @@ and accepted-sample arguments are established separately by the derivation.
   \item \code{Local\allowbreak RoundingBounds}, \code{AddSubtract\allowbreak Bounds},
         \code{Combined\allowbreak StepBounds},
         \code{Bound\allowbreak Arithmetic}, and \code{Finite\allowbreak Recurrence} check primitive
-        bounds, the complete update against exact dyadic arithmetic, and outward
-        disk propagation against wide MPIR calculations. Invalid and
+        bounds, the complete local update against exact dyadic arithmetic, and outward
+        propagation of the fixed-MT9 difference disk. Invalid and
         out-of-range bounds must propagate to rejection.
   \item \code{Conversion\allowbreak Certificates} covers strict conversion-bin gaps,
         signs, real-axis zero, and unsupported native exponents.
@@ -168,6 +168,17 @@ and accepted-sample arguments are established separately by the derivation.
         every published sample. The expensive exact-coordinate case remains
         available locally and is excluded from hosted CI; short warning fixtures
         retain CI coverage.
+        \code{Fractadyne\allowbreak Period\allowbreak 410594\allowbreak Diagnostics}
+        embeds the $10^{30000}$ benchmark coordinates and checks all $410{,}596$
+        states at $99{,}776$ configured bits. An independent test-only fixed-MT9
+        engine measures raw differences and published conversions against the
+        production differential bound. One sequential MPIR calculation at
+        $P_{\mathrm{full}}+2048$ bits provides mathematical-error context; its
+        agreement is not the production certificate's acceptance criterion.
+        The fixture requires bound coverage, successful near-return certification,
+        and no certified sample mismatch. It also checks common-prefix cancellation,
+        clipping, precision restoration, zero inputs, limb-exponent boundaries,
+        invalid bounds, and one-warning continuation and cancellation behavior.
         \code{Converted\allowbreak Warning\allowbreak Report} checks reporting after
         double-float conversion, and \code{Warning\allowbreak Then\allowbreak Cancellation}
         checks a cancellation request during warning emission.
@@ -177,9 +188,9 @@ and accepted-sample arguments are established separately by the derivation.
         the fixed and dynamic MT9 selections, rendering, and Imagina interchange.
 \end{itemize}
 The names above omit the common \code{RefOrbit\allowbreak DynamicPrecision\_} prefix.
-For example, the existing focused Windows selection is:
+For example, the deep differential fixture can be selected alone on Windows:
 \begin{lstlisting}[language={}]
-Debug\FractalSharkTest.exe --filter "RefOrbitDynamicPrecision_*"
+Release\FractalSharkTest.exe --filter RefOrbitDynamicPrecision_FractadynePeriod410594Diagnostics
 \end{lstlisting}
 The fixed specialization is exercised through its public selection. Both hosted
 Release test steps have a 40-minute limit. The runner prints and flushes each

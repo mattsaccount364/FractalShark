@@ -155,7 +155,7 @@ Many.
 
 - The reference orbit periodicity detection implementation is from Imagina. [Imagina](https://github.com/5E-324/Imagina), as is the reference compression idea and save file format
 
-- The MT9 algorithm is inspired by the implementation in Fractadyne: [FractalDyne](https://github.com/WindySnowOwl/fractadyne)
+- The MT9 algorithm is inspired by the implementation in Fractadyne: [FractalDyne](https://github.com/WindySnowOwl/fractadyne).  Rith, Fractadyne author, has provided substantial feedback now incorporated into FractalShark, particularly v0.541+.  Rith also ran head-to-head benchmarks between Fractadyne, FractalShark and others e.g. here: [Benchmarks](https://fractalforums.org/index.php?topic=5686.0;topicseen)
 
 - The Float/Exp and linear/bilinear approximation implementations are from FractalZoomer. FractalZoomer is written in Java, but it was easy enough to port to C++ and "templatize." [FractalZoomer](https://sourceforge.net/projects/fractalzoomer/)
 

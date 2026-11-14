@@ -9,6 +9,7 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <system_error>
 #include <vector>
 
 #define WIN32_LEAN_AND_MEAN
@@ -239,6 +240,25 @@ Environment::FileClose(void *handle)
 // =========================================================================
 // System information
 // =========================================================================
+
+std::filesystem::path
+Environment::ExecutablePath()
+{
+    // Grow on truncation rather than relying on the legacy MAX_PATH limit.
+    std::vector<wchar_t> buffer(256);
+    for (;;) {
+        const DWORD length =
+            ::GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
+        if (length == 0) {
+            throw std::system_error(
+                static_cast<int>(::GetLastError()), std::system_category(), "GetModuleFileNameW");
+        }
+        if (length < buffer.size()) {
+            return std::filesystem::path(std::wstring(buffer.data(), length));
+        }
+        buffer.resize(buffer.size() * 2);
+    }
+}
 
 size_t
 Environment::SystemPageSize()
@@ -760,6 +780,10 @@ Environment::UnregisterClipboardTextSetter(ClipboardTextSetter setter, void *con
 bool
 Environment::SetClipboardText(std::string_view text)
 {
+    // Portable callers provide UTF-8. Publish Unicode text so shell commands
+    // containing non-ASCII executable and output paths survive clipboard paste.
+    const auto wideText = Environment::Utf8ToWide(text);
+    const size_t bytes = (wideText.size() + 1) * sizeof(wchar_t);
     if (!::OpenClipboard(nullptr)) {
         return false;
     }
@@ -769,7 +793,7 @@ Environment::SetClipboardText(std::string_view text)
         return false;
     }
 
-    HGLOBAL textHandle = ::GlobalAlloc(GMEM_MOVEABLE, text.size() + 1);
+    HGLOBAL textHandle = ::GlobalAlloc(GMEM_MOVEABLE, bytes);
     if (textHandle == nullptr) {
         ::CloseClipboard();
         return false;
@@ -782,11 +806,10 @@ Environment::SetClipboardText(std::string_view text)
         return false;
     }
 
-    std::memcpy(clipboardBytes, text.data(), text.size());
-    static_cast<char *>(clipboardBytes)[text.size()] = '\0';
+    std::memcpy(clipboardBytes, wideText.c_str(), bytes);
     ::GlobalUnlock(textHandle);
 
-    if (::SetClipboardData(CF_TEXT, textHandle) == nullptr) {
+    if (::SetClipboardData(CF_UNICODETEXT, textHandle) == nullptr) {
         ::GlobalFree(textHandle);
         ::CloseClipboard();
         return false;

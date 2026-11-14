@@ -314,6 +314,14 @@ ImGuiOverlay::RequestInfoModal(const char *title, const char *body)
     infoModalRequested_ = true;
     infoModalTitle_ = title ? title : "";
     infoModalBody_ = body ? body : "";
+    m_InfoModalCopyable = false;
+}
+
+void
+ImGuiOverlay::RequestCopyableInfoModal(const char *title, const char *body)
+{
+    RequestInfoModal(title, body);
+    m_InfoModalCopyable = true;
 }
 
 void
@@ -571,9 +579,23 @@ ImGuiOverlay::RenderInfoModal()
                 "FractalSharkInfoModal", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
             ImGui::TextUnformatted(title);
             ImGui::Separator();
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextUnformatted(infoModalBody_.c_str());
-            ImGui::PopTextWrapPos();
+            if (m_InfoModalCopyable) {
+                // Keep the command and its usage instructions visible at normal font sizes.
+                constexpr float copyableInfoVisibleLines = 14.0f;
+                ImGui::TextUnformatted("Select text and press Ctrl+C to copy.");
+                // ReadOnly keeps the std::string's fixed buffer valid while
+                // allowing text selection and horizontal scrolling of commands.
+                ImGui::InputTextMultiline(
+                    "##copyableInfo",
+                    infoModalBody_.data(),
+                    infoModalBody_.size() + 1,
+                    ImVec2(-1.0f, ImGui::GetTextLineHeightWithSpacing() * copyableInfoVisibleLines),
+                    ImGuiInputTextFlags_ReadOnly);
+            } else {
+                ImGui::PushTextWrapPos(0.0f);
+                ImGui::TextUnformatted(infoModalBody_.c_str());
+                ImGui::PopTextWrapPos();
+            }
             ImGui::Separator();
             if (ImGui::Button("Close", ImVec2(120, 0)) || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
                 ImGui::CloseCurrentPopup();

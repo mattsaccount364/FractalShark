@@ -73,6 +73,16 @@ TEST(MenuState_EnablementRulesUseSharedRuntimeState)
     }
 }
 
+TEST(MenuState_ZoomMovieExportIsAvailableInSharedMenu)
+{
+#include "MenuTreeDef.h"
+    const auto *node = FindMenuNode(std::span<const FractalShark::Node>{menu}, IDM_EXPORT_ZOOM_MOVIE);
+    ASSERT_TRUE(node != nullptr);
+    ASSERT_TRUE(node->checkKind == FractalShark::CheckKind::None);
+    ASSERT_EQ(FractalShark::IdmFromCommand(FractalShark::FractalCommand::ExportZoomMovie),
+              static_cast<uint32_t>(IDM_EXPORT_ZOOM_MOVIE));
+}
+
 TEST(MenuState_RepaintingReflectsFractalState)
 {
     Fractal fractal(

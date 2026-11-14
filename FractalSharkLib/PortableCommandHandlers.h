@@ -45,6 +45,7 @@ protected:
     virtual void OnExit() = 0;
 
     virtual void OnSaveLocation() = 0;
+    virtual void OnExportZoomMovie() = 0;
     virtual void OnSaveHiResBmp() = 0;
     virtual void OnSaveItersText() = 0;
     virtual void OnSaveBmp() = 0;

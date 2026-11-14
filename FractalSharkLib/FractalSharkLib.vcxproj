@@ -41,6 +41,7 @@
     <ClInclude Include="CommandCatalog.h" />
     <ClInclude Include="GuiHelp.h" />
     <ClInclude Include="GuiFileOperations.h" />
+    <ClInclude Include="MovieCommandExport.h" />
     <ClInclude Include="PortableCommandHandlers.h" />
     <ClInclude Include="SavedLocation.h" />
     <ClInclude Include="MenuTree.h" />
@@ -89,6 +90,7 @@
     <ClCompile Include="CommandCatalog.cpp" />
     <ClCompile Include="GuiHelp.cpp" />
     <ClCompile Include="GuiFileOperations.cpp" />
+    <ClCompile Include="MovieCommandExport.cpp" />
     <ClCompile Include="PortableCommandHandlers.cpp" />
     <ClCompile Include="SavedLocation.cpp" />
     <ClCompile Include="FeatureFinder.cpp" />

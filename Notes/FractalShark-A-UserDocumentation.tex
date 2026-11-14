@@ -560,6 +560,15 @@ choice and triggers any necessary reconfiguration.
   \item \emph{Save} (submenu): Output and benchmarking commands.
     \begin{itemize}
       \item \emph{Save Location...} (command): Saves the current location/view parameters.
+      \item \emph{Export Zoom Movie Command...} (command): Exports a movie INI
+      for the current center and target zoom, prompts for FFmpeg, and copies a
+      CLI command. The export preserves full coordinate precision, dimensions,
+      antialiasing, and the final iteration limit. Auto algorithms and the CLI's
+      default palette settings are used. The editable defaults are a zoom
+      multiplier of \code{1.01}, \code{60} frames per second, and \code{1000}
+      frames per chunk. The job directory is \code{<ini-stem>.movie} beside the
+      INI. Execute the command in PowerShell on Windows or a POSIX shell on Linux;
+      executing it again resumes the job. FFmpeg must include \code{libaom-av1}.
       \item \emph{Save High Res Bitmap} (command): Saves a high-resolution
       bitmap render.  The output resolution matches the current window
       dimensions (or a scaled multiple thereof).  A file-save dialog is

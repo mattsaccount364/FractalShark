@@ -648,6 +648,8 @@ static const ::FractalShark::Node menu[] = {
     FS_POPUP0(
         L"Save",
         ::FractalShark::Item(L"Save Location...", ::FractalShark::FractalCommand::SaveLocation),
+        ::FractalShark::Item(L"Export Zoom Movie Command...",
+                             ::FractalShark::FractalCommand::ExportZoomMovie),
         ::FractalShark::Item(L"Save High Res Bitmap", ::FractalShark::FractalCommand::SaveHiResBmp),
         ::FractalShark::Item(L"Save Iterations as Text", ::FractalShark::FractalCommand::SaveItersText),
         ::FractalShark::Item(L"Save Bitmap Ima&ge", ::FractalShark::FractalCommand::SaveBmp),

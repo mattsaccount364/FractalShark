@@ -372,6 +372,10 @@ protected:
     {
     }
     void
+    OnExportZoomMovie() override
+    {
+    }
+    void
     OnSaveHiResBmp() override
     {
     }
@@ -1680,7 +1684,6 @@ TEST(RefOrbitDynamicPrecision_CombinedStepBounds)
         mpf_mul(differenceY.Get(), differenceY.Get(), differenceY.Get());
         mpf_add(scratch.Get(), differenceX.Get(), differenceY.Get());
         mpf_sqrt(scratch.Get(), scratch.Get());
-        ASSERT_TRUE(schedule.GetError().IsFinite());
         const auto &step = schedule.GetStepDiagnostics();
         const auto localBound = FractalShark::RefOrbitErrorBound::Norm(step.LocalX, step.LocalY);
         if (mpf_sgn(scratch.Get()) != 0) {
@@ -1691,13 +1694,72 @@ TEST(RefOrbitDynamicPrecision_CombinedStepBounds)
         // mathematical local residual is nonzero.
         ASSERT_TRUE(schedule.GetError().IsZero());
         if (trial % 8 == 3) {
-            ASSERT_TRUE(schedule.GetError().IsZero());
+            ASSERT_TRUE(schedule.Certify(x.Get(), y.Get(), false));
         }
     }
 }
 
 TEST(RefOrbitDynamicPrecision_FiniteRecurrence)
 {
+    {
+        constexpr mp_bitcnt_t FullBits = 256;
+        constexpr int64_t DisplacementExponent = -128;
+        MpfValue zero(FullBits), one(FullBits), coordinate(FullBits), input(FullBits);
+        mpf_set_ui(one.Get(), 1);
+        FractalShark::RefOrbitPrecisionSchedule schedule(FullBits, zero.Get(), zero.Get());
+        schedule.BeginStep(one.Get(), zero.Get(), false);
+        schedule.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(DisplacementExponent),
+                                    {});
+        schedule.FinishStep({}, {});
+        // Squaring 1 versus 1+d differs by 2*d+d^2, not just the clipped d.
+        const auto linearDifference =
+            FractalShark::RefOrbitErrorBound::PowerOfTwo(DisplacementExponent + 1);
+        ASSERT_TRUE(FractalShark::RefOrbitErrorBound::Less(linearDifference, schedule.GetError()));
+        const auto reducedBound = schedule.GetError();
+        schedule.BeginStep(one.Get(), zero.Get(), false);
+        schedule.FinishStep({}, {});
+        ASSERT_TRUE(FractalShark::RefOrbitErrorBound::Less(reducedBound, schedule.GetError()));
+        // A zero dynamic input contracts a pre-existing difference quadratically.
+        const auto beforeCancellation = schedule.GetError();
+        schedule.BeginStep(zero.Get(), zero.Get(), false);
+        schedule.FinishStep({}, {});
+        ASSERT_FALSE(schedule.GetError().IsZero());
+        ASSERT_TRUE(FractalShark::RefOrbitErrorBound::Less(schedule.GetError(), beforeCancellation));
+        ASSERT_FALSE(schedule.Certify(zero.Get(), zero.Get(), false));
+        // Independently tabulated K values straddle positive and negative limb
+        // boundaries of 8*U^2; these catch truncating integer division for e<0.
+        constexpr std::array<std::array<int64_t, 2>, 6> RadiusCases{
+            {{-34, -1}, {-33, 0}, {-2, 0}, {-1, 1}, {30, 1}, {31, 2}}};
+        constexpr int64_t FullLimbs = FullBits / GMP_NUMB_BITS + 1;
+        for (const auto &testCase : RadiusCases) {
+            mpf_set_d(input.Get(), std::ldexp(1.0, static_cast<int>(testCase[0])));
+            FractalShark::RefOrbitPrecisionSchedule boundaryCase(FullBits, zero.Get(), zero.Get());
+            boundaryCase.EnableDiagnosticCapture(true);
+            boundaryCase.BeginStep(input.Get(), zero.Get(), false);
+            boundaryCase.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(
+                                                testCase[0] - static_cast<int64_t>(FullBits)),
+                                            {});
+            boundaryCase.FinishStep({}, {});
+            ASSERT_NEAR(boundaryCase.GetStepDiagnostics().FixedRoundingAllowance.Log2(),
+                        static_cast<double>((testCase[1] - FullLimbs) * GMP_NUMB_BITS + 4),
+                        1e-9);
+        }
+        // At exact 8*|c| limb powers the strict upper exponent advances one limb.
+        for (const int64_t boundaryBit : {-64, 0, 64}) {
+            mpf_set_d(coordinate.Get(), std::ldexp(1.0, static_cast<int>(boundaryBit - 3)));
+            FractalShark::RefOrbitPrecisionSchedule boundaryCase(FullBits, coordinate.Get(), zero.Get());
+            boundaryCase.EnableDiagnosticCapture(true);
+            boundaryCase.BeginStep(zero.Get(), zero.Get(), false);
+            boundaryCase.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(
+                                                boundaryBit - 2 * static_cast<int64_t>(FullBits)),
+                                            {});
+            boundaryCase.FinishStep({}, {});
+            ASSERT_NEAR(
+                boundaryCase.GetStepDiagnostics().FixedRoundingAllowance.Log2(),
+                static_cast<double>((boundaryBit / GMP_NUMB_BITS + 1 - FullLimbs) * GMP_NUMB_BITS + 4),
+                1e-9);
+        }
+    }
     MpfValue x(128), y(128), zero(128), radius(8192), scratch(8192), expected(8192), error(8192);
     MpfValue localX(128), localY(128);
     for (size_t trial = 0; trial < 32; ++trial) {
@@ -2299,109 +2361,106 @@ TEST(RefOrbitDynamicPrecision_WarningLogsAndContinues)
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
     Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
     fractal.GetRenderPool()->Drain();
-    fractal.SetNumIterations<uint64_t>(16);
     for (const bool unsupportedNative : {false, true}) {
         for (const bool cachedOrbit : {false, true}) {
-            HighPrecision::defaultPrecisionInBits(4096);
-            HighPrecision cx{1}, cy{0};
-            mpf_div_2exp(cx.backend(), cx.backend(), 2000);
-            if (!unsupportedNative) {
-                // Gaussian-integer states exercise post-reduction boundary uncertainty.
-                mpf_set_ui(cx.backend(), 0);
-                mpf_set_ui(cy.backend(), 1);
-            }
-            if (cachedOrbit) {
-                mpf_neg(cx.backend(), cx.backend());
-                mpf_neg(cy.backend(), cy.backend());
-            }
-            HighPrecision::defaultPrecisionInBits(unsupportedNative ? 64 : 1024);
-            fractal.SetNumIterations<uint64_t>(unsupportedNative ? 16 : 256);
-            RefOrbitCalc calculator(fractal, UINT64_MAX);
-            calculator.SetPerturbationAlg(
-                RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
-            uint64_t previousGeneration = 0;
-            if (cachedOrbit) {
-                calculator.ResetGuess(HighPrecision{0}, HighPrecision{0});
-                calculator.AddPerturbationReferencePoint<uint64_t,
-                                                         double,
-                                                         double,
-                                                         PerturbExtras::Disable,
-                                                         RefOrbitCalc::BenchmarkMode::Enable>(
-                    fractal.GetPtz());
-                previousGeneration = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>()
-                                         ->GetGenerationNumber();
-            }
-            calculator.ResetGuess(cx, cy);
-            const auto countersBefore = RefOrbitCalc::GetDynamicPrecisionCounters();
-            std::string diagnostic;
-            {
+            const auto checkWarning = [&]<class Sample>() {
+                HighPrecision::defaultPrecisionInBits(4096);
+                HighPrecision cx{1}, cy{0};
+                mpf_div_2exp(cx.backend(), cx.backend(), 2000);
+                if (!unsupportedNative) {
+                    // Gaussian-integer states exercise post-reduction boundary uncertainty.
+                    mpf_set_ui(cx.backend(), 0);
+                    mpf_set_ui(cy.backend(), 1);
+                }
+                if (cachedOrbit) {
+                    mpf_neg(cx.backend(), cx.backend());
+                    mpf_neg(cy.backend(), cy.backend());
+                }
+                HighPrecision::defaultPrecisionInBits(unsupportedNative ? 64 : 1024);
+                fractal.SetNumIterations<uint64_t>(unsupportedNative ? 16 : 256);
+                RefOrbitCalc calculator(fractal, UINT64_MAX);
+                calculator.SetPerturbationAlg(
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
+                uint64_t previousGeneration = 0;
+                if (cachedOrbit) {
+                    calculator.ResetGuess(HighPrecision{0}, HighPrecision{0});
+                    calculator.AddPerturbationReferencePoint<uint64_t,
+                                                             Sample,
+                                                             double,
+                                                             PerturbExtras::Disable,
+                                                             RefOrbitCalc::BenchmarkMode::Enable>(
+                        fractal.GetPtz());
+                    previousGeneration = calculator.GetLast<uint64_t, Sample, PerturbExtras::Disable>()
+                                             ->GetGenerationNumber();
+                }
+                calculator.ResetGuess(cx, cy);
+                const auto countersBefore = RefOrbitCalc::GetDynamicPrecisionCounters();
                 ScopedConsoleLogCapture capture;
                 calculator.AddPerturbationReferencePoint<uint64_t,
-                                                         double,
+                                                         Sample,
                                                          double,
                                                          PerturbExtras::Disable,
                                                          RefOrbitCalc::BenchmarkMode::Enable>(
                     fractal.GetPtz());
-                diagnostic = capture.GetMessage();
+                const auto diagnostic = capture.GetMessage();
+                const auto warning = diagnostic.find("MT9 dynamic precision warning:");
+                ASSERT_TRUE(warning != std::string::npos);
+                ASSERT_TRUE(diagnostic.find("MT9 dynamic precision warning:", warning + 1) ==
+                            std::string::npos);
+                ASSERT_TRUE(diagnostic.find("continuing dynamic orbit with uncertified samples") !=
+                            std::string::npos);
+                ASSERT_TRUE(diagnostic.find("Cannot guarantee equivalence to fixed MT9") !=
+                            std::string::npos);
+                ASSERT_TRUE(diagnostic.find("certification_target=fixed_mt9") != std::string::npos);
+                ASSERT_TRUE(diagnostic.find("headroom_bits=") != std::string::npos);
+                if (unsupportedNative) {
+                    ASSERT_TRUE(diagnostic.find(", Z1, steps=0/16, bits=64/64") != std::string::npos);
+                }
+                ASSERT_TRUE(diagnostic.find(unsupportedNative ? "UnsupportedConversion"
+                                                              : "AmbiguousSample") != std::string::npos);
+                CheckLoggedCoordinate(diagnostic, "cx", cx.backend());
+                CheckLoggedCoordinate(diagnostic, "cy", cy.backend());
+                CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);
+                const auto stats = calculator.GetLastDynamicPrecisionStats();
+                ASSERT_TRUE(stats.has_value());
+                if (unsupportedNative) {
+                    ASSERT_EQ(stats->FailureIteration, uint64_t{1});
+                } else {
+                    ASSERT_TRUE(stats->FailureIteration > 1);
+                    ASSERT_TRUE(stats->FailureWorkingBits < stats->FullBits);
+                    ASSERT_TRUE(stats->ReducedSteps > 0);
+                    ASSERT_EQ(stats->Steps, uint64_t{256});
+                }
+                ASSERT_TRUE(stats->Steps > 0);
+                ASSERT_TRUE(stats->Failure ==
+                            (unsupportedNative
+                                 ? FractalShark::RefOrbitPrecisionFailure::UnsupportedConversion
+                                 : FractalShark::RefOrbitPrecisionFailure::AmbiguousSample));
+                const auto *published = calculator.GetLast<uint64_t, Sample, PerturbExtras::Disable>();
+                ASSERT_EQ(published->GetCountOrbitEntries(), uint64_t{unsupportedNative ? 16u : 256u});
+                ASSERT_EQ(stats->GenerationNumber, published->GetGenerationNumber());
+                ASSERT_EQ(stats->PublishedGenerationNumber, published->GetGenerationNumber());
+                ASSERT_TRUE(published->GetGenerationNumber() != previousGeneration);
+                ASSERT_TRUE(published->GetOrbitData()[1].x == Sample{0.0});
+                ASSERT_EQ(HighPrecision::defaultPrecisionInBits(),
+                          uint64_t{unsupportedNative ? 64u : 1024u});
+                // A later clean attempt must not inherit the warning or count it again.
+                calculator.ResetGuess(HighPrecision{0}, HighPrecision{0});
+                calculator.AddPerturbationReferencePoint<uint64_t,
+                                                         Sample,
+                                                         double,
+                                                         PerturbExtras::Disable,
+                                                         RefOrbitCalc::BenchmarkMode::Enable>(
+                    fractal.GetPtz());
+                ASSERT_TRUE(calculator.GetLastDynamicPrecisionStats()->Failure ==
+                            FractalShark::RefOrbitPrecisionFailure::None);
+                ASSERT_EQ(calculator.GetLastDynamicPrecisionStats()->FailureIteration, uint64_t{0});
+                CheckDynamicPrecisionCounterDelta(countersBefore, 1, 1);
+            };
+            checkWarning.template operator()<double>();
+            if (!unsupportedNative) {
+                checkWarning.template operator()<HDRFloat<double>>();
             }
-            const auto warning = diagnostic.find("MT9 dynamic precision warning:");
-            ASSERT_TRUE(warning != std::string::npos);
-            ASSERT_TRUE(diagnostic.find("MT9 dynamic precision warning:", warning + 1) ==
-                        std::string::npos);
-            ASSERT_TRUE(diagnostic.find("continuing dynamic orbit with uncertified samples") !=
-                        std::string::npos);
-            if (unsupportedNative) {
-                ASSERT_TRUE(diagnostic.find(", Z1, steps=0/16, bits=64/64") != std::string::npos);
-            }
-            ASSERT_TRUE(diagnostic.find(unsupportedNative ? "UnsupportedConversion"
-                                                          : "AmbiguousSample") != std::string::npos);
-            CheckLoggedCoordinate(diagnostic, "cx", cx.backend());
-            CheckLoggedCoordinate(diagnostic, "cy", cy.backend());
-            CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);
-            const auto stats = calculator.GetLastDynamicPrecisionStats();
-            ASSERT_TRUE(stats.has_value());
-            if (unsupportedNative) {
-                ASSERT_EQ(stats->FailureIteration, uint64_t{1});
-            } else {
-                ASSERT_TRUE(stats->FailureIteration > 1);
-                ASSERT_TRUE(stats->FailureWorkingBits < stats->FullBits);
-            }
-            ASSERT_TRUE(stats->Steps > 0);
-            ASSERT_TRUE(stats->Failure ==
-                        (unsupportedNative
-                             ? FractalShark::RefOrbitPrecisionFailure::UnsupportedConversion
-                             : FractalShark::RefOrbitPrecisionFailure::AmbiguousSample));
-            const auto *published = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
-            ASSERT_TRUE(published->GetCountOrbitEntries() > 1);
-            ASSERT_EQ(stats->GenerationNumber, published->GetGenerationNumber());
-            ASSERT_EQ(stats->PublishedGenerationNumber, published->GetGenerationNumber());
-            ASSERT_TRUE(published->GetGenerationNumber() != previousGeneration);
-            ASSERT_EQ(published->GetOrbitData()[1].x, 0.0);
-            ASSERT_EQ(HighPrecision::defaultPrecisionInBits(),
-                      uint64_t{unsupportedNative ? 64u : 1024u});
-            // A later clean attempt must not inherit the warning or count it again.
-            calculator.ResetGuess(HighPrecision{0}, HighPrecision{0});
-            calculator.AddPerturbationReferencePoint<uint64_t,
-                                                     double,
-                                                     double,
-                                                     PerturbExtras::Disable,
-                                                     RefOrbitCalc::BenchmarkMode::Enable>(
-                fractal.GetPtz());
-            ASSERT_TRUE(calculator.GetLastDynamicPrecisionStats()->Failure ==
-                        FractalShark::RefOrbitPrecisionFailure::None);
-            ASSERT_EQ(calculator.GetLastDynamicPrecisionStats()->FailureIteration, uint64_t{0});
-            CheckDynamicPrecisionCounterDelta(countersBefore, 1, 1);
-            // Explicit fixed selection remains available and performs no certification.
-            calculator.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
-            calculator.ResetGuess(cx, cy);
-            calculator.AddPerturbationReferencePoint<uint64_t,
-                                                     double,
-                                                     double,
-                                                     PerturbExtras::Disable,
-                                                     RefOrbitCalc::BenchmarkMode::Enable>(
-                fractal.GetPtz());
-            ASSERT_FALSE(calculator.GetLastDynamicPrecisionStats().has_value());
-            CheckDynamicPrecisionCounterDelta(countersBefore, 1, 1);
         }
     }
 }
@@ -3259,179 +3318,6 @@ private:
     FractalShark::RefOrbitKaratsubaProductsT<false> m_Products;
 };
 
-void
-CheckMT9FixedEquivalenceEdges()
-{
-    constexpr mp_bitcnt_t FullBits = 256;
-    constexpr int64_t DisplacementExponent = -128;
-    MpfValue zero(FullBits), one(FullBits), coordinate(FullBits), input(FullBits);
-    mpf_set_ui(one.Get(), 1);
-    FractalShark::RefOrbitPrecisionSchedule schedule(FullBits, zero.Get(), zero.Get());
-    schedule.EnableDiagnosticCapture(true);
-    // Common nonzero rounding is not divergence during the identical prefix.
-    schedule.BeginStep(one.Get(), zero.Get(), false);
-    schedule.FinishStep(FractalShark::RefOrbitErrorBound::PowerOfTwo(-static_cast<int64_t>(FullBits)),
-                        {});
-    ASSERT_TRUE(schedule.GetError().IsZero());
-
-    schedule.BeginStep(one.Get(), zero.Get(), false);
-    schedule.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(DisplacementExponent), {});
-    schedule.FinishStep({}, {});
-    // Squaring 1 versus 1+d differs by 2*d+d^2, not just the clipped d.
-    const auto linearDifference = FractalShark::RefOrbitErrorBound::PowerOfTwo(DisplacementExponent + 1);
-    ASSERT_TRUE(schedule.GetError().IsFinite());
-    ASSERT_TRUE(FractalShark::RefOrbitErrorBound::Less(linearDifference, schedule.GetError()));
-    const auto reducedBound = schedule.GetError();
-    schedule.BeginStep(one.Get(), zero.Get(), false);
-    schedule.FinishStep({}, {});
-    ASSERT_TRUE(FractalShark::RefOrbitErrorBound::Less(reducedBound, schedule.GetError()));
-    // A zero dynamic input contracts a pre-existing difference quadratically.
-    const auto beforeCancellation = schedule.GetError();
-    schedule.BeginStep(zero.Get(), zero.Get(), false);
-    schedule.FinishStep({}, {});
-    ASSERT_FALSE(schedule.GetError().IsZero());
-    ASSERT_TRUE(FractalShark::RefOrbitErrorBound::Less(schedule.GetError(), beforeCancellation));
-    ASSERT_FALSE(schedule.Certify(zero.Get(), zero.Get(), false));
-    ASSERT_FALSE(schedule.Certify(one.Get(), zero.Get(), false));
-    FractalShark::RefOrbitPrecisionSchedule exactZero(FullBits, zero.Get(), zero.Get());
-    exactZero.BeginStep(zero.Get(), zero.Get(), true);
-    exactZero.FinishStep({}, {});
-    ASSERT_TRUE(exactZero.GetError().IsZero());
-    ASSERT_TRUE(exactZero.Certify(zero.Get(), zero.Get(), false));
-    // An invalid metadata bound must never become a successful zero certificate.
-    exactZero.AddStateTruncation(
-        FractalShark::RefOrbitErrorBound::PowerOfTwo(std::numeric_limits<int64_t>::max()), {});
-    exactZero.FinishStep({}, {});
-    ASSERT_FALSE(exactZero.GetError().IsFinite());
-    ASSERT_FALSE(exactZero.Certify(zero.Get(), zero.Get(), false));
-
-    // Independently tabulated K values straddle positive and negative limb
-    // boundaries of 8*U^2; these catch truncating integer division for e<0.
-    constexpr std::array<std::array<int64_t, 2>, 6> RadiusCases{
-        {{-34, -1}, {-33, 0}, {-2, 0}, {-1, 1}, {30, 1}, {31, 2}}};
-    const auto setPower = [](mpf_ptr value, int64_t exponent) {
-        mpf_set_ui(value, 1);
-        if (exponent < 0) {
-            mpf_div_2exp(value, value, static_cast<mp_bitcnt_t>(-exponent));
-        } else {
-            mpf_mul_2exp(value, value, static_cast<mp_bitcnt_t>(exponent));
-        }
-    };
-    constexpr int64_t FullLimbs = FullBits / GMP_NUMB_BITS + 1;
-    for (const auto &testCase : RadiusCases) {
-        setPower(input.Get(), testCase[0]);
-        FractalShark::RefOrbitPrecisionSchedule boundaryCase(FullBits, zero.Get(), zero.Get());
-        boundaryCase.EnableDiagnosticCapture(true);
-        boundaryCase.BeginStep(input.Get(), zero.Get(), false);
-        boundaryCase.AddStateTruncation(
-            FractalShark::RefOrbitErrorBound::PowerOfTwo(testCase[0] - static_cast<int64_t>(FullBits)),
-            {});
-        boundaryCase.FinishStep({}, {});
-        ASSERT_NEAR(boundaryCase.GetStepDiagnostics().FixedRoundingAllowance.Log2(),
-                    static_cast<double>((testCase[1] - FullLimbs) * GMP_NUMB_BITS + 4),
-                    1e-9);
-    }
-    // At exact 8*|c| limb powers the strict upper exponent advances one limb.
-    for (const int64_t boundaryBit : {-64, 0, 64}) {
-        setPower(coordinate.Get(), boundaryBit - 3);
-        FractalShark::RefOrbitPrecisionSchedule boundaryCase(FullBits, coordinate.Get(), zero.Get());
-        boundaryCase.EnableDiagnosticCapture(true);
-        boundaryCase.BeginStep(zero.Get(), zero.Get(), false);
-        boundaryCase.AddStateTruncation(FractalShark::RefOrbitErrorBound::PowerOfTwo(
-                                            boundaryBit - 2 * static_cast<int64_t>(FullBits)),
-                                        {});
-        boundaryCase.FinishStep({}, {});
-        ASSERT_NEAR(
-            boundaryCase.GetStepDiagnostics().FixedRoundingAllowance.Log2(),
-            static_cast<double>((boundaryBit / GMP_NUMB_BITS + 1 - FullLimbs) * GMP_NUMB_BITS + 4),
-            1e-9);
-    }
-}
-
-void
-CheckMT9ProductionUncertainty()
-{
-    // The exactly representable c=i orbit deliberately exercises a conservative
-    // post-reduction uncertainty at a conversion boundary. Benchmark mode keeps
-    // the reference running past its short period; no wrong-sample claim is made.
-    class WarningSink final : public std::stringbuf {
-    public:
-        WarningSink(AbortMonitor &abort, bool cancel) : m_Abort(abort), m_Cancel(cancel) {}
-        std::streamsize
-        xsputn(const char *text, std::streamsize length) override
-        {
-            const auto written = std::stringbuf::xsputn(text, length);
-            if (m_Cancel && std::string_view{text, static_cast<size_t>(length)}.find(
-                                "MT9 dynamic precision warning:") != std::string_view::npos) {
-                m_Abort.SetStopCalculating(true);
-            }
-            return written;
-        }
-
-    private:
-        AbortMonitor &m_Abort;
-        bool m_Cancel;
-    };
-    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
-    constexpr mp_bitcnt_t Bits = 1'024;
-    constexpr uint64_t Iterations = 256;
-    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
-    fractal.GetRenderPool()->Drain();
-    HighPrecision::defaultPrecisionInBits(Bits);
-    HighPrecision cx{0}, cy{1};
-    ASSERT_TRUE(fractal.RecenterViewCalc(ViewAtPrecision(Bits).Recentered(cx, cy)));
-    HighPrecision::defaultPrecisionInBits(Bits);
-    AbortMonitor abort(false);
-    for (const bool cancel : {false, true}) {
-        // Cancellation retains the production polling interval; leave enough
-        // iterations for the warning-triggered request to reach that boundary.
-        const uint64_t limit = cancel ? 2 * AbortMonitor::AbortCheckInterval : Iterations;
-        fractal.SetNumIterations<uint64_t>(limit);
-        RefOrbitCalc calculator(fractal, UINT64_MAX);
-        calculator.SetPerturbationAlg(
-            RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
-        calculator.ResetGuess(cx, cy);
-        WarningSink sink(abort, cancel);
-        const auto countersBefore = RefOrbitCalc::GetDynamicPrecisionCounters();
-        {
-            ScopedConsoleLogCapture capture(sink);
-            calculator.AddPerturbationReferencePoint<uint64_t,
-                                                     HDRFloat<double>,
-                                                     double,
-                                                     PerturbExtras::Disable,
-                                                     RefOrbitCalc::BenchmarkMode::Enable>(
-                fractal.GetPtz());
-        }
-        abort.ResetStopCalculating();
-        const auto message = sink.str();
-        const auto first = message.find("MT9 dynamic precision warning:");
-        ASSERT_TRUE(first != std::string::npos);
-        ASSERT_TRUE(message.find("MT9 dynamic precision warning:", first + 1) == std::string::npos);
-        ASSERT_TRUE(message.find("Cannot guarantee equivalence to fixed MT9") != std::string::npos);
-        ASSERT_TRUE(message.find("certification_target=fixed_mt9") != std::string::npos);
-        ASSERT_TRUE(message.find("headroom_bits=") != std::string::npos);
-        ASSERT_TRUE(message.find("continuing dynamic orbit") != std::string::npos);
-        CheckLoggedCoordinate(message, "cx", cx.backend());
-        CheckLoggedCoordinate(message, "cy", cy.backend());
-        const auto stats = calculator.GetLastDynamicPrecisionStats();
-        ASSERT_TRUE(stats.has_value());
-        ASSERT_TRUE(stats->Failure == FractalShark::RefOrbitPrecisionFailure::AmbiguousSample);
-        ASSERT_TRUE(stats->FailureIteration > 1);
-        ASSERT_TRUE(stats->FailureWorkingBits < stats->FullBits);
-        ASSERT_TRUE(stats->ReducedSteps > 0);
-        const auto *published = calculator.GetLast<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
-        ASSERT_TRUE(published != nullptr);
-        ASSERT_EQ(published->GetGenerationNumber(), stats->PublishedGenerationNumber);
-        if (cancel) {
-            ASSERT_TRUE(published->GetCountOrbitEntries() < limit);
-        } else {
-            ASSERT_EQ(published->GetCountOrbitEntries(), Iterations);
-            ASSERT_EQ(stats->Steps, Iterations);
-        }
-        CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);
-    }
-}
-
 class MT9NucleusDiagnostics final : public FractalShark::RefOrbitMT9DiagnosticObserver {
 public:
     static constexpr uint64_t ReturnIteration = 410'594;
@@ -3534,9 +3420,6 @@ public:
         const bool equivalent = state.Certified;
         m_EquivalenceAccepted += equivalent;
         m_EquivalenceCertifiedMismatches += equivalent && !sameFixedSample;
-        if (!equivalent && m_FirstInconclusive == 0) {
-            m_FirstInconclusive = state.StateIteration;
-        }
         if (state.StateIteration == ReturnIteration) {
             m_ReturnEquivalent = equivalent;
         }
@@ -3721,7 +3604,7 @@ public:
             << " certification_target=fixed_mt9";
         FractalSharkLog::LogLine(__FILE__, __LINE__)
             << "MT9 fixed-equivalence summary: states=" << m_DynamicStates
-            << " accepted=" << m_EquivalenceAccepted << " first_inconclusive_Z=" << m_FirstInconclusive
+            << " accepted=" << m_EquivalenceAccepted << " first_inconclusive_Z=" << m_FirstRejection
             << " sample_mismatches=" << m_FixedDynamicMismatches
             << " certified_mismatches=" << m_EquivalenceCertifiedMismatches
             << " bound_violations=" << m_EquivalenceBoundViolations
@@ -3878,7 +3761,6 @@ private:
     uint64_t m_FirstReduction{};
     uint64_t m_FixedDynamicMismatches{}, m_EquivalenceBoundViolations{}, m_FixedModelViolations{};
     uint64_t m_PrefixDifferences{}, m_EquivalenceAccepted{}, m_EquivalenceCertifiedMismatches{};
-    uint64_t m_FirstInconclusive{};
     bool m_ReturnEquivalent{};
 };
 
@@ -3889,8 +3771,6 @@ TEST(RefOrbitDynamicPrecision_FractadynePeriod410594Diagnostics)
     // MIT/Apache-2.0 Fractadyne bench-kit scene 60-mini-p410594-1e30000.
     // Preserve every decimal digit independently of the external benchmark checkout.
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
-    CheckMT9FixedEquivalenceEdges();
-    CheckMT9ProductionUncertainty();
     Fractal fractal(1280, 720, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
     fractal.GetRenderPool()->Drain();
     fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
@@ -4851,48 +4731,61 @@ TEST(RefOrbitDynamicPrecision_WarningThenCancellation)
     private:
         AbortMonitor &m_Abort;
     };
-    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
-    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
-    fractal.GetRenderPool()->Drain();
-    constexpr uint64_t Iterations = 2 * AbortMonitor::AbortCheckInterval;
-    fractal.SetNumIterations<uint64_t>(Iterations);
-    HighPrecision::defaultPrecisionInBits(1024);
-    HighPrecision cx{0}, cy{1};
-    RefOrbitCalc calculator(fractal, UINT64_MAX);
-    calculator.SetPerturbationAlg(
-        RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
-    // A previous result remains cached while cancellation publishes the normal prefix.
-    calculator.ResetGuess(HighPrecision{0}, HighPrecision{0});
-    calculator.AddPerturbationReferencePoint<uint64_t,
-                                             double,
-                                             double,
-                                             PerturbExtras::Disable,
-                                             RefOrbitCalc::BenchmarkMode::Enable>(fractal.GetPtz());
-    const auto *previous = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
-    calculator.ResetGuess(cx, cy);
-    const auto countersBefore = RefOrbitCalc::GetDynamicPrecisionCounters();
-    AbortMonitor abort(false);
-    CancelOnWarning capture(abort);
-    {
-        ScopedConsoleLogCapture redirect(capture);
+    const auto checkCancellation = [&]<class Sample>() {
+        MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+        Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+        fractal.GetRenderPool()->Drain();
+        constexpr uint64_t Iterations = 2 * AbortMonitor::AbortCheckInterval;
+        fractal.SetNumIterations<uint64_t>(Iterations);
+        HighPrecision::defaultPrecisionInBits(1024);
+        HighPrecision cx{0}, cy{1};
+        RefOrbitCalc calculator(fractal, UINT64_MAX);
+        calculator.SetPerturbationAlg(
+            RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
+        // A previous result remains cached while cancellation publishes the normal prefix.
+        calculator.ResetGuess(HighPrecision{0}, HighPrecision{0});
         calculator.AddPerturbationReferencePoint<uint64_t,
-                                                 double,
+                                                 Sample,
                                                  double,
                                                  PerturbExtras::Disable,
                                                  RefOrbitCalc::BenchmarkMode::Enable>(fractal.GetPtz());
-    }
-    ASSERT_TRUE(AbortMonitor::GetStopCalculatingGlobal());
-    abort.ResetStopCalculating();
-    const auto stats = calculator.GetLastDynamicPrecisionStats();
-    ASSERT_TRUE(stats.has_value());
-    ASSERT_TRUE(stats->Failure != FractalShark::RefOrbitPrecisionFailure::None);
-    ASSERT_TRUE(stats->FailureIteration > 1);
-    const auto *prefix = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
-    ASSERT_TRUE(prefix != previous);
-    ASSERT_EQ(stats->PublishedGenerationNumber, prefix->GetGenerationNumber());
-    ASSERT_TRUE(prefix->GetCountOrbitEntries() > 1);
-    ASSERT_TRUE(prefix->GetCountOrbitEntries() < Iterations);
-    CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);
+        const auto *previous = calculator.GetLast<uint64_t, Sample, PerturbExtras::Disable>();
+        calculator.ResetGuess(cx, cy);
+        const auto countersBefore = RefOrbitCalc::GetDynamicPrecisionCounters();
+        AbortMonitor abort(false);
+        CancelOnWarning capture(abort);
+        {
+            ScopedConsoleLogCapture redirect(capture);
+            calculator.AddPerturbationReferencePoint<uint64_t,
+                                                     Sample,
+                                                     double,
+                                                     PerturbExtras::Disable,
+                                                     RefOrbitCalc::BenchmarkMode::Enable>(
+                fractal.GetPtz());
+        }
+        ASSERT_TRUE(AbortMonitor::GetStopCalculatingGlobal());
+        abort.ResetStopCalculating();
+        const auto stats = calculator.GetLastDynamicPrecisionStats();
+        ASSERT_TRUE(stats.has_value());
+        ASSERT_TRUE(stats->Failure == FractalShark::RefOrbitPrecisionFailure::AmbiguousSample);
+        ASSERT_TRUE(stats->FailureWorkingBits < stats->FullBits);
+        ASSERT_TRUE(stats->ReducedSteps > 0);
+        const auto message = capture.str();
+        const auto warning = message.find("MT9 dynamic precision warning:");
+        ASSERT_TRUE(warning != std::string::npos);
+        ASSERT_TRUE(message.find("MT9 dynamic precision warning:", warning + 1) == std::string::npos);
+        CheckLoggedCoordinate(message, "cx", cx.backend());
+        CheckLoggedCoordinate(message, "cy", cy.backend());
+        ASSERT_TRUE(stats->FailureIteration > 1);
+        const auto *prefix = calculator.GetLast<uint64_t, Sample, PerturbExtras::Disable>();
+        ASSERT_TRUE(prefix != previous);
+        ASSERT_EQ(stats->PublishedGenerationNumber, prefix->GetGenerationNumber());
+        ASSERT_TRUE(prefix->GetCountOrbitEntries() > 1);
+        ASSERT_TRUE(prefix->GetCountOrbitEntries() < Iterations);
+        CheckDynamicPrecisionCounterDelta(countersBefore, 0, 1);
+    };
+    checkCancellation.template operator()<double>();
+    checkCancellation.template operator()<HDRFloat<double>>();
 }
 
 TEST(RefOrbitDynamicPrecision_ConvertedWarningReport)
@@ -4964,6 +4857,7 @@ TEST(RefOrbitDynamicPrecision_ManualSelectionsInvalidateCachedReference)
                                                              RefOrbitCalc::Extras::None,
                                                              double>() == nullptr));
         ASSERT_FALSE(calculator.GetLastDynamicPrecisionStats().has_value());
+        const auto countersBefore = RefOrbitCalc::GetDynamicPrecisionCounters();
         calculator.ResetGuess(HighPrecision{0}, HighPrecision{0});
         calculator.AddPerturbationReferencePoint<uint64_t,
                                                  double,
@@ -4971,6 +4865,13 @@ TEST(RefOrbitDynamicPrecision_ManualSelectionsInvalidateCachedReference)
                                                  PerturbExtras::Disable,
                                                  RefOrbitCalc::BenchmarkMode::Enable>(fractal.GetPtz());
         const auto *published = calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
+        CheckDynamicPrecisionCounterDelta(
+            countersBefore,
+            calculator.GetPerturbationAlg() ==
+                    RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision
+                ? 1
+                : 0,
+            0);
         ASSERT_TRUE(published->GetCountOrbitEntries() > 1);
         ASSERT_EQ(calculator.GetLastDynamicPrecisionStats().has_value(),
                   calculator.GetPerturbationAlg() ==

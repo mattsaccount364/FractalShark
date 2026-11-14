@@ -6,6 +6,24 @@ native reference-orbit and LA autosave and loader, with **unchanged flush and
 shutdown semantics**. A crash in the existing persistence window can require
 recalculating a reference. Incomplete reference calculations are not checkpointed.
 
+## Export from the GUI
+
+Choose **Save → Export Zoom Movie Command…** in the Windows or Linux GUI. Save
+the INI and select an FFmpeg executable that includes `libaom-av1`. The GUI
+locates the neighboring CLI executable, or asks for its location if necessary.
+After saving, it copies the command and displays it for review. Paste it into
+PowerShell on Windows or a POSIX shell on Linux to start rendering.
+
+The current view becomes the final playback frame. The export preserves its
+full coordinate precision, dimensions, antialiasing, and final iteration limit.
+It uses Auto render/reference algorithms and the CLI's default palette settings.
+The INI defaults to `1.01` zoom per frame, `60` fps, and `1000` frames per chunk;
+edit it before starting to change these settings. The job directory is
+`<ini-stem>.movie` beside the INI. Rerun the command to resume the same job;
+changing settings after starting requires a new job directory.
+
+## Create a configuration manually
+
 Create a configuration file (decimal coordinate values can contain millions of
 digits; they are not passed through the operating system command line):
 

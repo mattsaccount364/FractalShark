@@ -397,6 +397,9 @@ PortableCommandHandlers::ExecuteCommand(FractalCommand cmd)
         case FractalCommand::SaveBmp:
             OnSaveBmp();
             return;
+        case FractalCommand::ExportZoomMovie:
+            OnExportZoomMovie();
+            return;
         case FractalCommand::SaveRefOrbitText:
             OnSaveRefOrbitText();
             return;

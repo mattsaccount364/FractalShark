@@ -755,6 +755,11 @@ check uncertain. For exactly real copied $\widetilde c$, both imaginary orbits
 remain exactly zero by the recurrence, independently of the real-component error radius;
 the implementation preserves that structural exception.
 
+Regular certification and on-demand diagnostics share the conversion-bin evaluator.
+Production stops at the first rejected boundary; diagnostic replay evaluates both
+boundaries and components without changing counters, failure history, or worst-margin
+records. The fast certificate remains independent of diagnostic replay.
+
 \paragraph{Accepted-sample theorem.}
 Under the enclosure proposition's hypotheses and the supported conversion
 semantics, every component accepted by the conversion test equals the

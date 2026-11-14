@@ -309,6 +309,13 @@ Environment::FileClose(void *handle)
 // System information
 // =========================================================================
 
+std::filesystem::path
+Environment::ExecutablePath()
+{
+    // procfs identifies the loaded binary even when launched through PATH or a symlink.
+    return std::filesystem::read_symlink("/proc/self/exe");
+}
+
 size_t
 Environment::SystemPageSize()
 {

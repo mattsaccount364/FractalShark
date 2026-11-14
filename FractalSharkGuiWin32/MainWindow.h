@@ -67,6 +67,7 @@ public:
 
     // Save / Load
     void OnSaveLocation() override;
+    void OnExportZoomMovie() override;
     void OnSaveHiResBmp() override;
     void OnSaveItersText() override;
     void OnSaveBmp() override;
@@ -121,9 +122,11 @@ private:
     enum class OpenBoxType { Open, Save };
 
     static std::wstring OpenFileDialog(OpenBoxType type,
-                                       const wchar_t *filter = nullptr,
-                                       const wchar_t *defaultExtension = nullptr,
-                                       unsigned long saveFlags = 0);
+                                       const wchar_t *filter,
+                                       const wchar_t *defaultExtension,
+                                       unsigned long saveFlags,
+                                       const wchar_t *title,
+                                       const std::wstring &initialFilename);
 
     void ActivateSavedOrbit(size_t index);
     void ActivateImagina(size_t index);

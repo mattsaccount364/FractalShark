@@ -195,6 +195,20 @@ private:
         bool Failed{};
     };
 
+    // Raw regular-certificate results are shared by production and on-demand
+    // diagnostics. They own no limbs and never update attempt history or counters.
+    struct GapCertificate {
+        RefOrbitErrorBound Rounding;
+        RefOrbitErrorBound Comparison;
+        RefOrbitErrorBound Gap;
+    };
+    struct ComponentCertificate {
+        RefOrbitErrorBudgetStatus Status{RefOrbitErrorBudgetStatus::Exact};
+        int64_t Exponent{};
+        std::array<GapCertificate, 2> Gaps;
+        size_t GapCount{};
+    };
+
     static RefOrbitErrorBound AccumulateRoundingErrors(std::span<const int64_t> quanta);
     RefOrbitErrorBound FixedRoundingAllowance(RefOrbitErrorBound fixedRadius) const;
     void RecordCertificationStatus(CertificationRecord &record, RefOrbitErrorBudgetStatus status);
@@ -203,14 +217,17 @@ private:
                              RefOrbitErrorBound gap,
                              int64_t componentExponent,
                              bool passes);
-    bool CertifyComponent(mpf_srcptr value, bool nativeDouble, CertificationRecord &record);
+    RefOrbitPrecisionFailure CertifyComponent(mpf_srcptr value,
+                                              bool nativeDouble,
+                                              CertificationRecord &record);
     // A false fast result is inconclusive; only the regular certificate may reject.
     bool TryCertifyComponentFast(mpf_srcptr value, bool nativeDouble, CertificationRecord &record);
-    bool CertifyComponentSlow(mpf_srcptr value, bool nativeDouble, CertificationRecord &record);
-    bool CheckGap(mpf_srcptr larger,
-                  mpf_srcptr smaller,
-                  int64_t componentExponent,
-                  CertificationRecord &record);
+    ComponentCertificate EvaluateComponent(mpf_srcptr value, bool nativeDouble, bool detailed);
+    RefOrbitComponentErrorBudget DescribeBudget(RefOrbitErrorBudgetStatus status,
+                                                uint64_t stateIteration,
+                                                RefOrbitErrorBound comparison,
+                                                RefOrbitErrorBound gap,
+                                                int64_t componentExponent) const;
 
     mp_bitcnt_t m_FullBits;
     mp_bitcnt_t m_Quantum;

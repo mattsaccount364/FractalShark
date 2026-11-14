@@ -14,6 +14,7 @@
 #include "JobObject.h"
 #include "MainWindow.h"
 #include "MenuState.h"
+#include "MovieCommandExport.h"
 #include "PngParallelSave.h"
 #include "SavedLocation.h"
 
@@ -21,6 +22,7 @@
 #include "resource.h"
 #include <Windowsx.h>
 
+#include <algorithm>
 #include <commdlg.h>
 #include <string>
 
@@ -34,6 +36,8 @@ constexpr const wchar_t *kOrbitFileFilter = L"All\0*.*\0Imagina\0*.im\0";
 constexpr const wchar_t *kPngFileFilter = L"PNG Image\0*.png\0All\0*.*\0";
 constexpr const wchar_t *kTextFileFilter = L"Text File\0*.txt\0All\0*.*\0";
 constexpr const wchar_t *kPaletteMapFileFilter = L"Palette Map (*.map)\0*.map\0All Files (*.*)\0*.*\0";
+constexpr const wchar_t *kMovieIniFileFilter = L"Movie Configuration (*.ini)\0*.ini\0All Files\0*.*\0";
+constexpr const wchar_t *kExecutableFileFilter = L"Executable (*.exe)\0*.exe\0All Files\0*.*\0";
 
 bool
 IsNumpadAddSubtractCharacter(WPARAM wParam, LPARAM lParam) noexcept
@@ -159,6 +163,50 @@ MainWindow::OnSaveLocation()
 {
     MenuSaveCurrentLocation();
 }
+
+void
+MainWindow::OnExportZoomMovie()
+{
+    const std::string configuration = CaptureMovieConfiguration(*gFractal);
+    const auto filename = OpenFileDialog(OpenBoxType::Save,
+                                         kMovieIniFileFilter,
+                                         L"ini",
+                                         OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
+                                         L"Save zoom movie configuration",
+                                         Environment::Utf8ToWide(MakeTimestampedOutputStem() + ".ini"));
+    if (filename.empty()) {
+        return;
+    }
+    const auto ffmpeg = OpenFileDialog(OpenBoxType::Open,
+                                       kExecutableFileFilter,
+                                       L"exe",
+                                       0,
+                                       L"Select FFmpeg (requires libaom-av1)",
+                                       L"ffmpeg.exe");
+    if (ffmpeg.empty()) {
+        return;
+    }
+    auto cli = FindMovieCliExecutable(Environment::ExecutablePath(), MovieCommandShell::PowerShell);
+    if (!cli) {
+        const auto selected = OpenFileDialog(OpenBoxType::Open,
+                                             kExecutableFileFilter,
+                                             L"exe",
+                                             0,
+                                             L"Locate FractalSharkCli.exe",
+                                             L"FractalSharkCli.exe");
+        if (selected.empty()) {
+            return;
+        }
+        cli = std::filesystem::path(selected);
+    }
+    const auto output = BuildMovieCommandExport(
+        AppendExtensionIfMissing(filename, L".ini"), *cli, ffmpeg, MovieCommandShell::PowerShell);
+    SaveMovieConfiguration(output, configuration);
+    const bool copied = CopyMovieCommandToClipboard(output);
+    const auto message = Environment::Utf8ToWide(DescribeMovieCommandExport(output, copied));
+    ::MessageBoxW(hWnd, message.c_str(), L"Zoom Movie Command", MB_OK | MB_APPLMODAL);
+}
+
 void
 MainWindow::OnSaveHiResBmp()
 {
@@ -223,7 +271,8 @@ MainWindow::OnLoadRefOrbitImagMaxSaved()
 void
 MainWindow::OnLoadCustomPalette()
 {
-    const std::wstring filename = OpenFileDialog(OpenBoxType::Open, kPaletteMapFileFilter, L"map");
+    const std::wstring filename =
+        OpenFileDialog(OpenBoxType::Open, kPaletteMapFileFilter, L"map", 0, nullptr, L"");
     if (filename.empty()) {
         return;
     }
@@ -575,41 +624,41 @@ std::wstring
 MainWindow::OpenFileDialog(OpenBoxType type,
                            const wchar_t *filter,
                            const wchar_t *defaultExtension,
-                           unsigned long saveFlags)
+                           unsigned long saveFlags,
+                           const wchar_t *title,
+                           const std::wstring &initialFilename)
 {
-    OPENFILENAME ofn;    // common dialog box structure
-    wchar_t szFile[260]; // buffer for file name
-
-    // Initialize OPENFILENAME
-    ZeroMemory(&ofn, sizeof(ofn));
+    // Windows extended paths can contain 32767 characters plus the terminator.
+    constexpr size_t fileDialogCapacity = 32768;
+    std::vector<wchar_t> filename(fileDialogCapacity);
+    if (initialFilename.size() >= filename.size()) {
+        throw FractalSharkSeriousException("File dialog initial filename is too long");
+    }
+    std::copy(initialFilename.begin(), initialFilename.end(), filename.begin());
+    OPENFILENAME ofn{};
     ofn.lStructSize = sizeof(ofn);
-    ofn.hwndOwner = NULL;
-    ofn.lpstrFile = szFile;
-    ofn.lpstrFile[0] = '\0';
-    ofn.nMaxFile = sizeof(szFile) / sizeof(szFile[0]);
+    ofn.hwndOwner = nullptr;
+    ofn.lpstrFile = filename.data();
+    ofn.nMaxFile = static_cast<DWORD>(filename.size());
     ofn.lpstrFilter = filter != nullptr ? filter : kOrbitFileFilter;
     ofn.nFilterIndex = 1;
     ofn.lpstrFileTitle = NULL;
     ofn.nMaxFileTitle = 0;
     ofn.lpstrInitialDir = NULL;
     ofn.lpstrDefExt = defaultExtension;
-
-    if (type == OpenBoxType::Open) {
-        // Display the Open dialog box.
-        ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
-        if (GetOpenFileName(&ofn) == TRUE) {
-            return std::wstring(ofn.lpstrFile);
-        } else {
-            return std::wstring();
-        }
-    } else {
-        ofn.Flags = saveFlags;
-        if (GetSaveFileName(&ofn) == TRUE) {
-            return std::wstring(ofn.lpstrFile);
-        } else {
-            return std::wstring();
-        }
+    ofn.lpstrTitle = title;
+    // Dialog navigation must not change relative renderer/autosave paths.
+    ofn.Flags = OFN_NOCHANGEDIR |
+                (type == OpenBoxType::Open ? OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST : saveFlags);
+    const BOOL accepted = type == OpenBoxType::Open ? GetOpenFileName(&ofn) : GetSaveFileName(&ofn);
+    if (accepted) {
+        return std::wstring(ofn.lpstrFile);
     }
+    const DWORD error = CommDlgExtendedError();
+    if (error != 0) {
+        throw FractalSharkSeriousException("File dialog failed: " + std::to_string(error));
+    }
+    return {};
 }
 
 bool
@@ -1298,8 +1347,12 @@ MainWindow::MenuLoadEnterLocation()
 void
 MainWindow::MenuSaveBMP()
 {
-    std::wstring filename = OpenFileDialog(
-        OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    std::wstring filename = OpenFileDialog(OpenBoxType::Save,
+                                           kPngFileFilter,
+                                           L"png",
+                                           OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
+                                           nullptr,
+                                           L"");
     if (!filename.empty()) {
         filename = AppendExtensionIfMissing(std::move(filename), L".png");
         SaveFractalOutput(*gFractal, FractalOutputFile::CurrentImage, std::move(filename));
@@ -1309,8 +1362,12 @@ MainWindow::MenuSaveBMP()
 void
 MainWindow::MenuSaveHiResBMP()
 {
-    std::wstring filename = OpenFileDialog(
-        OpenBoxType::Save, kPngFileFilter, L"png", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    std::wstring filename = OpenFileDialog(OpenBoxType::Save,
+                                           kPngFileFilter,
+                                           L"png",
+                                           OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
+                                           nullptr,
+                                           L"");
     if (!filename.empty()) {
         filename = AppendExtensionIfMissing(std::move(filename), L".png");
         SaveFractalOutput(*gFractal, FractalOutputFile::HighResolutionImage, std::move(filename));
@@ -1320,8 +1377,12 @@ MainWindow::MenuSaveHiResBMP()
 void
 MainWindow::MenuSaveItersAsText()
 {
-    std::wstring filename = OpenFileDialog(
-        OpenBoxType::Save, kTextFileFilter, L"txt", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    std::wstring filename = OpenFileDialog(OpenBoxType::Save,
+                                           kTextFileFilter,
+                                           L"txt",
+                                           OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
+                                           nullptr,
+                                           L"");
     if (!filename.empty()) {
         filename = AppendExtensionIfMissing(std::move(filename), L".txt");
         SaveFractalOutput(*gFractal, FractalOutputFile::IterationsText, std::move(filename));
@@ -1388,8 +1449,12 @@ MainWindow::MenuLoadImagDyn(ImaginaSettings loadSettings)
 void
 MainWindow::MenuSaveImag(CompressToDisk compression)
 {
-    std::wstring filename = OpenFileDialog(
-        OpenBoxType::Save, kOrbitFileFilter, L"im", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    std::wstring filename = OpenFileDialog(OpenBoxType::Save,
+                                           kOrbitFileFilter,
+                                           L"im",
+                                           OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
+                                           nullptr,
+                                           L"");
     if (!filename.empty()) {
         filename = AppendExtensionIfMissing(std::move(filename), L".im");
         SaveReferenceOrbit(*gFractal, compression, std::move(filename));
@@ -1399,17 +1464,21 @@ MainWindow::MenuSaveImag(CompressToDisk compression)
 void
 MainWindow::MenuDiffImag()
 {
-    std::wstring output = OpenFileDialog(
-        OpenBoxType::Save, kOrbitFileFilter, L"im", OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT);
+    std::wstring output = OpenFileDialog(OpenBoxType::Save,
+                                         kOrbitFileFilter,
+                                         L"im",
+                                         OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
+                                         nullptr,
+                                         L"");
     if (output.empty()) {
         return;
     }
     output = AppendExtensionIfMissing(std::move(output), L".im");
-    std::wstring first = OpenFileDialog(OpenBoxType::Open);
+    std::wstring first = OpenFileDialog(OpenBoxType::Open, nullptr, nullptr, 0, nullptr, L"");
     if (first.empty()) {
         return;
     }
-    std::wstring second = OpenFileDialog(OpenBoxType::Open);
+    std::wstring second = OpenFileDialog(OpenBoxType::Open, nullptr, nullptr, 0, nullptr, L"");
     if (!second.empty()) {
         DiffReferenceOrbits(*gFractal, std::move(output), std::move(first), std::move(second));
     }
@@ -1419,7 +1488,7 @@ void
 MainWindow::MenuLoadImag(ImaginaSettings loadSettings, CompressToDisk compression)
 {
 
-    std::wstring filename = OpenFileDialog(OpenBoxType::Open);
+    std::wstring filename = OpenFileDialog(OpenBoxType::Open, nullptr, nullptr, 0, nullptr, L"");
     if (filename.empty()) {
         return;
     }

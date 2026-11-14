@@ -205,6 +205,7 @@ enum class FractalCommand : uint32_t {
     SaveHiResBmp = 40801,
     SaveItersText = 40802,
     SaveBmp = 40803,
+    ExportZoomMovie = 40804,
 
     SaveRefOrbitText = 40810,
     SaveRefOrbitTextSimple = 40811,

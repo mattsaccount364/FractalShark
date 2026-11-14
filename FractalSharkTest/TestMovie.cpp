@@ -4,6 +4,8 @@
 #include "FractalSharkCli/MovieJob.h"
 #include "FractalSharkCli/MovieRunner.h"
 #include "FractalSharkCli/MovieVideo.h"
+#include "MovieCommandExport.h"
+#include "ScopedMpir.h"
 #include "TestFramework.h"
 #include "WPngImage/lodepng.h"
 
@@ -81,6 +83,239 @@ Settings(const FractalSharkCli::MovieConfig &config)
     return settings;
 }
 } // namespace
+
+TEST(MovieExport_CapturesViewAndDefaultsIndependentlyOfPalette)
+{
+    MPIRPrecision restorePrecision{HighPrecision::defaultPrecisionInBits()};
+    MovieTestDirectory directory;
+    Fractal fractal(40, 24, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.EnqueueMutation("prepare movie export test", [](Fractal &current) {
+        current.SetOfflineView(PointZoomBBConverter(HighPrecision("-0.75"),
+                                                    HighPrecision("0.1"),
+                                                    HighPrecision("16"),
+                                                    PointZoomBBConverter::TestMode::Enabled));
+        current.SetNumIterations<uint64_t>(12345);
+        current.ResetDimensions(40, 24, 3);
+        current.UsePaletteType(FractalPaletteType::Random);
+        current.UsePalette(12);
+        current.SetPaletteAuxDepth(3);
+        current.RotateFractalPalette(19);
+    });
+    const auto configuration = FractalShark::CaptureMovieConfiguration(fractal);
+    const auto output = FractalShark::BuildMovieCommandExport(
+        directory.Path / "target.ini", "cli", "ffmpeg", FractalShark::MovieCommandShell::Posix);
+    FractalShark::SaveMovieConfiguration(output, configuration);
+    const auto config = FractalSharkCli::MovieConfig::Load(output.ConfigurationPath);
+    ASSERT_EQ(config.Values.at("center-x"), fractal.GetPtz().GetPtX().str());
+    ASSERT_EQ(config.Values.at("center-y"), fractal.GetPtz().GetPtY().str());
+    ASSERT_EQ(config.Values.at("zoom"), fractal.GetPtz().GetZoomFactor().str());
+    ASSERT_EQ(config.Values.at("width"), "40");
+    ASSERT_EQ(config.Values.at("height"), "24");
+    ASSERT_EQ(config.Values.at("antialiasing"), "3");
+    ASSERT_EQ(config.Values.at("iterations"), "12345");
+    ASSERT_EQ(config.Values.at("render-algorithm"), "AutoSelect");
+    ASSERT_EQ(config.Values.at("perturbation-alg"), "Auto");
+    ASSERT_EQ(config.Values.at("zoom-per-frame"), "1.01");
+    ASSERT_EQ(config.WideIterations, 8192u);
+    ASSERT_EQ(config.Fps, 60u);
+    ASSERT_EQ(config.ChunkFrames, 1000u);
+    ASSERT_EQ(config.SlopeRatio, 8);
+    ASSERT_TRUE(configuration.find("palette") == std::string::npos);
+    ASSERT_EQ(std::distance(std::filesystem::directory_iterator(directory.Path),
+                            std::filesystem::directory_iterator()),
+              1);
+    fractal.EnqueueMutation("change movie export test palette", [](Fractal &current) {
+        current.UsePaletteType(FractalPaletteType::Summer);
+        current.UsePalette(5);
+        current.SetPaletteAuxDepth(0);
+    });
+    ASSERT_EQ(FractalShark::CaptureMovieConfiguration(fractal), configuration);
+}
+
+TEST(MovieExport_PreservesCoordinatesBeyondCommandLineLimits)
+{
+    MPIRPrecision restorePrecision{HighPrecision::defaultPrecisionInBits()};
+    MovieTestDirectory directory;
+    Fractal fractal(16, 16, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    // More than 32768 coordinate digits exercises the Windows command-line
+    // boundary. Only file paths, never these digits, belong in the command.
+    HighPrecision::defaultPrecisionInBits(160000);
+    const HighPrecision center("0." + std::string(40000, '1'));
+    const PointZoomBBConverter view(center,
+                                    HighPrecision("0.125"),
+                                    HighPrecision("1e40000"),
+                                    PointZoomBBConverter::TestMode::Disabled);
+    fractal.SetOfflineView(view);
+    const auto output = FractalShark::BuildMovieCommandExport(
+        directory.Path / "deep.ini", "cli", "ffmpeg", FractalShark::MovieCommandShell::PowerShell);
+    const auto configuration = FractalShark::CaptureMovieConfiguration(fractal);
+    FractalShark::SaveMovieConfiguration(output, configuration);
+    const auto config = FractalSharkCli::MovieConfig::Load(output.ConfigurationPath);
+    ASSERT_TRUE(config.Values.at("center-x").size() > 32768);
+    ASSERT_EQ(config.Values.at("center-x"), fractal.GetPtz().GetPtX().str());
+    ASSERT_EQ(config.Values.at("zoom"), fractal.GetPtz().GetZoomFactor().str());
+    ASSERT_TRUE(output.Command.size() < 32768);
+    ASSERT_TRUE(output.Command.find("--center-x") == std::string::npos);
+}
+
+TEST(MovieExport_QuotesBothShellsAndRejectsMultilinePaths)
+{
+    MovieTestDirectory directory;
+    const auto ini = directory.Path / "named 'movie' $(literal).ini";
+    const auto cli = directory.Path / "CLI with spaces";
+    const auto ffmpeg = directory.Path / "ffmpeg & encoder";
+    const auto powershell = FractalShark::BuildMovieCommandExport(
+        ini, cli, ffmpeg, FractalShark::MovieCommandShell::PowerShell);
+    const auto posix =
+        FractalShark::BuildMovieCommandExport(ini, cli, ffmpeg, FractalShark::MovieCommandShell::Posix);
+    ASSERT_TRUE(powershell.Command.starts_with("& '"));
+    ASSERT_TRUE(powershell.Command.find("named ''movie'' $(literal).ini'") != std::string::npos);
+    ASSERT_TRUE(posix.Command.starts_with("'"));
+    ASSERT_TRUE(posix.Command.find("named '\\''movie'\\'' $(literal).ini'") != std::string::npos);
+    const auto unicode = FractalShark::BuildMovieCommandExport(
+        directory.Path / std::filesystem::path(u8"movie \u03b2.ini"),
+        cli,
+        ffmpeg,
+        FractalShark::MovieCommandShell::PowerShell);
+    ASSERT_TRUE(unicode.Command.find("movie \xce\xb2.ini'") != std::string::npos);
+    ASSERT_EQ(powershell.JobDirectory, directory.Path / "named 'movie' $(literal).movie");
+    ASSERT_TRUE(FractalShark::DescribeMovieCommandExport(powershell, false).find(powershell.Command) !=
+                std::string::npos);
+    ASSERT_TRUE(FractalShark::DescribeMovieCommandExport(powershell, false).find("manually") !=
+                std::string::npos);
+    ASSERT_THROWS(
+        FractalShark::BuildMovieCommandExport(
+            directory.Path / "bad\nname.ini", cli, ffmpeg, FractalShark::MovieCommandShell::Posix),
+        FractalSharkSeriousException);
+    ASSERT_THROWS(FractalShark::BuildMovieCommandExport(
+                      {}, cli, ffmpeg, FractalShark::MovieCommandShell::PowerShell),
+                  FractalSharkSeriousException);
+}
+
+TEST(MovieExport_DiscoversInstalledAndCMakeCliPaths)
+{
+    MovieTestDirectory directory;
+    const auto gui = directory.Path / "FractalSharkGuiLinux" / "FractalSharkGuiLinux";
+    std::filesystem::create_directory(gui.parent_path());
+    ASSERT_FALSE(FractalShark::FindMovieCliExecutable(gui, FractalShark::MovieCommandShell::Posix));
+    const auto target = directory.Path / "FractalSharkCli" / "FractalSharkCli";
+    std::filesystem::create_directory(target.parent_path());
+    FractalSharkCli::WriteMovieText(target, "executable fixture");
+    const auto cmakeCli =
+        FractalShark::FindMovieCliExecutable(gui, FractalShark::MovieCommandShell::Posix);
+    ASSERT_TRUE(cmakeCli.has_value());
+    ASSERT_EQ(*cmakeCli, target);
+    const auto sibling = gui.parent_path() / "FractalSharkCli.exe";
+    FractalSharkCli::WriteMovieText(sibling, "executable fixture");
+    const auto installedCli =
+        FractalShark::FindMovieCliExecutable(gui, FractalShark::MovieCommandShell::PowerShell);
+    ASSERT_TRUE(installedCli.has_value());
+    ASSERT_EQ(*installedCli, sibling);
+    ASSERT_TRUE(Environment::ExecutablePath().is_absolute());
+    ASSERT_TRUE(std::filesystem::is_regular_file(Environment::ExecutablePath()));
+}
+
+TEST(MovieExport_ValidatesTargetsAndReportsPublicationFailure)
+{
+    MovieTestDirectory directory;
+    Fractal fractal(16, 16, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.EnqueueMutation("set invalid movie target", [](Fractal &current) {
+        current.SetOfflineView(PointZoomBBConverter(HighPrecision(0),
+                                                    HighPrecision(0),
+                                                    HighPrecision("0.5"),
+                                                    PointZoomBBConverter::TestMode::Enabled));
+    });
+    ASSERT_THROWS(FractalShark::CaptureMovieConfiguration(fractal), FractalSharkSeriousException);
+    // A capture validation error must not terminate the render worker.
+    fractal.EnqueueMutation("set valid movie target", [](Fractal &current) {
+        current.SetOfflineView(PointZoomBBConverter(HighPrecision(0),
+                                                    HighPrecision(0),
+                                                    HighPrecision(1),
+                                                    PointZoomBBConverter::TestMode::Enabled));
+    });
+    const auto configuration = FractalShark::CaptureMovieConfiguration(fractal);
+    const auto output = FractalShark::BuildMovieCommandExport(directory.Path / "missing" / "target.ini",
+                                                              "cli",
+                                                              "ffmpeg",
+                                                              FractalShark::MovieCommandShell::Posix);
+    ASSERT_THROWS(FractalShark::SaveMovieConfiguration(output, configuration),
+                  FractalSharkSeriousException);
+    ASSERT_FALSE(std::filesystem::exists(output.ConfigurationPath));
+}
+
+TEST(MovieExport_RendersAndResumesFromExportedConfiguration)
+{
+    MPIRPrecision restorePrecision{HighPrecision::defaultPrecisionInBits()};
+    MovieTestDirectory directory;
+    std::string configuration;
+    {
+        Fractal fractal(16, 16, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+        fractal.EnqueueMutation("prepare single-frame movie export", [](Fractal &current) {
+            current.SetOfflineView(PointZoomBBConverter(HighPrecision("-0.75"),
+                                                        HighPrecision("0.1"),
+                                                        HighPrecision(1),
+                                                        PointZoomBBConverter::TestMode::Enabled));
+            current.SetNumIterations<uint64_t>(64);
+        });
+        configuration = FractalShark::CaptureMovieConfiguration(fractal);
+    }
+    const auto output = FractalShark::BuildMovieCommandExport(
+        directory.Path / "target.ini", "cli", "ffmpeg", FractalShark::MovieCommandShell::Posix);
+    FractalShark::SaveMovieConfiguration(output, configuration);
+    ASSERT_EQ(
+        FractalSharkCli::RunMovie(
+            output.JobDirectory, output.ConfigurationPath, {}, GpuMode::Disabled, UINT64_MAX, Settings),
+        0);
+    // The job snapshots the input. Resume must not need the GUI's export again.
+    std::filesystem::remove(output.ConfigurationPath);
+    ASSERT_EQ(
+        FractalSharkCli::RunMovie(output.JobDirectory, {}, {}, GpuMode::Disabled, UINT64_MAX, Settings),
+        0);
+    FractalSharkCli::MovieJob job(output.JobDirectory, {});
+    ASSERT_EQ(job.Config().Values.at("wide-iterations"), "64");
+    ASSERT_EQ(job.Remaining(), 0u);
+    ASSERT_TRUE(std::filesystem::exists(job.FramePath(0)));
+    ASSERT_FALSE(job.Config().Values.contains("palette-map"));
+}
+
+#ifndef _WIN32
+TEST(MovieExport_ClipboardFailuresPreserveManualCopyRecovery)
+{
+    struct ClipboardRegistration {
+        bool Throw = false;
+        bool Accept = false;
+        std::string Text;
+
+        static bool
+        Set(void *context, std::string_view text)
+        {
+            auto &registration = *static_cast<ClipboardRegistration *>(context);
+            if (registration.Throw) {
+                throw FractalSharkSeriousException("Simulated clipboard ownership failure");
+            }
+            registration.Text = text;
+            return registration.Accept;
+        }
+        ClipboardRegistration() { Environment::RegisterClipboardTextSetter(Set, this); }
+        ~ClipboardRegistration() { Environment::UnregisterClipboardTextSetter(Set, this); }
+    } clipboard;
+    MovieTestDirectory directory;
+    const auto output = FractalShark::BuildMovieCommandExport(
+        directory.Path / "clipboard.ini", "cli", "ffmpeg", FractalShark::MovieCommandShell::Posix);
+    const std::string configuration =
+        "[movie]\ncenter-x=0\ncenter-y=0\nzoom=1\nzoom-per-frame=1.01\niterations=64\n";
+    FractalShark::SaveMovieConfiguration(output, configuration);
+    ASSERT_FALSE(FractalShark::CopyMovieCommandToClipboard(output));
+    clipboard.Throw = true;
+    ASSERT_FALSE(FractalShark::CopyMovieCommandToClipboard(output));
+    ASSERT_EQ(FractalSharkCli::ReadMovieText(output.ConfigurationPath), configuration);
+    clipboard.Throw = false;
+    clipboard.Accept = true;
+    ASSERT_TRUE(FractalShark::CopyMovieCommandToClipboard(output));
+    ASSERT_EQ(clipboard.Text, output.Command);
+}
+#endif
 
 TEST(MovieHash_StandardVectorsAndStreaming)
 {

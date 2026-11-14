@@ -70,6 +70,8 @@ public:
     // "Close" button; this is the Linux equivalent of MessageBox(MB_OK).
     // If a previous modal is still open, the new request supersedes it.
     void RequestInfoModal(const char *title, const char *body);
+    // Read-only selectable text supports manual recovery if clipboard ownership fails.
+    void RequestCopyableInfoModal(const char *title, const char *body);
 
     // Open the context menu at the given client coordinate on the next
     // RenderFrame() call.  Commands are dispatched through PortableCommandHandlers.
@@ -164,6 +166,7 @@ private:
     bool infoModalOpen_ = false;
     std::string infoModalTitle_;
     std::string infoModalBody_;
+    bool m_InfoModalCopyable = false;
 
     // Open/save file dialog state.
     bool fileDlgRequested_ = false;

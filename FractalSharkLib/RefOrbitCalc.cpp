@@ -2183,13 +2183,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
 namespace {
 
-// Edit the Debug value here to disable the experiment. Keeping the switch next to
-// MT9 and using if constexpr removes counter updates and output when disabled.
-#ifndef NDEBUG
+// Keeping the switch next to MT9 lets counters and their output compile out together.
 constexpr bool EnableMT9DynamicPrecisionCounters = true;
-#else
-constexpr bool EnableMT9DynamicPrecisionCounters = true;
-#endif
 
 // These must be shared by all MT9 template instantiations, rather than function
 // statics that would split the totals by sample type, iteration width, or storage.
@@ -2251,25 +2246,16 @@ MT9WorstErrorBudgets(const FractalShark::RefOrbitWorstCertificationDiagnostics &
     std::ostringstream message;
     message << std::fixed << std::setprecision(2);
     const auto appendBudget = [&](const FractalShark::RefOrbitComponentErrorBudget &budget) {
-        switch (budget.Status) {
-            case FractalShark::RefOrbitErrorBudgetStatus::NotChecked:
-                message << "not_checked";
-                break;
-            case FractalShark::RefOrbitErrorBudgetStatus::Bounded:
-                message << budget.UsedBits << '/' << budget.MaxBits;
-                break;
-            case FractalShark::RefOrbitErrorBudgetStatus::Exact:
-                message << "exact";
-                break;
-            case FractalShark::RefOrbitErrorBudgetStatus::ZeroGap:
-                message << "zero_gap";
-                break;
-            case FractalShark::RefOrbitErrorBudgetStatus::UnsupportedConversion:
-                message << "unsupported_conversion";
-                break;
-            case FractalShark::RefOrbitErrorBudgetStatus::InvalidBound:
-                message << "invalid_bound";
-                break;
+        if (budget.Status == FractalShark::RefOrbitErrorBudgetStatus::Bounded) {
+            message << budget.UsedBits << '/' << budget.MaxBits;
+        } else {
+            // The labels follow the contiguous diagnostic enum; Bounded is numeric.
+            constexpr std::array StatusNames{
+                "not_checked", "", "exact", "zero_gap", "unsupported_conversion", "invalid_bound"};
+            static_assert(StatusNames.size() ==
+                          static_cast<size_t>(FractalShark::RefOrbitErrorBudgetStatus::InvalidBound) +
+                              1);
+            message << StatusNames[static_cast<size_t>(budget.Status)];
         }
     };
     message << "worst_real_error_bits=";
@@ -2430,10 +2416,29 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                    cross.backend(),
                                    temporary.backend());
         }
-        [[maybe_unused]] bool certificationWarningReported = false;
-        // Observe the same live state that is converted below. Diagnostic scratch
-        // replay does not affect certification counters or precision proposals.
-        const auto observeState = [&](uint64_t stateIteration, bool certified) {
+        constexpr bool nativeDouble = std::is_same_v<T, double> || std::is_same_v<T, float>;
+        // Certify and observe the same live state that is converted below. Only
+        // the schedule's first failure transition emits a warning; replay is observational.
+        const auto checkState = [&](uint64_t stateIteration) {
+            bool certified = true;
+            if constexpr (DynamicPrecision) {
+                const bool previouslyFailed =
+                    schedule->GetStats().Failure != FractalShark::RefOrbitPrecisionFailure::None;
+                certified = schedule->Certify(zx.backend(), zy.backend(), nativeDouble);
+                if (!certified && !previouslyFailed) {
+                    RecordMT9CertificationFailure(*schedule,
+                                                  *m_LastDynamicPrecisionStats,
+                                                  cx,
+                                                  cy,
+                                                  zx.backend(),
+                                                  zy.backend(),
+                                                  nativeDouble,
+                                                  results->GetGenerationNumber(),
+                                                  stateIteration,
+                                                  iterationLimit,
+                                                  typeid(T).name());
+                }
+            }
             if (m_MT9DiagnosticObserver == nullptr) {
                 return;
             }
@@ -2441,8 +2446,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
             const FractalShark::RefOrbitCertificationDiagnostics *certificate = nullptr;
             const FractalShark::RefOrbitStepDiagnostics *step = nullptr;
             if constexpr (DynamicPrecision) {
-                diagnostics = schedule->DescribeCertification(
-                    zx.backend(), zy.backend(), std::is_same_v<T, double> || std::is_same_v<T, float>);
+                diagnostics = schedule->DescribeCertification(zx.backend(), zy.backend(), nativeDouble);
                 certificate = &diagnostics;
                 step = &schedule->GetStepDiagnostics();
             }
@@ -2470,45 +2474,19 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
         T doubleZxLast{0.0};
         T doubleZyLast{0.0};
 
-        // Cancellation is checked after setup, before the first certification/update.
-        if (!AbortMonitor::GetStopCalculatingGlobal()) {
-            // Peel iteration zero: capture Z1=c and advance once without publishing a sample
-            // or updating the periodicity derivative. The steady loop has a preceding sample, so
-            // its publication and periodicity work need no per-iteration startup condition.
-            bool firstCertified = true;
+        // One update sequence keeps startup and steady-state arithmetic identical.
+        // Workers snapshot occupied widths after clipping, including exact zero inputs.
+        const auto advanceState = [&](uint64_t stateIteration, bool allowReduction) {
             if constexpr (DynamicPrecision) {
-                firstCertified = schedule->Certify(
-                    zx.backend(), zy.backend(), std::is_same_v<T, double> || std::is_same_v<T, float>);
-                if (!firstCertified && !certificationWarningReported) {
-                    RecordMT9CertificationFailure(*schedule,
-                                                  *m_LastDynamicPrecisionStats,
-                                                  cx,
-                                                  cy,
-                                                  zx.backend(),
-                                                  zy.backend(),
-                                                  std::is_same_v<T, double> || std::is_same_v<T, float>,
-                                                  results->GetGenerationNumber(),
-                                                  1,
-                                                  iterationLimit,
-                                                  typeid(T).name());
-                    certificationWarningReported = true;
-                }
+                const auto bits = schedule->BeginStep(zx.backend(), zy.backend(), allowReduction);
+                precisionGuard->Set(bits, *schedule);
             }
-            observeState(1, firstCertified);
-            const T firstX = ConvertMT9Sample<T, SubType>(zx.backend());
-            const T firstY = ConvertMT9Sample<T, SubType>(zy.backend());
-            // Keep this short sequence identical to the full-width update in the steady
-            // loop. Explicit duplication avoids relying on a helper being inlined here.
+            if (m_MT9DiagnosticObserver != nullptr) {
+                m_MT9DiagnosticObserver->OnStepInput(stateIteration, zx.backend(), zy.backend());
+            }
+            products.Compute(
+                zxSquared.backend(), zySquared.backend(), cross.backend(), zx.backend(), zy.backend());
             if constexpr (DynamicPrecision) {
-                schedule->BeginStep(zx.backend(), zy.backend(), false);
-                if (m_MT9DiagnosticObserver != nullptr) {
-                    m_MT9DiagnosticObserver->OnStepInput(1, zx.backend(), zy.backend());
-                }
-                products.Compute(zxSquared.backend(),
-                                 zySquared.backend(),
-                                 cross.backend(),
-                                 zx.backend(),
-                                 zy.backend());
                 schedule->ComputeStep(zx.backend(),
                                       zy.backend(),
                                       zxSquared.backend(),
@@ -2518,19 +2496,22 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                                       cxMpf.backend(),
                                       cyMpf.backend());
             } else {
-                if (m_MT9DiagnosticObserver != nullptr) {
-                    m_MT9DiagnosticObserver->OnStepInput(1, zx.backend(), zy.backend());
-                }
-                products.Compute(zxSquared.backend(),
-                                 zySquared.backend(),
-                                 cross.backend(),
-                                 zx.backend(),
-                                 zy.backend());
                 mpf_mul_ui(cross.backend(), cross.backend(), 2);
                 mpf_add(zy.backend(), cross.backend(), cyMpf.backend());
                 mpf_sub(temporary.backend(), zxSquared.backend(), zySquared.backend());
                 mpf_add(zx.backend(), temporary.backend(), cxMpf.backend());
             }
+        };
+
+        // Cancellation is checked after setup, before the first certification/update.
+        if (!AbortMonitor::GetStopCalculatingGlobal()) {
+            // Peel iteration zero: capture Z1=c and advance once without publishing a sample
+            // or updating the periodicity derivative. The steady loop has a preceding sample, so
+            // its publication and periodicity work need no per-iteration startup condition.
+            checkState(1);
+            const T firstX = ConvertMT9Sample<T, SubType>(zx.backend());
+            const T firstY = ConvertMT9Sample<T, SubType>(zy.backend());
+            advanceState(1, false);
             doubleZxLast = firstX;
             doubleZyLast = firstY;
 
@@ -2539,28 +2520,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                     AbortMonitor::GetStopCalculatingGlobal()) {
                     break;
                 }
-                bool certified = true;
-                if constexpr (DynamicPrecision) {
-                    certified = schedule->Certify(zx.backend(),
-                                                  zy.backend(),
-                                                  std::is_same_v<T, double> || std::is_same_v<T, float>);
-                    if (!certified && !certificationWarningReported) {
-                        RecordMT9CertificationFailure(
-                            *schedule,
-                            *m_LastDynamicPrecisionStats,
-                            cx,
-                            cy,
-                            zx.backend(),
-                            zy.backend(),
-                            std::is_same_v<T, double> || std::is_same_v<T, float>,
-                            results->GetGenerationNumber(),
-                            i + 1,
-                            iterationLimit,
-                            typeid(T).name());
-                        certificationWarningReported = true;
-                    }
-                }
-                observeState(i + 1, certified);
+                checkState(i + 1);
                 const T currentX = ConvertMT9Sample<T, SubType>(zx.backend());
                 const T currentY = ConvertMT9Sample<T, SubType>(zy.backend());
                 T doubleZx = doubleZxLast;
@@ -2600,42 +2560,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT9Karatsuba(const PointZoomBBConvert
                     dzdcX = highTwo * (doubleZx * dzdcX - doubleZy * dzdcY) + highOne;
                     dzdcY = highTwo * (doubleZx * dzdcY + doubleZy * dzdcXOrig);
                 }
-                if constexpr (DynamicPrecision) {
-                    const auto bits = schedule->BeginStep(zx.backend(), zy.backend(), true);
-                    precisionGuard->Set(bits, *schedule);
-                    if (m_MT9DiagnosticObserver != nullptr) {
-                        m_MT9DiagnosticObserver->OnStepInput(i + 1, zx.backend(), zy.backend());
-                    }
-                    products.Compute(zxSquared.backend(),
-                                     zySquared.backend(),
-                                     cross.backend(),
-                                     zx.backend(),
-                                     zy.backend());
-                    schedule->ComputeStep(zx.backend(),
-                                          zy.backend(),
-                                          zxSquared.backend(),
-                                          zySquared.backend(),
-                                          cross.backend(),
-                                          temporary.backend(),
-                                          cxMpf.backend(),
-                                          cyMpf.backend());
-                } else {
-                    if (m_MT9DiagnosticObserver != nullptr) {
-                        m_MT9DiagnosticObserver->OnStepInput(i + 1, zx.backend(), zy.backend());
-                    }
-                    // Fixed split buffers accommodate changing occupied widths, including zero
-                    // after cancellation; every iteration follows the same product path.
-                    products.Compute(zxSquared.backend(),
-                                     zySquared.backend(),
-                                     cross.backend(),
-                                     zx.backend(),
-                                     zy.backend());
-                    // Preserve MT3's sequence of full-width operations after the three products.
-                    mpf_mul_ui(cross.backend(), cross.backend(), 2);
-                    mpf_add(zy.backend(), cross.backend(), cyMpf.backend());
-                    mpf_sub(temporary.backend(), zxSquared.backend(), zySquared.backend());
-                    mpf_add(zx.backend(), temporary.backend(), cxMpf.backend());
-                }
+                advanceState(i + 1, true);
                 doubleZxLast = currentX;
                 doubleZyLast = currentY;
                 // Benchmark mode retains derivative work but compiles out periodicity termination.

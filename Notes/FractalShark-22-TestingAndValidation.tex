@@ -176,9 +176,10 @@ and accepted-sample arguments are established separately by the derivation.
         $P_{\mathrm{full}}+2048$ bits provides mathematical-error context; its
         agreement is not the production certificate's acceptance criterion.
         The fixture requires bound coverage, successful near-return certification,
-        and no certified sample mismatch. It also checks common-prefix cancellation,
-        clipping, precision restoration, zero inputs, limb-exponent boundaries,
-        invalid bounds, and one-warning continuation and cancellation behavior.
+        and no certified sample mismatch. The short recurrence and integration
+        fixtures cover common-prefix cancellation, clipping, precision restoration,
+        zero inputs, limb-exponent boundaries, invalid bounds, and one-warning
+        continuation and cancellation behavior for native and HDR samples.
         \code{Converted\allowbreak Warning\allowbreak Report} checks reporting after
         double-float conversion, and \code{Warning\allowbreak Then\allowbreak Cancellation}
         checks a cancellation request during warning emission.

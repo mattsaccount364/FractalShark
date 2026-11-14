@@ -43,6 +43,18 @@ HasBoundableExponent(mpf_srcptr value)
            value->_mp_exp <= BoundExponentLimit / GMP_NUMB_BITS;
 }
 
+bool
+SupportsConversion(mpf_srcptr value, int64_t exponent, bool nativeDouble)
+{
+    // Native subnormals/overflow and HDR exponent overflow retain their existing
+    // unsupported status, even when dynamic and fixed states are exactly equal.
+    return exponent >= std::numeric_limits<int32_t>::min() &&
+           exponent <= std::numeric_limits<int32_t>::max() &&
+           (!nativeDouble || value->_mp_size == 0 ||
+            (exponent >= std::numeric_limits<double>::min_exponent &&
+             exponent <= std::numeric_limits<double>::max_exponent));
+}
+
 // Local MPIR errors are either exact zero or a single binary quantum. Reserve two
 // tags outside the supported exponent range; no floating-point bound is needed
 // until all terms for one component have been collected.
@@ -626,11 +638,8 @@ RefOrbitPrecisionSchedule::RecordCertificationStatus(CertificationRecord &record
 {
     // A finite check supersedes exact checks; any failure supersedes a finite
     // record. Once a failure is observed, retain its earliest state.
-    if (record.Failed) {
-        return;
-    }
-    if (status == RefOrbitErrorBudgetStatus::Exact &&
-        record.Status != RefOrbitErrorBudgetStatus::NotChecked) {
+    if (record.Failed || (status == RefOrbitErrorBudgetStatus::Exact &&
+                          record.Status != RefOrbitErrorBudgetStatus::NotChecked)) {
         return;
     }
     record.Status = status;
@@ -645,16 +654,13 @@ RefOrbitPrecisionSchedule::RecordCertification(CertificationRecord &record,
                                                int64_t componentExponent,
                                                bool passes)
 {
-    if (!comparison.IsFinite() || !gap.IsFinite()) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::InvalidBound);
-        return;
-    }
-    if (gap.IsZero()) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::ZeroGap);
-        return;
-    }
-    if (comparison.IsZero()) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::Exact);
+    const auto status = !comparison.IsFinite() || !gap.IsFinite()
+                            ? RefOrbitErrorBudgetStatus::InvalidBound
+                        : gap.IsZero()        ? RefOrbitErrorBudgetStatus::ZeroGap
+                        : comparison.IsZero() ? RefOrbitErrorBudgetStatus::Exact
+                                              : RefOrbitErrorBudgetStatus::Bounded;
+    if (status != RefOrbitErrorBudgetStatus::Bounded) {
+        RecordCertificationStatus(record, status);
         return;
     }
     if (record.Failed) {
@@ -688,36 +694,37 @@ RefOrbitPrecisionSchedule::RecordCertification(CertificationRecord &record,
     record.Failed = !passes;
 }
 
-bool
-RefOrbitPrecisionSchedule::CheckGap(mpf_srcptr larger,
-                                    mpf_srcptr smaller,
-                                    int64_t componentExponent,
-                                    CertificationRecord &record)
-{
-    const auto rounding = SubtractError(larger, smaller, m_Gap.Get());
-    mpf_sub(m_Gap.Get(), larger, smaller);
-    if (mpf_sgn(m_Gap.Get()) <= 0) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::ZeroGap);
-        return false;
-    }
-    const auto comparison = RefOrbitErrorBound::Add(m_Error, rounding);
-    const auto gap = RefOrbitErrorBound::FromMpfLower(m_Gap.Get());
-    const bool passes = RefOrbitErrorBound::Less(comparison, gap);
-    RecordCertification(record, comparison, gap, componentExponent, passes);
-    return passes;
-}
-
-bool
+RefOrbitPrecisionFailure
 RefOrbitPrecisionSchedule::CertifyComponent(mpf_srcptr value,
                                             bool nativeDouble,
                                             CertificationRecord &record)
 {
     if (TryCertifyComponentFast(value, nativeDouble, record)) {
         ++m_Stats.FastCertifiedComponents;
-        return true;
+        return RefOrbitPrecisionFailure::None;
     }
     ++m_Stats.RegularCertificationComponents;
-    return CertifyComponentSlow(value, nativeDouble, record);
+    const auto certificate = EvaluateComponent(value, nativeDouble, false);
+    if (certificate.Status != RefOrbitErrorBudgetStatus::Bounded) {
+        RecordCertificationStatus(record, certificate.Status);
+        return certificate.Status == RefOrbitErrorBudgetStatus::Exact ? RefOrbitPrecisionFailure::None
+               : certificate.Status == RefOrbitErrorBudgetStatus::UnsupportedConversion
+                   ? RefOrbitPrecisionFailure::UnsupportedConversion
+                   : RefOrbitPrecisionFailure::AmbiguousSample;
+    }
+    for (size_t index = 0; index < certificate.GapCount; ++index) {
+        const auto &boundary = certificate.Gaps[index];
+        const bool passes = RefOrbitErrorBound::Less(boundary.Comparison, boundary.Gap);
+        if (boundary.Gap.IsZero()) {
+            RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::ZeroGap);
+        } else {
+            RecordCertification(record, boundary.Comparison, boundary.Gap, certificate.Exponent, passes);
+        }
+        if (!passes) {
+            return RefOrbitPrecisionFailure::AmbiguousSample;
+        }
+    }
+    return RefOrbitPrecisionFailure::None;
 }
 
 bool
@@ -740,11 +747,7 @@ RefOrbitPrecisionSchedule::TryCertifyComponentFast(mpf_srcptr value,
         // HasBoundableExponent leaves enough int64_t room for normalization and
         // the additional 85-bit shift, even at the supported exponent endpoints.
         const int64_t exponent = size == 0 ? 0 : static_cast<int64_t>(value->_mp_exp) * WordBits - shift;
-        if ((nativeDouble && size != 0 &&
-             (exponent < std::numeric_limits<double>::min_exponent ||
-              exponent > std::numeric_limits<double>::max_exponent)) ||
-            exponent < std::numeric_limits<int32_t>::min() ||
-            exponent > std::numeric_limits<int32_t>::max()) {
+        if (!SupportsConversion(value, exponent, nativeDouble)) {
             return false;
         }
         // Preserve conversion restrictions even when the state has exact zero
@@ -790,36 +793,25 @@ RefOrbitPrecisionSchedule::TryCertifyComponentFast(mpf_srcptr value,
     }
 }
 
-bool
-RefOrbitPrecisionSchedule::CertifyComponentSlow(mpf_srcptr value,
-                                                bool nativeDouble,
-                                                CertificationRecord &record)
+RefOrbitPrecisionSchedule::ComponentCertificate
+RefOrbitPrecisionSchedule::EvaluateComponent(mpf_srcptr value, bool nativeDouble, bool detailed)
 {
-    if (!HasBoundableExponent(value)) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::UnsupportedConversion);
-        m_Stats.Failure = RefOrbitPrecisionFailure::UnsupportedConversion;
-        return false;
+    ComponentCertificate result;
+    double mantissa = 0.0;
+    const bool boundable = HasBoundableExponent(value);
+    if (boundable) {
+        result.Exponent = mpf_get_2exp_d(&mantissa, value);
     }
-    double mantissa;
-    const int64_t exponent = mpf_get_2exp_d(&mantissa, value);
-    // Reject native subnormals/overflow and unrepresentable HDR exponents: the
-    // certificate does not cover their platform-specific conversion rules.
-    if ((nativeDouble && value->_mp_size != 0 &&
-         (exponent < std::numeric_limits<double>::min_exponent ||
-          exponent > std::numeric_limits<double>::max_exponent)) ||
-        exponent < std::numeric_limits<int32_t>::min() ||
-        exponent > std::numeric_limits<int32_t>::max()) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::UnsupportedConversion);
-        m_Stats.Failure = RefOrbitPrecisionFailure::UnsupportedConversion;
-        return false;
+    if (!boundable || !SupportsConversion(value, result.Exponent, nativeDouble)) {
+        result.Status = RefOrbitErrorBudgetStatus::UnsupportedConversion;
+        return result;
     }
     if (m_Error.IsZero()) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::Exact);
-        return true;
+        return result;
     }
     if (value->_mp_size == 0) {
-        RecordCertificationStatus(record, RefOrbitErrorBudgetStatus::ZeroGap);
-        return false;
+        result.Status = RefOrbitErrorBudgetStatus::ZeroGap;
+        return result;
     }
     // A positive magnitude truncated to d lies in [d, nextafter(d,+inf)). Enclose
     // both distances by exact dyadic subtraction plus a defensive rounding bound.
@@ -828,20 +820,33 @@ RefOrbitPrecisionSchedule::CertifyComponentSlow(mpf_srcptr value,
     // never be cleared or used as an arithmetic destination.
     __mpf_struct magnitude = *value;
     magnitude._mp_size = static_cast<decltype(magnitude._mp_size)>(MagnitudeSize(value));
-    const auto setBoundary = [&](double boundary) {
-        mpf_set_d(m_Boundary.Get(), boundary);
-        if (exponent >= 0) {
-            mpf_mul_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(exponent));
+    result.Status = RefOrbitErrorBudgetStatus::Bounded;
+    for (auto &boundary : result.Gaps) {
+        const bool upper = result.GapCount != 0;
+        const double endpoint =
+            upper ? std::nextafter(std::abs(mantissa), std::numeric_limits<double>::infinity())
+                  : std::abs(mantissa);
+        mpf_set_d(m_Boundary.Get(), endpoint);
+        if (result.Exponent >= 0) {
+            mpf_mul_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(result.Exponent));
         } else {
-            mpf_div_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(-exponent));
+            mpf_div_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(-result.Exponent));
         }
-    };
-    setBoundary(std::abs(mantissa));
-    if (!CheckGap(&magnitude, m_Boundary.Get(), exponent, record)) {
-        return false;
+        mpf_srcptr larger = upper ? m_Boundary.Get() : &magnitude;
+        mpf_srcptr smaller = upper ? &magnitude : m_Boundary.Get();
+        boundary.Rounding = SubtractError(larger, smaller, m_Gap.Get());
+        mpf_sub(m_Gap.Get(), larger, smaller);
+        boundary.Gap = mpf_sgn(m_Gap.Get()) > 0 ? RefOrbitErrorBound::FromMpfLower(m_Gap.Get())
+                                                : RefOrbitErrorBound{};
+        boundary.Comparison = RefOrbitErrorBound::Add(m_Error, boundary.Rounding);
+        ++result.GapCount;
+        // Production stops at the first rejected boundary. Diagnostic replay
+        // evaluates both, but never changes records, counters, or failure history.
+        if (!detailed && !RefOrbitErrorBound::Less(boundary.Comparison, boundary.Gap)) {
+            break;
+        }
     }
-    setBoundary(std::nextafter(std::abs(mantissa), std::numeric_limits<double>::infinity()));
-    return CheckGap(m_Boundary.Get(), &magnitude, exponent, record);
+    return result;
 }
 
 bool
@@ -849,34 +854,29 @@ RefOrbitPrecisionSchedule::Certify(mpf_srcptr x, mpf_srcptr y, bool nativeDouble
 {
     // Keep checking after a warning, but latch its original cause and state. Later
     // checks and error propagation are diagnostics and never steer the schedule.
-    const auto firstFailure = m_Stats.Failure;
-    bool valid = false;
+    auto failure = RefOrbitPrecisionFailure::None;
     if (!m_Error.IsFinite()) {
-        m_Stats.Failure = RefOrbitPrecisionFailure::InvalidBound;
+        failure = RefOrbitPrecisionFailure::InvalidBound;
         RecordCertificationStatus(m_WorstReal, RefOrbitErrorBudgetStatus::InvalidBound);
         RecordCertificationStatus(m_WorstImaginary, RefOrbitErrorBudgetStatus::InvalidBound);
     } else {
         // A real coordinate has an exactly zero imaginary recurrence independently
         // of the real error disk.
-        valid = CertifyComponent(x, nativeDouble, m_WorstReal);
-        if (valid) {
+        failure = CertifyComponent(x, nativeDouble, m_WorstReal);
+        if (failure == RefOrbitPrecisionFailure::None) {
             if (m_RealAxis && y->_mp_size == 0) {
                 RecordCertificationStatus(m_WorstImaginary, RefOrbitErrorBudgetStatus::Exact);
             } else {
-                valid = CertifyComponent(y, nativeDouble, m_WorstImaginary);
+                failure = CertifyComponent(y, nativeDouble, m_WorstImaginary);
             }
         }
     }
-    if (firstFailure != RefOrbitPrecisionFailure::None) {
-        m_Stats.Failure = firstFailure;
-    } else if (!valid) {
-        if (m_Stats.Failure == RefOrbitPrecisionFailure::None) {
-            m_Stats.Failure = RefOrbitPrecisionFailure::AmbiguousSample;
-        }
+    if (m_Stats.Failure == RefOrbitPrecisionFailure::None && failure != RefOrbitPrecisionFailure::None) {
+        m_Stats.Failure = failure;
         m_Stats.FailureIteration = m_Stats.Steps + 1;
         m_Stats.FailureWorkingBits = mpf_get_prec(x);
     }
-    return valid;
+    return failure == RefOrbitPrecisionFailure::None;
 }
 
 const RefOrbitDynamicPrecisionStats &
@@ -891,23 +891,37 @@ RefOrbitPrecisionSchedule::GetError() const
     return m_Error;
 }
 
+RefOrbitComponentErrorBudget
+RefOrbitPrecisionSchedule::DescribeBudget(RefOrbitErrorBudgetStatus status,
+                                          uint64_t stateIteration,
+                                          RefOrbitErrorBound comparison,
+                                          RefOrbitErrorBound gap,
+                                          int64_t componentExponent) const
+{
+    RefOrbitComponentErrorBudget budget;
+    budget.Status = status;
+    budget.StateIteration = stateIteration;
+    if (status == RefOrbitErrorBudgetStatus::Bounded) {
+        // Cancel integer exponents before converting to double so small budgets
+        // survive extreme binary scaling. Logarithms remain outside production checks.
+        const int64_t baseline = componentExponent - static_cast<int64_t>(m_FullBits);
+        budget.UsedBits = static_cast<double>(comparison.m_Value.getExp() - baseline) +
+                          std::log2(comparison.m_Value.getMantissa());
+        budget.MaxBits =
+            static_cast<double>(gap.m_Value.getExp() - baseline) + std::log2(gap.m_Value.getMantissa());
+    }
+    return budget;
+}
+
 RefOrbitWorstCertificationDiagnostics
 RefOrbitPrecisionSchedule::DescribeWorstCertification() const
 {
     const auto describe = [&](const CertificationRecord &record) {
-        RefOrbitComponentErrorBudget budget;
-        budget.Status = record.Status;
-        budget.StateIteration = record.StateIteration;
-        if (record.Status == RefOrbitErrorBudgetStatus::Bounded) {
-            // Normalize to the same full precision unit as single-state diagnostics.
-            // Integer cancellation preserves small budgets at extreme exponents.
-            const int64_t baseline = record.ComponentExponent - static_cast<int64_t>(m_FullBits);
-            budget.UsedBits = static_cast<double>(record.Comparison.m_Value.getExp() - baseline) +
-                              std::log2(record.Comparison.m_Value.getMantissa());
-            budget.MaxBits = static_cast<double>(record.Gap.m_Value.getExp() - baseline) +
-                             std::log2(record.Gap.m_Value.getMantissa());
-        }
-        return budget;
+        return DescribeBudget(record.Status,
+                              record.StateIteration,
+                              record.Comparison,
+                              record.Gap,
+                              record.ComponentExponent);
     };
     return {describe(m_WorstReal), describe(m_WorstImaginary)};
 }
@@ -916,130 +930,74 @@ RefOrbitCertificationDiagnostics
 RefOrbitPrecisionSchedule::DescribeCertification(mpf_srcptr x, mpf_srcptr y, bool nativeDouble)
 {
     RefOrbitCertificationDiagnostics result;
-    result.Real.StateIteration = m_Stats.Steps + 1;
-    result.Imaginary.StateIteration = m_Stats.Steps + 1;
+    result.Real.StateIteration = result.Imaginary.StateIteration = m_Stats.Steps + 1;
     result.AccumulatedErrorBoundLog2 = m_Error.Log2();
     if (!m_Error.IsFinite()) {
         result.Failure = RefOrbitPrecisionFailure::InvalidBound;
         result.HeadroomBits = std::numeric_limits<double>::quiet_NaN();
-        result.Real.Status = RefOrbitErrorBudgetStatus::InvalidBound;
-        result.Imaginary.Status = RefOrbitErrorBudgetStatus::InvalidBound;
+        result.Real.Status = result.Imaginary.Status = RefOrbitErrorBudgetStatus::InvalidBound;
         return result;
     }
 
-    // Replay the existing certificate on demand instead of adding tracing, logarithms,
-    // or copies to every iteration. The same conversion bins, gap scratch precision,
-    // subtraction allowance, and directed gap bound must match CertifyComponent/CheckGap.
-    // A zero component or unsupported conversion fixes the aggregate result.
-    // Continue replay solely to describe the other component's budget.
+    // Reuse the regular certificate without changing attempt state. Unlike the
+    // production traversal, describe both components and both boundary distances.
+    // Unsupported conversions and zero components fix the aggregate result, while
+    // the other component's budget is still evaluated for diagnostic completeness.
     bool aggregateComplete = false;
     for (int component = 0; component < 2; ++component) {
-        mpf_srcptr value = component == 0 ? x : y;
+        const auto certificate = component == 1 && m_RealAxis && y->_mp_size == 0
+                                     ? ComponentCertificate{}
+                                     : EvaluateComponent(component == 0 ? x : y, nativeDouble, true);
         const char *componentName = component == 0 ? "real" : "imaginary";
         auto &budget = component == 0 ? result.Real : result.Imaginary;
-        budget.Status = RefOrbitErrorBudgetStatus::Exact;
-        if (component == 1 && m_RealAxis && y->_mp_size == 0) {
+        budget.Status = certificate.Status;
+        if (certificate.Status == RefOrbitErrorBudgetStatus::Exact) {
             continue;
         }
-        double mantissa = 0.0;
-        int64_t exponent = 0;
-        const bool boundable = HasBoundableExponent(value);
-        if (boundable) {
-            exponent = mpf_get_2exp_d(&mantissa, value);
-        }
-        if (!boundable ||
-            (nativeDouble && value->_mp_size != 0 &&
-             (exponent < std::numeric_limits<double>::min_exponent ||
-              exponent > std::numeric_limits<double>::max_exponent)) ||
-            exponent < std::numeric_limits<int32_t>::min() ||
-            exponent > std::numeric_limits<int32_t>::max()) {
-            budget.Status = RefOrbitErrorBudgetStatus::UnsupportedConversion;
+        if (certificate.Status != RefOrbitErrorBudgetStatus::Bounded) {
             if (!aggregateComplete) {
+                const bool unsupported =
+                    certificate.Status == RefOrbitErrorBudgetStatus::UnsupportedConversion;
                 result.Component = componentName;
-                result.Boundary = "none";
-                result.Failure = RefOrbitPrecisionFailure::UnsupportedConversion;
+                result.Boundary = unsupported ? "none" : "zero";
+                result.Failure = unsupported ? RefOrbitPrecisionFailure::UnsupportedConversion
+                                             : RefOrbitPrecisionFailure::AmbiguousSample;
                 result.GapRoundingBoundLog2 = -std::numeric_limits<double>::infinity();
-                result.ComparisonErrorBoundLog2 = std::numeric_limits<double>::quiet_NaN();
-                result.GapLowerBoundLog2 = std::numeric_limits<double>::quiet_NaN();
-                result.HeadroomBits = std::numeric_limits<double>::quiet_NaN();
+                result.ComparisonErrorBoundLog2 =
+                    unsupported ? std::numeric_limits<double>::quiet_NaN() : m_Error.Log2();
+                result.GapLowerBoundLog2 = result.HeadroomBits =
+                    unsupported ? std::numeric_limits<double>::quiet_NaN()
+                                : -std::numeric_limits<double>::infinity();
                 aggregateComplete = true;
             }
             continue;
         }
-        if (m_Error.IsZero()) {
-            continue;
-        }
-        if (value->_mp_size == 0) {
-            budget.Status = RefOrbitErrorBudgetStatus::ZeroGap;
-            if (!aggregateComplete) {
-                result.Component = componentName;
-                result.Boundary = "zero";
-                result.GapRoundingBoundLog2 = -std::numeric_limits<double>::infinity();
-                result.ComparisonErrorBoundLog2 = m_Error.Log2();
-                result.GapLowerBoundLog2 = -std::numeric_limits<double>::infinity();
-                result.HeadroomBits = -std::numeric_limits<double>::infinity();
-                result.Failure = RefOrbitPrecisionFailure::AmbiguousSample;
-                aggregateComplete = true;
-            }
-            continue;
-        }
-
         double componentHeadroom = std::numeric_limits<double>::infinity();
-        __mpf_struct magnitude = *value;
-        magnitude._mp_size = static_cast<decltype(magnitude._mp_size)>(MagnitudeSize(value));
-        for (int boundary = 0; boundary < 2; ++boundary) {
-            const double endpoint =
-                boundary == 0
-                    ? std::abs(mantissa)
-                    : std::nextafter(std::abs(mantissa), std::numeric_limits<double>::infinity());
-            mpf_set_d(m_Boundary.Get(), endpoint);
-            if (exponent < 0) {
-                mpf_div_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(-exponent));
-            } else {
-                mpf_mul_2exp(m_Boundary.Get(), m_Boundary.Get(), static_cast<mp_bitcnt_t>(exponent));
-            }
-            mpf_srcptr larger = boundary == 0 ? &magnitude : m_Boundary.Get();
-            mpf_srcptr smaller = boundary == 0 ? m_Boundary.Get() : &magnitude;
-            const auto rounding = SubtractError(larger, smaller, m_Gap.Get());
-            mpf_sub(m_Gap.Get(), larger, smaller);
-            const auto gap = mpf_sgn(m_Gap.Get()) > 0 ? RefOrbitErrorBound::FromMpfLower(m_Gap.Get())
-                                                      : RefOrbitErrorBound{};
-            const auto comparison = RefOrbitErrorBound::Add(m_Error, rounding);
-            const bool passes = RefOrbitErrorBound::Less(comparison, gap);
-            if (!passes && !aggregateComplete) {
+        for (size_t index = 0; index < certificate.GapCount; ++index) {
+            const auto &boundary = certificate.Gaps[index];
+            if (!aggregateComplete && !RefOrbitErrorBound::Less(boundary.Comparison, boundary.Gap)) {
                 result.Failure = RefOrbitPrecisionFailure::AmbiguousSample;
             }
-            // Subtract integer exponents before conversion to double, preserving
-            // near-zero margins even when the absolute exponents are extremely deep.
-            const double headroom =
-                gap.IsZero() || !comparison.IsFinite()
-                    ? -std::numeric_limits<double>::infinity()
-                    : static_cast<double>(gap.m_Value.getExp() - comparison.m_Value.getExp()) +
-                          std::log2(gap.m_Value.getMantissa() / comparison.m_Value.getMantissa());
+            const auto status = !boundary.Comparison.IsFinite() ? RefOrbitErrorBudgetStatus::InvalidBound
+                                : boundary.Gap.IsZero()         ? RefOrbitErrorBudgetStatus::ZeroGap
+                                                                : RefOrbitErrorBudgetStatus::Bounded;
+            const double headroom = status != RefOrbitErrorBudgetStatus::Bounded
+                                        ? -std::numeric_limits<double>::infinity()
+                                        : static_cast<double>(boundary.Gap.m_Value.getExp() -
+                                                              boundary.Comparison.m_Value.getExp()) +
+                                              std::log2(boundary.Gap.m_Value.getMantissa() /
+                                                        boundary.Comparison.m_Value.getMantissa());
             if (headroom < componentHeadroom) {
                 componentHeadroom = headroom;
-                if (!comparison.IsFinite()) {
-                    budget.Status = RefOrbitErrorBudgetStatus::InvalidBound;
-                } else if (gap.IsZero()) {
-                    budget.Status = RefOrbitErrorBudgetStatus::ZeroGap;
-                } else {
-                    budget.Status = RefOrbitErrorBudgetStatus::Bounded;
-                    // Cancel the component exponent in integer space before taking
-                    // logarithms, so binary scaling cannot obscure a small budget.
-                    // MPIR's allocated precision fits its signed limb-count range.
-                    const int64_t baseline = exponent - static_cast<int64_t>(m_FullBits);
-                    budget.UsedBits = static_cast<double>(comparison.m_Value.getExp() - baseline) +
-                                      std::log2(comparison.m_Value.getMantissa());
-                    budget.MaxBits = static_cast<double>(gap.m_Value.getExp() - baseline) +
-                                     std::log2(gap.m_Value.getMantissa());
-                }
+                budget = DescribeBudget(
+                    status, m_Stats.Steps + 1, boundary.Comparison, boundary.Gap, certificate.Exponent);
             }
             if (!aggregateComplete && headroom < result.HeadroomBits) {
                 result.Component = componentName;
-                result.Boundary = boundary == 0 ? "lower_magnitude" : "upper_magnitude";
-                result.GapRoundingBoundLog2 = rounding.Log2();
-                result.ComparisonErrorBoundLog2 = comparison.Log2();
-                result.GapLowerBoundLog2 = gap.Log2();
+                result.Boundary = index == 0 ? "lower_magnitude" : "upper_magnitude";
+                result.GapRoundingBoundLog2 = boundary.Rounding.Log2();
+                result.ComparisonErrorBoundLog2 = boundary.Comparison.Log2();
+                result.GapLowerBoundLog2 = boundary.Gap.Log2();
                 result.HeadroomBits = headroom;
             }
         }

@@ -12,6 +12,7 @@
 #include "LinuxClipboard.h"
 #include "LinuxImGuiOverlay.h"
 #include "MenuState.h"
+#include "MovieCommandExport.h"
 #include "PortableCommandHandlers.h"
 // MenuState.h pulls in MenuTree.h which #undefs the X11 `None` and
 // `Always` macros (they collide with FractalShark enum values).
@@ -313,6 +314,7 @@ struct LinuxMainWindow : FractalShark::PortableCommandHandlers {
     void OnExit() override;
 
     void OnSaveLocation() override;
+    void OnExportZoomMovie() override;
     void OnSaveHiResBmp() override;
     void OnSaveItersText() override;
     void OnSaveBmp() override;
@@ -357,6 +359,11 @@ private:
         std::string extension,
         std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters);
     void SaveLocation(bool scaleToMaximum);
+    void RequestMovieEncoder(std::string configuration, std::filesystem::path configurationPath);
+    void FinishMovieExport(std::string configuration,
+                           std::filesystem::path configurationPath,
+                           std::filesystem::path ffmpeg,
+                           std::filesystem::path cli);
     void DoSaveRefOrbit(::CompressToDisk compression);
     void DoLoadRefOrbitImag(::ImaginaSettings settings);
     void RequestLoadRefOrbitImagFileDialog(::ImaginaSettings settings);
@@ -1200,6 +1207,80 @@ LinuxMainWindow::SaveLocation(bool scaleToMaximum)
     RequireUiState(fractal && overlay, "Saving a location");
     const std::string serialized = FractalShark::AppendSavedLocation(*fractal, scaleToMaximum);
     ShowInfo("Location", serialized);
+}
+
+void
+LinuxMainWindow::OnExportZoomMovie()
+{
+    RequireUiState(fractal && overlay, "Exporting a zoom movie command");
+    std::string configuration = FractalShark::CaptureMovieConfiguration(*fractal);
+    RequestSaveFile("Exporting a zoom movie command",
+                    "Save zoom movie configuration",
+                    FractalShark::MakeTimestampedOutputStem() + ".ini",
+                    {{"Movie Configuration (*.ini)", {".ini"}}, {"All Files", {}}},
+                    [this, configuration = std::move(configuration)](std::string filename) mutable {
+                        const std::filesystem::path configurationPath =
+                            FractalShark::AppendExtensionIfMissing(std::move(filename), ".ini");
+                        if (std::filesystem::exists(configurationPath)) {
+                            // The shared Linux file picker does not confirm replacement itself.
+                            RequestPick(
+                                "Exporting a zoom movie command",
+                                "Replace existing movie configuration?",
+                                {"Replace existing INI", "Cancel"},
+                                [this, configuration = std::move(configuration), configurationPath](
+                                    size_t index) mutable {
+                                    if (index == 0) {
+                                        RequestMovieEncoder(std::move(configuration), configurationPath);
+                                    }
+                                });
+                        } else {
+                            RequestMovieEncoder(std::move(configuration), configurationPath);
+                        }
+                    });
+}
+
+void
+LinuxMainWindow::RequestMovieEncoder(std::string configuration, std::filesystem::path configurationPath)
+{
+    RequestOpenFile(
+        "Exporting a zoom movie command",
+        "Select FFmpeg (requires libaom-av1)",
+        {{"All Files", {}}},
+        [this,
+         configuration = std::move(configuration),
+         configurationPath = std::move(configurationPath)](std::string ffmpeg) mutable {
+            const auto cli = FractalShark::FindMovieCliExecutable(
+                Environment::ExecutablePath(), FractalShark::MovieCommandShell::Posix);
+            if (cli) {
+                FinishMovieExport(std::move(configuration), std::move(configurationPath), ffmpeg, *cli);
+            } else {
+                RequestOpenFile(
+                    "Exporting a zoom movie command",
+                    "Locate FractalSharkCli",
+                    {{"All Files", {}}},
+                    [this,
+                     configuration = std::move(configuration),
+                     configurationPath = std::move(configurationPath),
+                     ffmpeg = std::move(ffmpeg)](std::string selected) mutable {
+                        FinishMovieExport(
+                            std::move(configuration), std::move(configurationPath), ffmpeg, selected);
+                    });
+            }
+        });
+}
+
+void
+LinuxMainWindow::FinishMovieExport(std::string configuration,
+                                   std::filesystem::path configurationPath,
+                                   std::filesystem::path ffmpeg,
+                                   std::filesystem::path cli)
+{
+    const auto output = FractalShark::BuildMovieCommandExport(
+        configurationPath, cli, ffmpeg, FractalShark::MovieCommandShell::Posix);
+    FractalShark::SaveMovieConfiguration(output, configuration);
+    const bool copied = FractalShark::CopyMovieCommandToClipboard(output);
+    const auto message = FractalShark::DescribeMovieCommandExport(output, copied);
+    overlay->RequestCopyableInfoModal("Zoom Movie Command", message.c_str());
 }
 
 void

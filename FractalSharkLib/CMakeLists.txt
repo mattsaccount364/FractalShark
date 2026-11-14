@@ -7,6 +7,7 @@ target_sources(FractalSharkLib PRIVATE
     CommandCatalog.cpp
     GuiHelp.cpp
     GuiFileOperations.cpp
+    MovieCommandExport.cpp
     PortableCommandHandlers.cpp
     SavedLocation.cpp
     RenderBenchmark.cpp

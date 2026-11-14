@@ -95,6 +95,9 @@ void FileClose(void *handle);
 // System information
 // =========================================================================
 
+// Absolute native path of the running executable, independent of the working directory.
+std::filesystem::path ExecutablePath();
+
 // System memory page size in bytes (e.g. 4096).
 size_t SystemPageSize();
 

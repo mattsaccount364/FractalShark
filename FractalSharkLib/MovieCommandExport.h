@@ -18,6 +18,11 @@ struct MovieCommandExport {
     std::string Command;
 };
 
+// Shared by exported INIs and the CLI. Examples are comments, not job identity.
+std::string_view DefaultMovieEncoderArguments();
+std::string_view LosslessMovieEncoderArguments();
+std::string MovieEncoderExamples();
+
 // Capture runs in the render pool's serialized mutation queue without rendering
 // or changing the view. The returned INI owns all coordinate digits; it contains
 // no palette settings and therefore uses the CLI's default coloring.

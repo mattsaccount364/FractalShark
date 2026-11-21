@@ -610,18 +610,19 @@ private:
     RenderThreadPool &m_Pool;
     RenderWorkItem &m_Item;
     std::optional<RendererIndex> m_RendererIdx;
-    const bool m_RequiresFinalFrame = m_Item.WorkMode != RenderWorkMode::MutationOnly;
+    const bool m_RequiresFinalFrame = m_Item.WorkMode != RenderWorkMode::MutationOnly &&
+                                      m_Item.WorkMode != RenderWorkMode::RenderToPng;
     bool m_FinalFramePushed = false;
     bool m_CompletionSignaled = false;
 };
 
 RenderJobHandle
-RenderThreadPool::Enqueue(const RenderWorkItem &item)
+RenderThreadPool::Enqueue(RenderWorkItem item)
 {
     auto promise = std::make_shared<std::promise<void>>();
     auto future = promise->get_future().share();
 
-    RenderWorkItem workItem = item;
+    RenderWorkItem workItem = std::move(item);
     workItem.CompletionPromise = std::move(promise);
     workItem.OperationId = m_NextOperationId++;
 
@@ -639,14 +640,19 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
             return RenderJobHandle(std::move(future));
         }
 
-        if (workItem.WorkMode != RenderWorkMode::MutationOnly) {
+        if (workItem.WorkMode != RenderWorkMode::MutationOnly &&
+            workItem.WorkMode != RenderWorkMode::RenderToPng) {
             workItem.SequenceNumber = m_NextSequenceNumber++;
         }
 
+        if (workItem.Png) {
+            workItem.Png->PreparationOrder = m_NextPngOrder++;
+        }
         // Supersede: when a new render arrives, discard earlier queued
         // renders that it replaces (e.g., rapid zoom — only last matters).
         // Keep mutations and non-supersedable items (AutoZoomer pipeline).
-        if (workItem.WorkMode != RenderWorkMode::MutationOnly) {
+        if (workItem.WorkMode != RenderWorkMode::MutationOnly &&
+            workItem.WorkMode != RenderWorkMode::RenderToPng) {
             for (auto it = m_WorkQueue.begin(); it != m_WorkQueue.end();) {
                 if (it->Supersedable && it->WorkMode != RenderWorkMode::MutationOnly) {
                     tombstoneSeqs.push_back(it->SequenceNumber);
@@ -696,12 +702,35 @@ RenderThreadPool::Enqueue(const RenderWorkItem &item)
     return RenderJobHandle(std::move(future));
 }
 
+std::future<SaveResult>
+RenderThreadPool::EnqueueRenderToPng(std::string_view operationName,
+                                     std::function<void(Fractal &)> prepare,
+                                     std::wstring filename,
+                                     SaveOverwritePolicy overwrite,
+                                     std::function<bool()> cancelled)
+{
+    RenderWorkItem item{};
+    item.WorkMode = RenderWorkMode::RenderToPng;
+    item.OperationName = operationName;
+    item.Command = std::move(prepare);
+    item.FractalPtr = m_Fractal;
+    item.Supersedable = false;
+    item.ResetStopCalculatingBeforeRender = false;
+    item.Png = std::make_unique<RenderPngWork>();
+    item.Png->Filename = std::move(filename);
+    item.Png->Overwrite = overwrite;
+    item.Png->Cancelled = std::move(cancelled);
+    auto result = item.Png->Completion->get_future();
+    Enqueue(std::move(item));
+    return result;
+}
+
 RenderJobHandle
 RenderThreadPool::EnqueueRender(std::string_view operationName)
 {
     auto item = SnapshotCurrentState();
     item.OperationName = operationName;
-    return Enqueue(item);
+    return Enqueue(std::move(item));
 }
 
 RenderWorkItem
@@ -746,7 +775,7 @@ RenderThreadPool::EnqueueCommand(std::string_view operationName,
     item.ChangedWindow = true;
     item.ChangedScrn = true;
     item.ChangedIterations = true;
-    return Enqueue(item);
+    return Enqueue(std::move(item));
 }
 
 RenderJobHandle
@@ -764,7 +793,7 @@ RenderThreadPool::EnqueueRecolorCurrentFrame(std::string_view operationName,
     item.PresentationMode = presentationMode;
     item.PresentationGroup = presentationGroup;
     item.FractalPtr = m_Fractal;
-    return Enqueue(item);
+    return Enqueue(std::move(item));
 }
 
 uint64_t
@@ -854,7 +883,7 @@ RenderThreadPool::EnqueueMutation(std::string_view operationName, std::function<
     // Enqueue assigns the completion promise and operation identifier.  Mutations
     // intentionally keep their frame sequence number at zero because they do not
     // produce frames for the GL consumer.
-    return Enqueue(workItem);
+    return Enqueue(std::move(workItem));
 }
 
 void
@@ -1025,7 +1054,27 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
     // Without the lock covering CalcFractal, Worker A's clean can wipe
     // Worker B's flags between set and read, causing B to skip computation
     // and produce a final frame from stale GPU data.
-    std::lock_guard lk(m_CalcFractalMutex);
+    std::unique_lock lk(m_CalcFractalMutex);
+    if (item.Png) {
+        m_PngPreparationCV.wait(lk, [&] {
+            return m_ShutdownFlag.load() || item.Png->PreparationOrder == m_NextPngPreparation;
+        });
+    }
+    struct AdvancePreparation {
+        bool Offline;
+        uint64_t &Next;
+        std::condition_variable &Wake;
+        ~AdvancePreparation()
+        {
+            if (Offline) {
+                ++Next;
+                Wake.notify_all();
+            }
+        }
+    } advance{item.Png != nullptr, m_NextPngPreparation, m_PngPreparationCV};
+    if (m_ShutdownFlag.load() || (item.Png && item.Png->Cancelled && item.Png->Cancelled())) {
+        return CalcRenderResult::Failed;
+    }
 
     if (IsPacedAnimationCancelled(item)) {
         return CalcRenderResult::Failed;
@@ -1070,13 +1119,26 @@ RenderThreadPool::RunCalcFractal(Fractal *fractal,
     fractal->m_ChangedScrn = item.ChangedScrn;
     fractal->m_ChangedIterations = item.ChangedIterations;
 
+    if (item.Png) {
+        // Capture save metadata while the frame's state is still serialized.
+        // Later workers are free to change the live view/iteration limit.
+        item.Png->NumIterations = static_cast<uint64_t>(item.NumIterations);
+        item.Png->MaxIterations = fractal->GetMaxIterationsRT();
+        item.Png->PaletteRotation = fractal->m_Palette.GetPaletteRotation();
+        item.Png->PaletteDepth = static_cast<uint32_t>(fractal->m_Palette.GetAuxDepth());
+        item.Png->Palette = fractal->m_Palette.GetPalInterleaved(
+            fractal->m_Palette.GetPaletteType())[fractal->m_Palette.GetPaletteDepthIndex()];
+        item.Png->CpuEncoder = item.Algorithm.UseLocalColor || fractal->GpuBypassed();
+    }
     // Ptz and ItersMemory travel through CalcContext — no swap needed.
     CalcContext ctx{item.Ptz, workerIters, item.ResetStopCalculatingBeforeRender};
     fractal->CalcFractal(rendererIdx, false, ctx);
     // Capture before another worker can clear features or replace the view/orbits.
     // The presenter remains independent of this lock even during long searches.
-    item.Overlay = fractal->CaptureRenderOverlay(
-        item.Ptz, workerIters.m_OutputWidth, workerIters.m_OutputHeight, item.NumIterations);
+    if (!item.Png) {
+        item.Overlay = fractal->CaptureRenderOverlay(
+            item.Ptz, workerIters.m_OutputWidth, workerIters.m_OutputHeight, item.NumIterations);
+    }
     return CalcRenderResult::Rendered;
 }
 
@@ -1712,6 +1774,44 @@ RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
     Fractal *fractal = item.FractalPtr;
     auto &renderer = fractal->GetRenderer(rendererIdx);
 
+    if (item.WorkMode == RenderWorkMode::RenderToPng) {
+        const auto calculated = RunCalcFractal(fractal, item, rendererIdx, workerIters);
+        if (calculated != CalcRenderResult::Rendered || fractal->GetStopCalculating()) {
+            return {true, false};
+        }
+        if (!item.Png->CpuEncoder) {
+            // Synchronize only this renderer, outside the calculation lock, so
+            // the other three renderer streams can be submitted concurrently.
+            auto error = renderer.SyncComputeStream();
+            ReductionResults reduction;
+            if (!error) {
+                error = item.IterType == IterTypeEnum::Bits32
+                            ? renderer.RenderCurrent<uint32_t>(static_cast<uint32_t>(item.NumIterations),
+                                                               workerIters.GetIters<uint32_t>(),
+                                                               nullptr,
+                                                               &reduction,
+                                                               false)
+                            : renderer.RenderCurrent<uint64_t>(static_cast<uint64_t>(item.NumIterations),
+                                                               workerIters.GetIters<uint64_t>(),
+                                                               nullptr,
+                                                               &reduction,
+                                                               false);
+            }
+            if (!error) {
+                error = renderer.SyncComputeStream();
+            }
+            if (error) {
+                throw FractalSharkSeriousException("Movie GPU readback failed: " +
+                                                   std::to_string(error));
+            }
+        }
+        fractal->QueueRenderedPng(std::move(item.Png), workerIters);
+        // The save owns the completed iterations. Restore a reusable worker
+        // container and release this renderer without waiting for PNG encoding.
+        workerIters = fractal->AcquireItersMemory();
+        return {true, false};
+    }
+
     fractal->m_BenchmarkData.m_Overall.StartTimer();
 
     const CalcRenderResult calcResult = RunCalcFractal(fractal, item, rendererIdx, workerIters);
@@ -1926,6 +2026,13 @@ RenderThreadPool::WorkerLoop(size_t workerIndex)
                               __LINE__);
         } catch (const std::exception &e) {
             LogOperationEvent(item, "failed", std::numeric_limits<size_t>::max(), __FILE__, __LINE__);
+            if (item.WorkMode == RenderWorkMode::RenderToPng) {
+                if (item.Png && item.Png->Completion) {
+                    item.Png->Fail(std::current_exception());
+                }
+                jobScope.Complete();
+                continue;
+            }
             AbortAfterWorkerException(e, __FILE__, __LINE__);
             break;
         }

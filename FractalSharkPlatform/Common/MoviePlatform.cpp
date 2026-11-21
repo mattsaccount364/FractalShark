@@ -1,4 +1,5 @@
 #include "MoviePlatform.h"
+#include "ConsoleLog.h"
 #include "Environment.h"
 
 #include <algorithm>
@@ -8,6 +9,7 @@
 #include <chrono>
 #include <csignal>
 #include <exception>
+#include <optional>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -39,6 +41,35 @@ InterruptMovie(int)
 {
     Interrupted.store(true, std::memory_order_relaxed);
 }
+
+void
+WatchMovieInterrupt(std::stop_token stop)
+{
+    // Match the GUI's three-second hold, with a monotonic clock so a slow poll
+    // does not change the hold threshold. The latch is shared with Ctrl+C.
+    constexpr auto holdDuration = std::chrono::seconds(3);
+    constexpr auto pollInterval = std::chrono::milliseconds(100);
+    std::optional<std::chrono::steady_clock::time_point> holdStarted;
+    while (!stop.stop_requested() && !Interrupted.load(std::memory_order_relaxed)) {
+        if (IsKeyDown(Key::Control) && IsKeyDown(Key::Alt)) {
+            const auto now = std::chrono::steady_clock::now();
+            if (!holdStarted) {
+                holdStarted = now;
+            }
+            if (now - *holdStarted >= holdDuration) {
+                InterruptMovie(0);
+                break;
+            }
+        } else {
+            holdStarted.reset();
+        }
+        std::this_thread::sleep_for(pollInterval);
+    }
+    if (Interrupted.load(std::memory_order_relaxed)) {
+        FractalSharkLog::Write("Movie pause requested. Finishing active work.", __FILE__, __LINE__);
+    }
+}
+
 #ifdef _WIN32
 BOOL WINAPI
 ConsoleInterrupt(DWORD event)
@@ -185,10 +216,15 @@ ReadPipe(NativeFile &pipe, const std::function<void(std::span<const unsigned cha
 } // namespace
 
 struct MovieInterruptScope::Impl {
-    decltype(&InterruptMovie) Previous;
-#ifndef _WIN32
-    struct sigaction PreviousInt;
-    struct sigaction PreviousTerm;
+    ~Impl();
+
+    bool m_OwnsHandlers = false;
+    std::jthread m_KeyMonitor;
+#ifdef _WIN32
+    decltype(&InterruptMovie) m_Previous = nullptr;
+#else
+    struct sigaction m_PreviousInt{};
+    struct sigaction m_PreviousTerm{};
 #endif
 };
 
@@ -204,8 +240,8 @@ MovieInterruptScope::MovieInterruptScope() : m_Impl(std::make_unique<Impl>())
         InterruptOwned.store(false);
         SystemFailure("install movie console handler");
     }
-    m_Impl->Previous = std::signal(SIGINT, InterruptMovie);
-    if (m_Impl->Previous == SIG_ERR) {
+    m_Impl->m_Previous = std::signal(SIGINT, InterruptMovie);
+    if (m_Impl->m_Previous == SIG_ERR) {
         SetConsoleCtrlHandler(ConsoleInterrupt, FALSE);
         InterruptOwned.store(false);
         SystemFailure("install movie interrupt handler");
@@ -215,27 +251,41 @@ MovieInterruptScope::MovieInterruptScope() : m_Impl(std::make_unique<Impl>())
     struct sigaction action{};
     action.sa_handler = InterruptMovie;
     sigemptyset(&action.sa_mask);
-    if (sigaction(SIGINT, &action, &m_Impl->PreviousInt) != 0) {
+    if (sigaction(SIGINT, &action, &m_Impl->m_PreviousInt) != 0) {
         InterruptOwned.store(false);
         SystemFailure("install movie interrupt handler");
     }
-    if (sigaction(SIGTERM, &action, &m_Impl->PreviousTerm) != 0) {
+    if (sigaction(SIGTERM, &action, &m_Impl->m_PreviousTerm) != 0) {
         const auto error = errno;
-        sigaction(SIGINT, &m_Impl->PreviousInt, nullptr);
+        sigaction(SIGINT, &m_Impl->m_PreviousInt, nullptr);
         InterruptOwned.store(false);
         throw std::system_error(error, std::generic_category(), "install movie termination handler");
     }
 #endif
+    // Impl also restores the handlers if creating the monitor thread throws.
+    m_Impl->m_OwnsHandlers = true;
+    m_Impl->m_KeyMonitor = std::jthread(WatchMovieInterrupt);
 }
 
-MovieInterruptScope::~MovieInterruptScope()
+MovieInterruptScope::~MovieInterruptScope() = default;
+
+MovieInterruptScope::Impl::~Impl()
 {
+    if (!m_OwnsHandlers) {
+        return;
+    }
+    // Join before releasing the process-wide latch so the outgoing monitor
+    // cannot request a pause for the next movie subscription.
+    m_KeyMonitor.request_stop();
+    if (m_KeyMonitor.joinable()) {
+        m_KeyMonitor.join();
+    }
 #ifdef _WIN32
-    std::signal(SIGINT, m_Impl->Previous);
+    std::signal(SIGINT, m_Previous);
     SetConsoleCtrlHandler(ConsoleInterrupt, FALSE);
 #else
-    sigaction(SIGTERM, &m_Impl->PreviousTerm, nullptr);
-    sigaction(SIGINT, &m_Impl->PreviousInt, nullptr);
+    sigaction(SIGTERM, &m_PreviousTerm, nullptr);
+    sigaction(SIGINT, &m_PreviousInt, nullptr);
 #endif
     InterruptOwned.store(false);
 }
@@ -312,6 +362,11 @@ PublishMovieFile(const std::filesystem::path &temporary,
         SystemFailure("publish movie output");
     }
 #else
+    NativeFile directory;
+    directory.Value = open(target.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (directory.Value < 0) {
+        SystemFailure("open movie output directory");
+    }
     if (replace) {
         if (rename(temporary.c_str(), target.c_str()) != 0) {
             SystemFailure("publish movie output");
@@ -320,13 +375,16 @@ PublishMovieFile(const std::filesystem::path &temporary,
         if (link(temporary.c_str(), target.c_str()) != 0) {
             SystemFailure("publish movie output");
         }
+        // The assembled movie may be the only payload copy. Make the new
+        // name durable before unlinking the old one, even on a power loss.
+        if (fsync(directory.Value) != 0) {
+            SystemFailure("flush published movie link");
+        }
         if (unlink(temporary.c_str()) != 0) {
             SystemFailure("remove published movie temporary");
         }
     }
-    NativeFile directory;
-    directory.Value = open(target.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
-    if (directory.Value < 0 || fsync(directory.Value) != 0) {
+    if (fsync(directory.Value) != 0) {
         SystemFailure("flush movie output directory");
     }
 #endif

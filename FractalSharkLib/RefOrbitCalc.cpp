@@ -86,6 +86,35 @@ constexpr auto AutoGpuReferenceCompatible = [] {
     return compatible;
 }();
 
+template <class T>
+T
+ReferenceRadiusForView(const HighPrecision &height)
+{
+    // Match the rounding in InitResults and, for double-float, the subsequent
+    // copy from the corresponding double source. The original view must still
+    // match after a save/load round trip.
+    if constexpr (std::is_same_v<T, CudaDblflt<MattDblflt>>) {
+        return T{static_cast<double>(height) / 2.0};
+    } else if constexpr (std::is_same_v<T, HDRFloat<CudaDblflt<MattDblflt>>>) {
+        return T{HDRFloat<double>{height} / HDRFloat<double>{2.0}};
+    } else {
+        return T{height} / T{2.0f};
+    }
+}
+
+template <bool Authoritative, class Results>
+bool
+PreferCachedReference(const Results &candidate, const Results *selected)
+{
+    // Authoritative reuse has its own offset and precision checks. Render
+    // references favor depth, with more recent entries winning ties.
+    if constexpr (Authoritative) {
+        return true;
+    } else {
+        return selected == nullptr || candidate.GetHiZoomFactor() >= selected->GetHiZoomFactor();
+    }
+}
+
 } // namespace
 
 template <class Type> struct alignas(64) ThreadPtrs {
@@ -2744,28 +2773,45 @@ template <typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
 bool
 RefOrbitCalc::IsPerturbationResultUsefulHere(size_t i) const
 {
-
-    const auto *PerturbationResults = GetEltConst<IterType, T, PExtras>(i);
-
-    if (PerturbationResults) {
-        if constexpr (Authoritative == true) {
-            return PerturbationResults->GetAuthoritativePrecisionInBits() != 0 &&
-                   (PerturbationResults->GetMaxIterations() >
-                        PerturbationResults->GetCountOrbitEntries() ||
-                    PerturbationResults->GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
-        } else {
-            const auto term1 = PerturbationResults->GetHiX() >= m_Fractal.GetMinX();
-            const auto term2 = PerturbationResults->GetHiX() <= m_Fractal.GetMaxX();
-            const auto term3 = PerturbationResults->GetHiY() >= m_Fractal.GetMinY();
-            const auto term4 = PerturbationResults->GetHiY() <= m_Fractal.GetMaxY();
-            return term1 && term2 && term3 && term4 &&
-                   (PerturbationResults->GetMaxIterations() >
-                        PerturbationResults->GetCountOrbitEntries() ||
-                    PerturbationResults->GetMaxIterations() >= m_Fractal.GetNumIterations<IterType>());
-        }
+    const auto *results = GetEltConst<IterType, T, PExtras>(i);
+    if (results == nullptr) {
+        return false;
     }
 
-    return false;
+    const auto maxIterations = results->GetMaxIterations();
+    if (maxIterations <= results->GetCountOrbitEntries() &&
+        maxIterations < m_Fractal.GetNumIterations<IterType>()) {
+        return false;
+    }
+
+    if constexpr (Authoritative) {
+        return results->GetAuthoritativePrecisionInBits() != 0;
+    } else {
+        if (results->GetHiX() < m_Fractal.GetMinX() || results->GetHiX() > m_Fractal.GetMaxX() ||
+            results->GetHiY() < m_Fractal.GetMinY() || results->GetHiY() > m_Fractal.GetMaxY()) {
+            return false;
+        }
+        if (results->GetPeriodMaybeZero() == 0) {
+            return true;
+        }
+
+        // The periodicity stop depends on the generation radius. A short
+        // orbit from a wider view can hide detail on zoom-in at the same center.
+        auto viewRadius = ReferenceRadiusForView<T>(m_Fractal.GetMaxY() - m_Fractal.GetMinY());
+        auto generationRadius = results->GetMaxRadius();
+        HdrReduce(viewRadius);
+        HdrReduce(generationRadius);
+        const auto positiveRadius = [](const T &radius) {
+            if constexpr (requires { radius.getMantissa(); }) {
+                // HDR zero can carry a non-canonical exponent in saved data.
+                return radius.getMantissa() > typename T::TemplateSubType{};
+            } else {
+                return radius > T{};
+            }
+        };
+        return positiveRadius(viewRadius) && positiveRadius(generationRadius) &&
+               HdrCompareToBothPositiveReducedGE(viewRadius, generationRadius);
+    }
 }
 
 template <typename IterType,
@@ -2805,6 +2851,12 @@ PerturbationResults<IterType, ConvertTType, PExtras> *
 RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &ptz)
 {
     std::lock_guard lk(m_PerturbationMutex);
+
+    // Trim before any lookup so a later lookup during double-float conversion
+    // cannot evict the source orbit selected earlier in this call.
+    if (m_C.size() > MaxStoredOrbits) {
+        m_C.erase(m_C.begin());
+    }
 
     constexpr bool ForceCompressDecompressForTesting = false;
     constexpr bool IsHdrDblflt = std::is_same<ConvertTType, HDRFloat<CudaDblflt<MattDblflt>>>::value;
@@ -2908,7 +2960,9 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
             PerturbationResults<IterType, ConvertTType, PExtras> *resultsConverted =
                 GetUsefulPerturbationResultsMutable<IterType, ConvertTType, false, PExtras>();
 
-            if (resultsConverted != nullptr) {
+            if (resultsConverted != nullptr &&
+                (Ex != Extras::IncludeLAv2 || resultsConverted->GetLaReference() != nullptr)) {
+                m_LastUsedRefOrbit = resultsConverted;
                 return resultsConverted;
             }
         }
@@ -2992,12 +3046,11 @@ RefOrbitCalc::GetAndCreateUsefulPerturbationResults(const PointZoomBBConverter &
         auto *resultsExisting =
             GetUsefulPerturbationResultsMutable<IterType, ConvertTType, false, PExtras>();
 
-        // The second part of this accounts for the case where the
-        // malicious user deleted the LA reference.  We want to
-        // recompute it if it's not present as a file.
-        if ((resultsExisting == nullptr) ||
-            (resultsExisting != nullptr && resultsExisting->GetLaReference() == nullptr &&
-             Ex == Extras::IncludeLAv2)) {
+        // A converted orbit can predate a deeper source or be missing the LA
+        // data required by this render mode.
+        if (resultsExisting == nullptr ||
+            resultsExisting->GetHiZoomFactor() < results->GetHiZoomFactor() ||
+            (Ex == Extras::IncludeLAv2 && resultsExisting->GetLaReference() == nullptr)) {
 
             // This save is for the 64-bit calculations.
             OptionalSave(results);
@@ -3042,54 +3095,30 @@ template <typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
 PerturbationResults<IterType, T, PExtras> *
 RefOrbitCalc::GetUsefulPerturbationResultsMutable()
 {
-    std::vector<PerturbationResults<IterType, T, PExtras> *> useful_results;
-
-    if (m_C.size() > MaxStoredOrbits) {
-        m_C.erase(m_C.begin());
-    }
-
+    PerturbationResults<IterType, T, PExtras> *selected = nullptr;
     for (size_t i = 0; i < m_C.size(); i++) {
-        auto *cur_elt = GetElt<IterType, T, PExtras>(i);
-
-        if (cur_elt) {
-            if (IsPerturbationResultUsefulHere<IterType, T, Authoritative, PExtras>(i)) {
-                useful_results.push_back(GetElt<IterType, T, PExtras>(i));
-            }
+        auto *candidate = GetElt<IterType, T, PExtras>(i);
+        if (candidate != nullptr && PreferCachedReference<Authoritative>(*candidate, selected) &&
+            IsPerturbationResultUsefulHere<IterType, T, Authoritative, PExtras>(i)) {
+            selected = candidate;
         }
     }
-
-    PerturbationResults<IterType, T, PExtras> *results = nullptr;
-
-    if (!useful_results.empty()) {
-        results = useful_results[useful_results.size() - 1];
-    }
-
-    return results;
+    return selected;
 }
 
 template <typename IterType, class T, bool Authoritative, PerturbExtras PExtras>
 const PerturbationResults<IterType, T, PExtras> *
 RefOrbitCalc::GetUsefulPerturbationResultsConst() const
 {
-    std::vector<const PerturbationResults<IterType, T, PExtras> *> useful_results;
-
+    const PerturbationResults<IterType, T, PExtras> *selected = nullptr;
     for (size_t i = 0; i < m_C.size(); i++) {
-
-        const auto *cur_elt = GetEltConst<IterType, T, PExtras>(i);
-        if (cur_elt) {
-            if (IsPerturbationResultUsefulHere<IterType, T, Authoritative, PExtras>(i)) {
-                useful_results.push_back(GetEltConst<IterType, T, PExtras>(i));
-            }
+        const auto *candidate = GetEltConst<IterType, T, PExtras>(i);
+        if (candidate != nullptr && PreferCachedReference<Authoritative>(*candidate, selected) &&
+            IsPerturbationResultUsefulHere<IterType, T, Authoritative, PExtras>(i)) {
+            selected = candidate;
         }
     }
-
-    const PerturbationResults<IterType, T, PExtras> *results = nullptr;
-
-    if (!useful_results.empty()) {
-        results = useful_results[useful_results.size() - 1];
-    }
-
-    return results;
+    return selected;
 }
 
 template <typename IterType,

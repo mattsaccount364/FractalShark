@@ -72,11 +72,49 @@ SerializeMovieConfiguration(Fractal &fractal)
            << "\nantialiasing=" << fractal.GetGpuAntialiasing()
            << "\nrender-algorithm=AutoSelect\nperturbation-alg=Auto\nwide-iterations="
            << std::min<uint64_t>(MovieWideIterations, iterations)
-           << "\nla-slope-ratio=8\nvideo-chunk-frames=1000\nvideo-fps=60\n";
+           << "\nla-slope-ratio=8\nvideo-chunk-frames=1000\nvideo-fps=60\n"
+           << "render-order=wide-to-deep\nvideo-encoder-args=" << DefaultMovieEncoderArguments() << '\n'
+           << MovieEncoderExamples();
     return output.str();
 }
 
 } // namespace
+
+std::string_view
+DefaultMovieEncoderArguments()
+{
+    return "-c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 16 -profile:v main -pix_fmt nv12 "
+           "-colorspace bt709 -color_range tv";
+}
+
+std::string_view
+LosslessMovieEncoderArguments()
+{
+    return "-c:v hevc_nvenc -preset p4 -tune lossless -profile:v rext -pix_fmt gbrp "
+           "-colorspace rgb -color_range pc";
+}
+
+std::string
+MovieEncoderExamples()
+{
+    return "\n# Choose one video-encoder-args line before starting a new job.\n"
+           "# Lossless HEVC (RGB8 after deliberate RGB16 rounding):\n"
+           "# video-encoder-args=" +
+           std::string(LosslessMovieEncoderArguments()) +
+           "\n# HEVC high quality (default, QP 16):\n"
+           "# video-encoder-args=" +
+           std::string(DefaultMovieEncoderArguments()) +
+           "\n# HEVC low quality (smaller files, QP 22):\n"
+           "# video-encoder-args=-c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 22 -profile:v "
+           "main -pix_fmt nv12 -colorspace bt709 -color_range tv\n"
+           "# H.264 high quality (3840x2160 works; check your encoder's size limits):\n"
+           "# video-encoder-args=-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18 -b:v 0 -profile:v "
+           "high -pix_fmt nv12\n"
+           "# H.264 low quality / faster:\n"
+           "# video-encoder-args=-c:v h264_nvenc -preset p1 -tune hq -rc vbr -cq 30 -b:v 0 -profile:v "
+           "high -pix_fmt nv12\n"
+           "# NV12/yuv420p output uses BT.709 limited range. RGB uses full range.\n";
+}
 
 std::string
 CaptureMovieConfiguration(Fractal &fractal)
@@ -201,7 +239,7 @@ DescribeMovieCommandExport(const MovieCommandExport &output, bool copied)
            "1.01x zoom per frame; 60 fps; 1000-frame chunks.\n"
            "Current size, antialiasing, and final iteration limit; Auto algorithms; default palette.\n"
            "Run the command to render, or rerun it to resume.\n"
-           "FFmpeg must include the libaom-av1 encoder.";
+           "FFmpeg must support the selected NVENC encoder (HEVC by default).";
 }
 
 bool

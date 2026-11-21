@@ -163,6 +163,16 @@ public:
     void CalcFractal(bool drawFractal, bool resetStopCalculatingBeforeRender);
     void CalcFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx);
 
+    // Reference preparation uses the same typed lookup/generation as rendering,
+    // without launching pixels or changing reference-cache policy.
+    void PrepareReferenceForCurrentView();
+    std::future<SaveResult> EnqueueRenderToPng(std::string_view operationName,
+                                               std::function<void(Fractal &)> prepare,
+                                               std::wstring filename,
+                                               SaveOverwritePolicy overwrite,
+                                               std::function<bool()> cancelled);
+    void QueueRenderedPng(std::unique_ptr<RenderPngWork> request, ItersMemoryContainer &iterations);
+
     // Async render pool: enqueue current state for rendering.
     // Returns a handle that can optionally be waited on.
     RenderJobHandle EnqueueRender(std::string_view operationName);

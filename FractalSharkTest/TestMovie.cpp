@@ -1,7 +1,6 @@
 #include "ConsoleLog.h"
 #include "Environment.h"
 #include "Fractal.h"
-#include "FractalSharkCli/MovieHash.h"
 #include "FractalSharkCli/MovieJob.h"
 #include "FractalSharkCli/MovieRunner.h"
 #include "FractalSharkCli/MovieVideo.h"
@@ -100,6 +99,15 @@ Settings(const FractalSharkCli::MovieConfig &config)
     settings.Request.Algorithm = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
     return settings;
 }
+FractalSharkCli::MovieRenderSettings
+VideoSettings(const FractalSharkCli::MovieConfig &config)
+{
+    auto settings = Settings(config);
+    settings.Request.Width = 256;
+    settings.Request.Height = 256;
+    return settings;
+}
+
 } // namespace
 
 TEST(MovieExport_CapturesViewAndDefaultsIndependentlyOfPalette)
@@ -138,6 +146,11 @@ TEST(MovieExport_CapturesViewAndDefaultsIndependentlyOfPalette)
     ASSERT_EQ(config.Fps, 60u);
     ASSERT_EQ(config.ChunkFrames, 1000u);
     ASSERT_EQ(config.SlopeRatio, 8);
+    ASSERT_EQ(config.Values.at("video-encoder-args"),
+              "-c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 16 -profile:v main -pix_fmt nv12 "
+              "-colorspace bt709 -color_range tv");
+    ASSERT_TRUE(configuration.find("-rc constqp -qp 22 -profile:v main -pix_fmt nv12") !=
+                std::string::npos);
     ASSERT_TRUE(configuration.find("palette") == std::string::npos);
     ASSERT_FALSE(std::filesystem::exists(directory.Path / "target.ini"));
     ASSERT_EQ(output.ConfigurationPath, directory.Path / "target.movie" / "movie.ini");
@@ -345,83 +358,71 @@ TEST(MovieExport_ClipboardFailuresPreserveManualCopyRecovery)
 }
 #endif
 
-TEST(MovieHash_StandardVectorsAndStreaming)
-{
-    ASSERT_EQ(FractalSharkCli::MovieHash::Digest(""),
-              "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
-    ASSERT_EQ(FractalSharkCli::MovieHash::Digest("abc"),
-              "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
-    FractalSharkCli::MovieHash hash;
-    const std::string block(1000, 'a');
-    for (unsigned i = 0; i < 1000; ++i) {
-        hash.Update(block);
-    }
-    ASSERT_EQ(hash.Finish(), "cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0");
-    ASSERT_EQ(hash.Finish(), hash.Finish());
-}
-
 TEST(MovieSchedule_EndpointsCurveAndHugeExponents)
 {
     HighPrecision::defaultPrecisionInBits(1024);
-    FractalSharkCli::MovieSchedule schedule(HighPrecision("16"), "2", 10, 110, 2, 4);
+    FractalSharkCli::MovieSchedule schedule(HighPrecision("16"), "2", 10, 110, 2, 4, true);
     ASSERT_EQ(schedule.FrameCount(), 5u);
-    ASSERT_NEAR(static_cast<double>(schedule.ZoomAt(0)), 1, 0);
     ASSERT_NEAR(static_cast<double>(schedule.ZoomAt(4)), 16, 0);
-    ASSERT_EQ(schedule.IterationsAt(0), 10u);
-    ASSERT_EQ(schedule.IterationsAt(2), 30u);
-    ASSERT_EQ(schedule.IterationsAt(3), 70u);
+    ASSERT_NEAR(static_cast<double>(schedule.ZoomAt(0)), 1, 0);
     ASSERT_EQ(schedule.IterationsAt(4), 110u);
-    FractalSharkCli::MovieSchedule partial(HighPrecision("15"), "2", 10, 100, 2, 8);
+    ASSERT_EQ(schedule.IterationsAt(2), 30u);
+    ASSERT_EQ(schedule.IterationsAt(1), 20u);
+    ASSERT_EQ(schedule.IterationsAt(0), 10u);
+    FractalSharkCli::MovieSchedule partial(HighPrecision("15"), "2", 10, 100, 2, 8, true);
     ASSERT_EQ(partial.FrameCount(), 5u);
-    ASSERT_NEAR(static_cast<double>(partial.ZoomAt(0)), 1, 0);
-    ASSERT_NEAR(static_cast<double>(partial.ZoomAt(1)), 1.875, 0);
     ASSERT_NEAR(static_cast<double>(partial.ZoomAt(4)), 15, 0);
+    ASSERT_NEAR(static_cast<double>(partial.ZoomAt(3)), 8, 0);
+    ASSERT_NEAR(static_cast<double>(partial.ZoomAt(0)), 1, 0);
     HighPrecision huge{HighPrecision::SetPrecision::True, 256};
     mpf_set_ui(huge.backend(), 1);
     mpf_mul_2exp(huge.backend(), huge.backend(), 10'000'000);
-    FractalSharkCli::MovieSchedule deep(huge, "2", 10, 1000, 30, 8);
+    FractalSharkCli::MovieSchedule deep(huge, "2", 10, 1000, 30, 8, false);
     ASSERT_EQ(deep.FrameCount(), 10'000'001u);
-    ASSERT_NEAR(FractalSharkCli::MovieSchedule::Log2(deep.ZoomAt(9'999'999)), 9'999'999, 1e-8L);
-    ASSERT_EQ(deep.IterationsAt(0), 10u);
-    ASSERT_EQ(deep.IterationsAt(10'000'000), 1000u);
-    ASSERT_THROWS(
-        FractalSharkCli::MovieSchedule(HighPrecision("16"), "1.00000000000000000001", 10, 100, 2, 8),
-        FractalSharkSeriousException);
-    FractalSharkCli::MovieSchedule single(HighPrecision("1"), "2", 10, 100, 30, 8);
+    ASSERT_NEAR(FractalSharkCli::MovieSchedule::Log2(deep.ZoomAt(1)), 9'999'999, 1e-8L);
+    ASSERT_EQ(deep.IterationsAt(10'000'000), 10u);
+    ASSERT_EQ(deep.IterationsAt(0), 1000u);
+    ASSERT_THROWS(FractalSharkCli::MovieSchedule(
+                      HighPrecision("16"), "1.00000000000000000001", 10, 100, 2, 8, false),
+                  FractalSharkSeriousException);
+    FractalSharkCli::MovieSchedule single(HighPrecision("1"), "2", 10, 100, 30, 8, false);
     ASSERT_EQ(single.FrameCount(), 1u);
     ASSERT_EQ(single.IterationsAt(0), 100u);
     FractalSharkCli::MovieSchedule nearOne(
-        HighPrecision("1.00000000000000000001"), "1.000000000000000000001", 10, 100, 0, 8);
+        HighPrecision("1.00000000000000000001"), "1.000000000000000000001", 10, 100, 0, 8, false);
     ASSERT_EQ(nearOne.FrameCount(), 11u);
-    ASSERT_TRUE(nearOne.DepthAt(10) > 0);
+    ASSERT_TRUE(nearOne.DepthAt(0) > 0);
     FractalSharkCli::MovieSchedule steep(
-        HighPrecision("16"), "2", 10, 100, 2, std::numeric_limits<double>::max());
-    ASSERT_TRUE(steep.IterationsAt(1) <= steep.IterationsAt(3));
+        HighPrecision("16"), "2", 10, 100, 2, std::numeric_limits<double>::max(), false);
+    ASSERT_TRUE(steep.IterationsAt(1) >= steep.IterationsAt(3));
 }
 
 TEST(MovieJob_CheckpointsLockAndChunkDeletionOrder)
 {
     MovieTestDirectory directory;
-    const auto config = directory.Config("video-chunk-frames=2\n");
+    const auto config =
+        directory.Config("video-chunk-frames=2\nvideo-encoder-args=" +
+                         std::string(FractalShark::LosslessMovieEncoderArguments()) + "\n");
     const auto jobPath = directory.Path / "job";
     {
         FractalSharkCli::MovieJob job(jobPath, config);
         job.InitializeProgress(5, true, 30);
         ASSERT_EQ(job.Remaining(), 5u);
         ASSERT_THROWS(FractalSharkCli::MovieJob(jobPath, config), std::system_error);
-        WriteFrame(job.FramePath(4), 16, 16, 4);
-        job.CompleteFrame(4);
-        WriteFrame(job.FramePath(3), 16, 16, 3);
-        job.CompleteFrame(3);
-        ASSERT_THROWS(job.CompleteFrame(1), FractalSharkSeriousException);
-        FractalSharkCli::MovieChunk chunk{4, 1, 100, 3, std::string(64, '0')};
+        WriteFrame(job.FramePath(0), 16, 16, 4);
+        job.CompleteFrame(0);
+        WriteFrame(job.FramePath(1), 16, 16, 3);
+        job.CompleteFrame(1);
+        ASSERT_THROWS(job.CompleteFrame(0), FractalSharkSeriousException);
+        FractalSharkCli::MovieChunk chunk{0, 2, 100, 3};
         ASSERT_THROWS(job.DeleteChunkPngs(chunk), FractalSharkSeriousException);
-        ASSERT_TRUE(std::filesystem::exists(job.FramePath(4)));
-        FractalSharkCli::WriteMovieText(job.VideoPath(4), "mkv");
+        ASSERT_TRUE(std::filesystem::exists(job.FramePath(0)));
+        FractalSharkCli::WriteMovieText(job.VideoPath(0), "mkv");
         job.CommitChunk(chunk);
         job.DeleteChunkPngs(chunk);
         job.DeleteChunkPngs(chunk);
-        ASSERT_FALSE(std::filesystem::exists(job.FramePath(4)));
+        ASSERT_FALSE(std::filesystem::exists(job.FramePath(0).parent_path()));
+        WriteFrame(job.FramePath(2), 16, 16, 2);
     }
     const auto unfinishedPng = jobPath / "frames" / ".fractalshark-save-old.tmp";
     const auto unfinishedVideo = jobPath / "chunks" / ".fractalshark-video-old.tmp";
@@ -429,10 +430,13 @@ TEST(MovieJob_CheckpointsLockAndChunkDeletionOrder)
     FractalSharkCli::WriteMovieText(unfinishedPng, "unfinished PNG");
     FractalSharkCli::WriteMovieText(unfinishedVideo, "unfinished movie");
     std::filesystem::create_directory(unfinishedInputs);
-    const auto retainedPng = jobPath / "frames" / "00000000000000000000" / "00000000000000000003.png";
+    const auto retainedPng = jobPath / "frames" / "chunk_0000000001" / "frame_0000000002.png";
     std::filesystem::create_hard_link(retainedPng, unfinishedInputs / "frame.png");
     {
-        FractalSharkCli::MovieJob job(jobPath, {});
+        // An external INI without an encoder setting inherits the frozen profile.
+        const auto omittedEncoder = directory.Config("video-chunk-frames=2\n");
+        FractalSharkCli::MovieJob job(jobPath, omittedEncoder);
+        ASSERT_EQ(job.Config().PixelFormat, "gbrp");
         job.InitializeProgress(5, true, 0);
         ASSERT_FALSE(std::filesystem::exists(unfinishedPng));
         ASSERT_FALSE(std::filesystem::exists(unfinishedVideo));
@@ -441,34 +445,38 @@ TEST(MovieJob_CheckpointsLockAndChunkDeletionOrder)
         ASSERT_EQ(std::filesystem::hard_link_count(retainedPng), 1u);
         ASSERT_EQ(job.Remaining(), 3u);
         ASSERT_NEAR(job.LaDepth(), 30, 0);
-        ASSERT_TRUE(job.FindChunk(4).has_value());
+        ASSERT_TRUE(job.FindChunk(0).has_value());
     }
-    // A torn newest checkpoint falls back to the previous complete one.
-    FractalSharkCli::WriteMovieText(jobPath / "progress-0.txt", "torn record");
+    const auto conflictingEncoder =
+        directory.Config("video-chunk-frames=2\nvideo-encoder-args=" +
+                         std::string(FractalShark::DefaultMovieEncoderArguments()) + "\n");
+    ASSERT_THROWS(FractalSharkCli::MovieJob(jobPath, conflictingEncoder), FractalSharkSeriousException);
+    // A torn write before the atomic replacement leaves the prior record live.
+    FractalSharkCli::WriteMovieText(jobPath / "progress.txt.tmp", "torn record");
     {
         FractalSharkCli::MovieJob job(jobPath, {});
         job.InitializeProgress(5, true, 30);
-        ASSERT_EQ(job.Remaining(), 4u);
+        ASSERT_EQ(job.Remaining(), 3u);
         ASSERT_THROWS(job.InitializeProgress(5, false, 30), FractalSharkSeriousException);
     }
 }
 
-TEST(MovieJob_RejectsUnsupportedFrameCountsAndCrossDirectoryChunks)
+TEST(MovieJob_RejectsUnsupportedFrameCounts)
 {
     MovieTestDirectory directory;
     const auto config = directory.Config("video-chunk-frames=3000\n");
     FractalSharkCli::MovieJob job(directory.Path / "job", config);
-    ASSERT_THROWS(job.InitializeProgress(10001, true, 0), FractalSharkSeriousException);
     ASSERT_THROWS(
         job.InitializeProgress(static_cast<uint64_t>(std::numeric_limits<int>::max()) + 1, true, 0),
         FractalSharkSeriousException);
     ASSERT_FALSE(std::filesystem::exists(job.Directory() / "profile.txt"));
-    job.InitializeProgress(10000, true, 0);
-    ASSERT_EQ(job.Remaining(), 10000u);
-    ASSERT_EQ(job.FramePath(9999).parent_path().filename().string(), "00000000000000000000");
-    ASSERT_EQ(job.FramePath(10000).parent_path().filename().string(), "00000000000000000001");
-    ASSERT_THROWS(FractalSharkCli::MovieSchedule(HighPrecision("16"), "1.000000001", 10, 100, 2, 8),
-                  FractalSharkSeriousException);
+    job.InitializeProgress(10001, true, 0);
+    ASSERT_EQ(job.Remaining(), 10001u);
+    ASSERT_EQ(job.FramePath(8999).parent_path().filename().string(), "chunk_0000000002");
+    ASSERT_EQ(job.FramePath(9000).parent_path().filename().string(), "chunk_0000000003");
+    ASSERT_THROWS(
+        FractalSharkCli::MovieSchedule(HighPrecision("16"), "1.000000001", 10, 100, 2, 8, false),
+        FractalSharkSeriousException);
 }
 
 TEST(MovieResume_ProductionLayoutMetadata)
@@ -482,60 +490,100 @@ TEST(MovieResume_ProductionLayoutMetadata)
         ASSERT_EQ(job.FramePath(9000).parent_path(), job.FramePath(9999).parent_path());
         ASSERT_EQ(job.FramePath(10000).parent_path(), job.FramePath(10431).parent_path());
         ASSERT_TRUE(job.FramePath(9999).parent_path() != job.FramePath(10000).parent_path());
-        // Seed one sealed checkpoint directly. No thousand-frame render, PNG
-        // generation, or per-frame durable checkpoint loop belongs in this test.
-        const auto profile = FractalSharkCli::ReadMovieText(jobPath / "profile.txt");
-        const auto identity = profile.substr(65, 64);
-        const auto payload = identity + "\n1432 9000\n";
+        // Model the interrupted production HEVC layout using tiny metadata and
+        // a three-byte movie, never thousands of rendered frames. One CRC
+        // checkpoint simulates an interrupted metadata upgrade before its marker.
+        auto oldSettings = FractalSharkCli::ReadMovieText(jobPath / "movie.ini");
+        for (const std::string key : {"render-order=", "video-encoder-args="}) {
+            const auto start = oldSettings.find("\n" + key);
+            ASSERT_TRUE(start != std::string::npos);
+            const auto end = oldSettings.find('\n', start + 1);
+            oldSettings.erase(start, end - start);
+        }
+        FractalSharkCli::WriteMovieText(jobPath / "movie.ini", oldSettings);
+        const std::string identity(64, 'd');
+        const std::string oldHeader = std::string(64, '0') + "\n";
+        FractalSharkCli::WriteMovieText(
+            jobPath / "profile.txt",
+            oldHeader + identity + "\nFractalSharkMovie2-hevc-nvenc-render-order\n10432 1 30\n");
         FractalSharkCli::WriteMovieText(jobPath / "progress-0.txt",
-                                        FractalSharkCli::MovieHash::Digest(payload) + "\n" + payload);
+                                        oldHeader + identity + "\n1432 1432\n");
+        const auto earlier = identity + "\n1431 1431\n";
+        FractalSharkCli::WriteMovieText(
+            jobPath / "progress-1.txt",
+            FractalSharkCli::MovieMetadataChecksum(earlier) + "\n" + earlier);
+        FractalSharkCli::WriteMovieText(job.VideoPath(0), "mkv");
+        auto record = job.VideoPath(0);
+        record += ".complete";
+        FractalSharkCli::WriteMovieText(
+            record, oldHeader + identity + "\n0 1000 100 3 " + std::string(64, '0') + "\n");
     }
-    FractalSharkCli::MovieJob resumed(jobPath, {});
-    resumed.InitializeProgress(10432, true, 30);
-    ASSERT_EQ(resumed.Remaining(), 9000u);
-    ASSERT_EQ(resumed.FramePath(resumed.Remaining() - 1).filename().string(),
-              "00000000000000008999.png");
-    ASSERT_EQ(resumed.Config().ChunkFrames, 1000u);
-    ASSERT_TRUE(std::filesystem::is_empty(jobPath / "frames"));
+    {
+        FractalSharkCli::MovieJob resumed(jobPath, {});
+        resumed.InitializeProgress(10432, true, 30);
+        ASSERT_EQ(resumed.Remaining(), 9000u);
+        ASSERT_EQ(resumed.FramePath(resumed.NextFrame()).filename().string(), "frame_0000001432.png");
+        ASSERT_EQ(resumed.Config().ChunkFrames, 1000u);
+        ASSERT_FALSE(resumed.Config().WideToDeep);
+        ASSERT_EQ(resumed.PlaybackChunkStart(0), 10000u);
+        ASSERT_EQ(resumed.PlaybackChunkStart(10), 0u);
+        ASSERT_EQ(resumed.Config().PixelFormat, "gbrp");
+        ASSERT_FALSE(resumed.Config().Values.contains("video-encoder-args"));
+        ASSERT_TRUE(std::filesystem::is_empty(jobPath / "frames"));
+        ASSERT_TRUE(resumed.FindChunk(0).has_value());
+        ASSERT_TRUE(std::filesystem::exists(jobPath / "progress.txt"));
+        ASSERT_FALSE(std::filesystem::exists(jobPath / "progress-0.txt"));
+        ASSERT_FALSE(std::filesystem::exists(jobPath / "progress-1.txt"));
+        ASSERT_EQ(FractalSharkCli::ReadMovieText(jobPath / "profile.txt").find('\n'), 8u);
+        ASSERT_TRUE(FractalSharkCli::ReadMovieText(jobPath / "profile.txt")
+                        .find("FractalSharkMovie3-hevc-nvenc-render-order") != std::string::npos);
+        ASSERT_THROWS(FractalSharkCli::MovieJob(jobPath, {}), std::system_error);
+    }
+    const auto profile = FractalSharkCli::ReadMovieText(jobPath / "profile.txt");
+    const auto identityEnd = profile.find('\n', 9);
+    const auto identity = profile.substr(9, identityEnd - 9);
+    const auto clock = identity + "\n100 12345\n";
+    FractalSharkCli::WriteMovieText(jobPath / "time-0.txt",
+                                    FractalSharkCli::MovieMetadataChecksum(clock) + "\n" + clock);
+    FractalSharkCli::WriteMovieText(jobPath / "time-1.txt", "torn timer checkpoint");
+    uint64_t elapsed = 0;
+    {
+        FractalSharkCli::MovieJob resumed(jobPath, {});
+        ASSERT_TRUE(resumed.ElapsedMilliseconds() >= 12345);
+        ASSERT_TRUE(resumed.FinishTiming());
+        elapsed = resumed.ElapsedMilliseconds();
+        ASSERT_TRUE(std::filesystem::exists(jobPath / "time.txt"));
+        ASSERT_FALSE(std::filesystem::exists(jobPath / "time-0.txt"));
+        ASSERT_FALSE(std::filesystem::exists(jobPath / "time-1.txt"));
+    }
+    FractalSharkCli::WriteMovieText(jobPath / "time.txt.tmp", "torn timer replacement");
+    FractalSharkCli::MovieJob timedResume(jobPath, {});
+    ASSERT_TRUE(timedResume.ElapsedMilliseconds() >= elapsed);
 }
 
-TEST(MovieVideo_ExecutionBudgetsAndTilePlanning)
+TEST(MovieVideo_ExecutionBudgets)
 {
-    const auto execution = FractalSharkCli::PlanMovieExecution(5120, 2160, 32);
+    const auto execution = FractalSharkCli::PlanMovieExecution(32);
     ASSERT_EQ(execution.size(), 4u);
     unsigned decoders = 0;
     for (unsigned slot = 0; slot < execution.size(); ++slot) {
         ASSERT_EQ(execution[slot].Slot, slot);
         ASSERT_EQ(execution[slot].DecoderThreads, slot == 3 ? 7u : 8u);
         ASSERT_EQ(execution[slot].FilterThreads, execution[slot].DecoderThreads);
-        ASSERT_EQ(execution[slot].EncoderThreads, 31u);
-        ASSERT_EQ(execution[slot].Tiles.Columns, 8u);
-        ASSERT_EQ(execution[slot].Tiles.Rows, 4u);
         decoders += execution[slot].DecoderThreads;
     }
     ASSERT_EQ(decoders, 31u);
     for (const unsigned logical : {0u, 1u, 2u, 3u, 4u, 5u, 64u, 128u}) {
-        const auto slots = FractalSharkCli::PlanMovieExecution(16, 16, logical);
+        const auto slots = FractalSharkCli::PlanMovieExecution(logical);
         const auto budget = logical > 1 ? logical - 1 : 1;
         ASSERT_EQ(slots.size(), std::min(4u, budget));
         unsigned total = 0;
         for (const auto &slot : slots) {
             total += slot.DecoderThreads;
             ASSERT_TRUE(slot.DecoderThreads >= 1);
-            ASSERT_EQ(slot.EncoderThreads, std::min(budget, 64u));
-            ASSERT_EQ(slot.Tiles.Columns, 1u);
-            ASSERT_EQ(slot.Tiles.Rows, 1u);
         }
         ASSERT_EQ(total, budget);
     }
-    const auto wide = FractalSharkCli::PlanMovieTiles(16384, 2160, 1);
-    ASSERT_EQ(wide.Columns, 4u);
-    ASSERT_EQ(wide.Rows, 1u);
-    const auto tall = FractalSharkCli::PlanMovieTiles(4096, 4608, 1);
-    ASSERT_EQ(tall.Columns, 1u);
-    ASSERT_EQ(tall.Rows, 2u);
-    ASSERT_THROWS(FractalSharkCli::PlanMovieTiles(0, 16, 31), FractalSharkSeriousException);
-    ASSERT_THROWS(FractalSharkCli::PlanMovieTiles(UINT32_MAX, 16, 31), FractalSharkSeriousException);
 }
 
 TEST(MoviePng_Rgb16RoundingAndDimensionValidation)
@@ -564,6 +612,8 @@ TEST(MovieRunner_CreateResumeAndRecoverMissingFrame)
         FractalSharkCli::MovieJob state(job, {});
         state.InitializeProgress(5, true, 0);
         ASSERT_EQ(state.Remaining(), 0u);
+        ASSERT_EQ(state.Config().Values.at("video-encoder-args"),
+                  FractalShark::DefaultMovieEncoderArguments());
         frame = state.FramePath(3);
         std::filesystem::remove(frame);
     }
@@ -573,7 +623,7 @@ TEST(MovieRunner_CreateResumeAndRecoverMissingFrame)
     {
         FractalSharkCli::MovieJob state(job, {});
         state.InitializeProgress(5, true, 0);
-        state.Rewind(4);
+        state.Rewind(3);
         FractalSharkCli::WriteMovieText(state.FramePath(3), "incomplete PNG");
     }
     ASSERT_EQ(FractalSharkCli::RunMovie(job, config, {}, GpuMode::Disabled, UINT64_MAX, Settings), 0);
@@ -813,11 +863,10 @@ void
 ResumeWithGatedArchive(ResumeOutcome outcome)
 {
     // Fill every archive slot with a recovered range and leave one inherited
-    // range queued. Only indices 7..0 render, at 16x16, across BOTH attempts.
-    const auto slots = FractalSharkCli::PlanMovieExecution(16, 16, Environment::LogicalProcessorCount());
-    const uint64_t frameCount = 10 + slots.size() * 4;
-    constexpr uint64_t Frontier = 8;
-    constexpr uint64_t ChunkFrames = 4;
+    // range queued. At most eight 256x256 frames render across BOTH attempts.
+    const auto slots = FractalSharkCli::PlanMovieExecution(Environment::LogicalProcessorCount());
+    const uint64_t frontier = (slots.size() + 1) * 4;
+    const uint64_t frameCount = frontier + 8;
     MovieTestDirectory directory;
     const auto config = directory.Config("video-chunk-frames=4\n");
     auto text = FractalSharkCli::ReadMovieText(config);
@@ -828,15 +877,15 @@ ResumeWithGatedArchive(ResumeOutcome outcome)
     {
         FractalSharkCli::MovieJob job(jobPath, config);
         job.InitializeProgress(frameCount, true, static_cast<long double>(frameCount - 1));
-        for (uint64_t index = frameCount; index-- > Frontier;) {
-            WriteFrame(job.FramePath(index), 16, 16, index);
+        for (uint64_t index = 0; index < frontier; ++index) {
+            WriteFrame(job.FramePath(index), 256, 256, index);
             job.CompleteFrame(index);
         }
         job.Encoder(Environment::ExecutablePath());
-        firstNewPng = job.FramePath(7);
-        collectedPng = job.FramePath(4);
-        nextBatchPng = job.FramePath(3);
-        firstRecord = job.VideoPath(frameCount - 2);
+        firstNewPng = job.FramePath(frontier);
+        collectedPng = job.FramePath(frontier + 3);
+        nextBatchPng = job.FramePath(frontier + 4);
+        firstRecord = job.VideoPath(0);
         firstRecord += ".complete";
     }
     const auto control = directory.Path / "proxy";
@@ -845,7 +894,8 @@ ResumeWithGatedArchive(ResumeOutcome outcome)
     FractalSharkCli::WriteMovieText(control / "hold", "hold first archive");
     if (outcome == ResumeOutcome::Failed) {
         // Fail the youngest active slot while older slots remain blocked.
-        FractalSharkCli::WriteMovieText(control / "fail-12", "fail youngest active archive");
+        FractalSharkCli::WriteMovieText(control / ("fail-" + std::to_string((slots.size() - 1) * 4)),
+                                        "fail youngest active archive");
     }
     MovieProxyEnvironment proxy(control);
     bool overlapped = false;
@@ -856,9 +906,8 @@ ResumeWithGatedArchive(ResumeOutcome outcome)
             while (!token.stop_requested()) {
                 bool allStarted = true;
                 for (size_t slot = 0; slot < slots.size(); ++slot) {
-                    allStarted = allStarted &&
-                                 std::filesystem::exists(
-                                     control / ("started-" + std::to_string(frameCount - 2 - slot * 4)));
+                    allStarted = allStarted && std::filesystem::exists(
+                                                   control / ("started-" + std::to_string(slot * 4)));
                 }
                 if (allStarted && std::filesystem::exists(collectedPng)) {
                     // Give a broken capacity check time to leak the next
@@ -867,11 +916,14 @@ ResumeWithGatedArchive(ResumeOutcome outcome)
                     overlapped =
                         std::filesystem::exists(firstNewPng) && !std::filesystem::exists(firstRecord);
                     bounded = !std::filesystem::exists(nextBatchPng) &&
-                              !std::filesystem::exists(control / "started-8");
+                              !std::filesystem::exists(control /
+                                                       ("started-" + std::to_string(slots.size() * 4)));
                     if (outcome == ResumeOutcome::Interrupted) {
                         std::raise(SIGINT);
                     } else if (outcome == ResumeOutcome::Failed) {
-                        FractalSharkCli::WriteMovieText(control / "release-12", "fail this slot only");
+                        FractalSharkCli::WriteMovieText(
+                            control / ("release-" + std::to_string((slots.size() - 1) * 4)),
+                            "fail this slot only");
                     } else {
                         FractalSharkCli::WriteMovieText(control / "release", "new chunk collected");
                     }
@@ -885,7 +937,7 @@ ResumeWithGatedArchive(ResumeOutcome outcome)
         }
     });
     const auto result =
-        FractalSharkCli::RunMovie(jobPath, {}, {}, GpuMode::Disabled, UINT64_MAX, Settings);
+        FractalSharkCli::RunMovie(jobPath, {}, {}, GpuMode::Disabled, UINT64_MAX, VideoSettings);
     watch.request_stop();
     watch.join();
     if (watchError) {
@@ -901,26 +953,27 @@ ResumeWithGatedArchive(ResumeOutcome outcome)
         FractalSharkCli::MovieJob paused(jobPath, {});
         paused.InitializeProgress(frameCount, true, static_cast<long double>(frameCount - 1));
         ASSERT_EQ(paused.Remaining(), 4u);
-        ASSERT_FALSE(paused.FindChunk(frameCount - 2).has_value());
-        for (uint64_t index = 4; index < frameCount; ++index) {
+        ASSERT_FALSE(paused.FindChunk(0).has_value());
+        for (uint64_t index = 0; index < frontier + 4; ++index) {
             ASSERT_TRUE(std::filesystem::exists(paused.FramePath(index)));
         }
-        for (uint64_t index = 0; index < 4; ++index) {
+        for (uint64_t index = frontier + 4; index < frameCount; ++index) {
             ASSERT_FALSE(std::filesystem::exists(paused.FramePath(index)));
         }
         // On retry use the real encoder directly. The eight unique missing
         // frames across both runs are the entire rendering budget of this case.
         paused.Encoder(std::getenv("FRACTALSHARK_TEST_FFMPEG"));
     }
-    ASSERT_EQ(FractalSharkCli::RunMovie(jobPath, {}, {}, GpuMode::Disabled, UINT64_MAX, Settings), 0);
+    ASSERT_EQ(FractalSharkCli::RunMovie(jobPath, {}, {}, GpuMode::Disabled, UINT64_MAX, VideoSettings),
+              0);
     FractalSharkCli::MovieJob complete(jobPath, {});
     complete.InitializeProgress(frameCount, true, static_cast<long double>(frameCount - 1));
     ASSERT_EQ(complete.Remaining(), 0u);
-    for (uint64_t first = 0; first < frameCount; first += ChunkFrames) {
-        const auto chunk = complete.FindChunk(first);
-        ASSERT_TRUE(chunk.has_value());
-        ASSERT_EQ(chunk->Count, std::min(ChunkFrames, frameCount - first));
-    }
+    const auto assembly = complete.ReadAssembly();
+    ASSERT_TRUE(assembly.has_value());
+    ASSERT_EQ(assembly->NextChunk, complete.ChunkCount());
+    ASSERT_EQ(std::filesystem::file_size(jobPath / "movie.ts"), assembly->Bytes);
+    ASSERT_TRUE(std::filesystem::is_empty(jobPath / "chunks"));
     for (uint64_t index = 0; index < frameCount; ++index) {
         ASSERT_FALSE(std::filesystem::exists(complete.FramePath(index)));
     }
@@ -929,7 +982,7 @@ ResumeWithGatedArchive(ResumeOutcome outcome)
 const bool ResumeOverlapRegistered = TestFramework::RegisterCase(
     "MovieResume_OverlapsSavedChunksAndBoundsNewFrames",
     [] { ResumeWithGatedArchive(ResumeOutcome::Complete); },
-    false,
+    true,
     std::getenv("FRACTALSHARK_TEST_FFMPEG")
         ? ""
         : "Set FRACTALSHARK_TEST_FFMPEG to enable tiny encoder tests",
@@ -937,7 +990,7 @@ const bool ResumeOverlapRegistered = TestFramework::RegisterCase(
 const bool ResumeInterruptRegistered = TestFramework::RegisterCase(
     "MovieResume_InterruptedArchiveDrainsPngsAndResumes",
     [] { ResumeWithGatedArchive(ResumeOutcome::Interrupted); },
-    false,
+    true,
     std::getenv("FRACTALSHARK_TEST_FFMPEG")
         ? ""
         : "Set FRACTALSHARK_TEST_FFMPEG to enable tiny encoder tests",
@@ -945,7 +998,7 @@ const bool ResumeInterruptRegistered = TestFramework::RegisterCase(
 const bool ResumeFailureRegistered = TestFramework::RegisterCase(
     "MovieResume_ArchiveFailureDrainsPngsAndResumes",
     [] { ResumeWithGatedArchive(ResumeOutcome::Failed); },
-    false,
+    true,
     std::getenv("FRACTALSHARK_TEST_FFMPEG")
         ? ""
         : "Set FRACTALSHARK_TEST_FFMPEG to enable tiny encoder tests",
@@ -965,8 +1018,8 @@ ArchiveCompletedPngJob()
     {
         FractalSharkCli::MovieJob job(jobPath, config);
         job.InitializeProgress(14, true, 13);
-        for (uint64_t index = 14; index-- > 0;) {
-            WriteFrame(job.FramePath(index), 16, 16, index);
+        for (uint64_t index = 0; index < 14; ++index) {
+            WriteFrame(job.FramePath(index), 256, 256, index);
             job.CompleteFrame(index);
         }
         job.Encoder(Environment::ExecutablePath());
@@ -976,7 +1029,7 @@ ArchiveCompletedPngJob()
     FractalSharkCli::WriteMovieText(control / "ffmpeg.txt", std::getenv("FRACTALSHARK_TEST_FFMPEG"));
     FractalSharkCli::WriteMovieText(control / "hold", "hold each archive independently");
     MovieProxyEnvironment proxy(control);
-    const auto slots = FractalSharkCli::PlanMovieExecution(16, 16, Environment::LogicalProcessorCount());
+    const auto slots = FractalSharkCli::PlanMovieExecution(Environment::LogicalProcessorCount());
     bool harvestedYoungest = false;
     std::exception_ptr watchError;
     std::jthread watch([&](std::stop_token token) {
@@ -984,35 +1037,34 @@ ArchiveCompletedPngJob()
             while (!token.stop_requested()) {
                 bool allStarted = true;
                 for (size_t slot = 0; slot < slots.size(); ++slot) {
-                    allStarted =
-                        allStarted &&
-                        std::filesystem::exists(control / ("started-" + std::to_string(12 - slot * 4)));
+                    allStarted = allStarted && std::filesystem::exists(
+                                                   control / ("started-" + std::to_string(slot * 4)));
                 }
                 if (allStarted) {
                     break;
                 }
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
-            const auto youngest = 12 - (slots.size() - 1) * 4;
+            const auto youngest = (slots.size() - 1) * 4;
             FractalSharkCli::WriteMovieText(control / ("release-" + std::to_string(youngest)), "go");
-            // Match the job's twenty-digit path contract.
+            // Match the ascending chunk-number path contract.
             std::ostringstream padded;
-            padded << std::setw(20) << std::setfill('0') << youngest;
-            const auto youngestRecord = jobPath / "chunks" / (padded.str() + ".mkv.complete");
+            padded << std::setw(10) << std::setfill('0') << youngest / 4;
+            const auto youngestRecord = jobPath / "chunks" / ("chunk_" + padded.str() + ".mkv.complete");
             while (!token.stop_requested() && !std::filesystem::exists(youngestRecord)) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             harvestedYoungest =
                 std::filesystem::exists(youngestRecord) &&
                 (slots.size() == 1 ||
-                 !std::filesystem::exists(jobPath / "chunks" / "00000000000000000012.mkv.complete"));
+                 !std::filesystem::exists(jobPath / "chunks" / "chunk_0000000000.mkv.complete"));
             FractalSharkCli::WriteMovieText(control / "release", "release older slots");
         } catch (...) {
             watchError = std::current_exception();
         }
     });
     const auto result =
-        FractalSharkCli::RunMovie(jobPath, {}, {}, GpuMode::Disabled, UINT64_MAX, Settings);
+        FractalSharkCli::RunMovie(jobPath, {}, {}, GpuMode::Disabled, UINT64_MAX, VideoSettings);
     watch.request_stop();
     watch.join();
     if (watchError) {
@@ -1023,231 +1075,314 @@ ArchiveCompletedPngJob()
     FractalSharkCli::MovieJob job(jobPath, {});
     job.InitializeProgress(14, true, 13);
     ASSERT_EQ(job.Remaining(), 0u);
-    for (const uint64_t first : {0, 4, 8, 12}) {
-        ASSERT_TRUE(job.FindChunk(first).has_value());
-    }
+    const auto assembly = job.ReadAssembly();
+    ASSERT_TRUE(assembly.has_value());
+    ASSERT_EQ(assembly->NextChunk, 4u);
+    ASSERT_TRUE(std::filesystem::is_empty(jobPath / "chunks"));
     for (uint64_t index = 0; index < 14; ++index) {
         ASSERT_FALSE(std::filesystem::exists(job.FramePath(index)));
     }
-    const auto manifest = FractalSharkCli::ReadMovieText(jobPath / "movie.ffconcat");
-    size_t previous = 0;
-    for (const auto *name : {"00000000000000000000.mkv",
-                             "00000000000000000004.mkv",
-                             "00000000000000000008.mkv",
-                             "00000000000000000012.mkv"}) {
-        const auto position = manifest.find(name);
-        ASSERT_TRUE(position != std::string::npos && position > previous);
-        previous = position;
-    }
+    ASSERT_EQ(std::filesystem::file_size(jobPath / "movie.ts"), assembly->Bytes);
+    ASSERT_FALSE(std::filesystem::exists(jobPath / "movie.ffconcat"));
 }
 const bool ResumeCompletedPngRegistered =
     TestFramework::RegisterCase("MovieResume_CompletedPngJobDrainsAllArchives",
                                 ArchiveCompletedPngJob,
-                                false,
+                                true,
                                 std::getenv("FRACTALSHARK_TEST_FFMPEG")
                                     ? ""
                                     : "Set FRACTALSHARK_TEST_FFMPEG to enable tiny encoder tests",
                                 false);
 
 void
-TiledChunksAndMixedAssembly()
+ChunkAssembly()
 {
-    // Synthetic PNGs exercise a real 8x4 grid without rendering fractals.
-    // A 1x1 legacy chunk and a tiled chunk must remain stream-copy compatible.
+    // Synthetic PNGs exercise chunk assembly without rendering fractals.
     constexpr unsigned Width = 1024;
     constexpr unsigned Height = 512;
     constexpr uint64_t Frames = 4;
     MovieTestDirectory directory;
-    const auto config = directory.Config("video-chunk-frames=2\n");
-    FractalSharkCli::MovieJob job(directory.Path / "job", config);
-    job.InitializeProgress(Frames, true, 3);
-    FractalSharkCli::MovieHash expected;
+    const auto config =
+        directory.Config("video-chunk-frames=2\nvideo-encoder-args=" +
+                         std::string(FractalShark::LosslessMovieEncoderArguments()) + "\n");
+    const auto jobPath = directory.Path / "job";
+    auto job = std::make_unique<FractalSharkCli::MovieJob>(jobPath, config);
+    job->InitializeProgress(Frames, true, 3);
+    std::vector<unsigned char> expected;
     for (uint64_t index = 0; index < Frames; ++index) {
-        WriteFrame(job.FramePath(index), Width, Height, index);
-        expected.Update(FractalSharkCli::ReadMovieRgb8(job.FramePath(index), Width, Height));
+        WriteFrame(job->FramePath(index), Width, Height, index);
+    }
+    for (uint64_t index = 0; index < Frames; ++index) {
+        const auto pixels = FractalSharkCli::ReadMovieRgb8(job->FramePath(index), Width, Height);
+        expected.insert(expected.end(), pixels.begin(), pixels.end());
     }
     const std::filesystem::path encoder(std::getenv("FRACTALSHARK_TEST_FFMPEG"));
-    auto execution = FractalSharkCli::PlanMovieExecution(Width, Height, 32).front();
-    ASSERT_EQ(execution.Tiles.Columns, 8u);
-    ASSERT_EQ(execution.Tiles.Rows, 4u);
-    const FractalSharkCli::MovieVideo tiled(encoder, Width, Height, 60, execution, [] { return false; });
-    execution.Tiles = {1, 1};
-    const FractalSharkCli::MovieVideo legacy(
-        encoder, Width, Height, 60, execution, [] { return false; });
+    auto execution = FractalSharkCli::PlanMovieExecution(32).front();
+    const FractalSharkCli::MovieVideo video(
+        encoder, Width, Height, job->Config(), execution, [] { return false; });
     // The neighboring chunk is deliberately unreadable while the first is
     // archived. Output frame limits alone cannot prevent image2 prefetch from
     // touching it; private input sequences must impose the actual boundary.
-    FractalSharkCli::WriteMovieText(job.FramePath(2), "invalid neighboring PNG");
-    job.CommitChunk(legacy.Archive(job, 0, 2));
-    WriteFrame(job.FramePath(2), Width, Height, 2);
-    job.CommitChunk(tiled.Archive(job, 2, 2));
-    job.WriteConcatManifest(Frames);
-    const auto joined = directory.Path / "joined.mkv";
+    FractalSharkCli::WriteMovieText(job->FramePath(2), "invalid neighboring PNG");
+    job->CommitChunk(video.Archive(*job, 0, 2));
+    WriteFrame(job->FramePath(2), Width, Height, 2);
+    job->CommitChunk(video.Archive(*job, 2, 2));
+    job->WriteConcatManifest();
+    const auto joined = jobPath / "movie.ts";
+    const auto partial = jobPath / "movie.ts.partial";
+    const auto firstChunk = job->VideoPath(0);
+    const auto secondChunk = job->VideoPath(2);
+    auto firstRecord = firstChunk;
+    firstRecord += ".complete";
+    const auto stop = [] { return false; };
+    FractalSharkCli::WriteMovieText(joined, "prior movie");
+    ASSERT_THROWS(FractalSharkCli::AssembleMovie(*job, encoder, stop), FractalSharkSeriousException);
+    ASSERT_TRUE(job->HasAllChunks());
+    ASSERT_EQ(FractalSharkCli::ReadMovieText(joined), "prior movie");
+    std::filesystem::remove(joined);
+
+    const auto control = directory.Path / "join-proxy";
+    std::filesystem::create_directory(control);
+    FractalSharkCli::WriteMovieText(control / "ffmpeg.txt", std::getenv("FRACTALSHARK_TEST_FFMPEG"));
+    const auto fail = control / ("fail-join-" + secondChunk.filename().string());
+    const auto hold = control / ("hold-join-" + secondChunk.filename().string());
+    const auto started = control / ("started-join-" + secondChunk.filename().string());
+    const auto firstPayload = FractalSharkCli::ReadMovieText(firstChunk);
+    const auto firstMetadata = FractalSharkCli::ReadMovieText(firstRecord);
+    const auto noRender =
+        [](const FractalSharkCli::MovieConfig &) -> FractalSharkCli::MovieRenderSettings {
+        throw FractalSharkSeriousException("An assembly-only launch initialized the renderer");
+    };
+    {
+        MovieProxyEnvironment proxy(control);
+        FractalSharkCli::WriteMovieText(fail, "fail after writing bytes");
+        ASSERT_THROWS(FractalSharkCli::AssembleMovie(*job, Environment::ExecutablePath(), stop),
+                      FractalSharkSeriousException);
+        const auto saved = job->ReadAssembly();
+        ASSERT_TRUE(saved.has_value());
+        ASSERT_EQ(saved->NextChunk, 1u);
+        ASSERT_TRUE(std::filesystem::file_size(partial) > saved->Bytes);
+        ASSERT_FALSE(std::filesystem::exists(firstChunk));
+        ASSERT_TRUE(std::filesystem::exists(secondChunk));
+        ASSERT_FALSE(std::filesystem::exists(joined));
+
+        // Simulate a shutdown after committing the first append but before
+        // unlinking its source. The retry must reclaim it without copying it.
+        FractalSharkCli::WriteMovieText(firstChunk, firstPayload);
+        FractalSharkCli::WriteMovieText(firstRecord, firstMetadata);
+        job.reset();
+        std::filesystem::remove(fail);
+        std::filesystem::remove(started);
+        FractalSharkCli::WriteMovieText(hold, "wait for interrupt");
+        std::jthread interrupt([&](std::stop_token token) {
+            std::error_code error;
+            while (!token.stop_requested()) {
+                if (std::filesystem::exists(started, error)) {
+                    std::raise(SIGINT);
+                    return;
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+        });
+        const auto result = FractalSharkCli::RunMovie(
+            jobPath, {}, Environment::ExecutablePath(), GpuMode::Disabled, UINT64_MAX, noRender);
+        interrupt.request_stop();
+        interrupt.join();
+        ASSERT_EQ(result, 130);
+        ASSERT_FALSE(std::filesystem::exists(firstChunk));
+        ASSERT_TRUE(std::filesystem::exists(secondChunk));
+        FractalSharkCli::MovieJob paused(jobPath, {});
+        const auto pausedAssembly = paused.ReadAssembly();
+        ASSERT_TRUE(pausedAssembly.has_value());
+        ASSERT_EQ(pausedAssembly->NextChunk, 1u);
+        ASSERT_EQ(pausedAssembly->Bytes, saved->Bytes);
+    }
+    ASSERT_EQ(FractalSharkCli::RunMovie(jobPath, {}, encoder, GpuMode::Disabled, UINT64_MAX, noRender),
+              0);
+    ASSERT_TRUE(std::filesystem::is_empty(jobPath / "chunks"));
+    ASSERT_FALSE(std::filesystem::exists(partial));
+    const auto movieBytes = std::filesystem::file_size(joined);
+    // Both sides of final publication are retryable with the full journal and
+    // no encoder executable. Moving the file back simulates the prior state.
+    std::filesystem::rename(joined, partial);
+    const auto missingEncoder = directory.Path / "unavailable-ffmpeg";
+    ASSERT_EQ(
+        FractalSharkCli::RunMovie(jobPath, {}, missingEncoder, GpuMode::Disabled, UINT64_MAX, noRender),
+        0);
+    ASSERT_EQ(
+        FractalSharkCli::RunMovie(jobPath, {}, missingEncoder, GpuMode::Disabled, UINT64_MAX, noRender),
+        0);
+    ASSERT_EQ(std::filesystem::file_size(joined), movieBytes);
     const auto pathText = [](const std::filesystem::path &path) {
         return Environment::WideToUtf8(Environment::FromFsPath(path));
     };
-    const auto muxed = Environment::RunMovieProcess(encoder,
-                                                    {"-hide_banner",
-                                                     "-nostdin",
-                                                     "-v",
-                                                     "error",
-                                                     "-f",
-                                                     "concat",
-                                                     "-safe",
-                                                     "0",
-                                                     "-i",
-                                                     pathText(job.Directory() / "movie.ffconcat"),
-                                                     "-c",
-                                                     "copy",
-                                                     pathText(joined)},
-                                                    {},
-                                                    {},
-                                                    {},
-                                                    {});
-    ASSERT_EQ(muxed.ExitCode, 0);
-    std::string digest;
-    const auto decoded = Environment::RunMovieProcess(
-        encoder,
-        {"-hide_banner",
-         "-nostdin",
-         "-v",
-         "error",
-         "-threads:v",
-         "1",
-         "-i",
-         pathText(joined),
-         "-filter_threads",
-         "1",
-         "-pix_fmt",
-         "rgb24",
-         "-c:v",
-         "rawvideo",
-         "-threads:v",
-         "1",
-         "-f",
-         "hash",
-         "-hash",
-         "sha256",
-         "pipe:1"},
-        {},
-        [&](std::span<const unsigned char> bytes) {
-            digest.append(reinterpret_cast<const char *>(bytes.data()), bytes.size());
-        },
-        {},
-        {});
+    std::vector<unsigned char> pixels;
+    const auto decoded =
+        Environment::RunMovieProcess(encoder,
+                                     {"-hide_banner",
+                                      "-nostdin",
+                                      "-v",
+                                      "error",
+                                      "-threads:v",
+                                      "1",
+                                      "-i",
+                                      pathText(joined),
+                                      "-filter_threads",
+                                      "1",
+                                      "-pix_fmt",
+                                      "rgb24",
+                                      "-c:v",
+                                      "rawvideo",
+                                      "-threads:v",
+                                      "1",
+                                      "-fps_mode",
+                                      "passthrough",
+                                      "-f",
+                                      "rawvideo",
+                                      "pipe:1"},
+                                     {},
+                                     [&](std::span<const unsigned char> bytes) {
+                                         ASSERT_TRUE(pixels.size() + bytes.size() <= expected.size());
+                                         pixels.insert(pixels.end(), bytes.begin(), bytes.end());
+                                     },
+                                     {},
+                                     {});
     ASSERT_EQ(decoded.ExitCode, 0);
-    ASSERT_TRUE(digest.starts_with("SHA256=" + expected.Finish()));
-}
-const bool TiledAssemblyRegistered =
-    TestFramework::RegisterCase("MovieVideo_TiledChunksAndMixedAssembly",
-                                TiledChunksAndMixedAssembly,
+    ASSERT_TRUE(pixels == expected);
+    const std::vector<std::string> profiles{
+        std::string(FractalShark::DefaultMovieEncoderArguments()),
+        "-c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 22 -profile:v main -pix_fmt nv12 "
+        "-colorspace bt709 -color_range tv",
+        "-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18 -b:v 0 -profile:v high -pix_fmt nv12",
+        "-c:v h264_nvenc -preset p1 -tune hq -rc vbr -cq 30 -b:v 0 -profile:v high -pix_fmt nv12"};
+    for (size_t option = 0; option < profiles.size(); ++option) {
+        const auto selectedConfig =
+            directory.Config("video-chunk-frames=2\nvideo-encoder-args=" + profiles[option] + "\n");
+        FractalSharkCli::MovieJob selected(directory.Path / ("codec-" + std::to_string(option)),
+                                           selectedConfig);
+        selected.InitializeProgress(Frames, true, 3);
+        FractalSharkCli::MovieVideo selectedVideo(
+            encoder, Width, Height, selected.Config(), execution, [] { return false; });
+        selectedVideo.Preflight(selected.Directory());
+        for (uint64_t index = 0; index < Frames; ++index) {
+            WriteFrame(selected.FramePath(index), Width, Height, index);
+        }
+        selected.CommitChunk(selectedVideo.Archive(selected, 0, 2));
+        selected.CommitChunk(selectedVideo.Archive(selected, 2, 2));
+        FractalSharkCli::AssembleMovie(selected, encoder, stop);
+        const auto assembly = selected.ReadAssembly();
+        ASSERT_TRUE(assembly.has_value());
+        ASSERT_EQ(assembly->NextChunk, 2u);
+        ASSERT_TRUE(std::filesystem::is_empty(selected.Directory() / "chunks"));
+    }
+#ifdef _WIN32
+    // Reuse this GPU-gated case for a bounded serial/pipelined comparison:
+    // exactly four frames per path, with varying iteration limits. Native Linux
+    // CPU-only builds still exercise the independent NVENC/assembly checks above.
+    std::filesystem::current_path(directory.Path);
+    const auto configure = [](Fractal &current, uint64_t index) {
+        current.SetOfflineView(PointZoomBBConverter(HighPrecision("-0.75"),
+                                                    HighPrecision("0.1"),
+                                                    HighPrecision(std::to_string(uint64_t{2} << index)),
+                                                    PointZoomBBConverter::TestMode::Disabled));
+        constexpr uint64_t BaseIterations = 8192;
+        constexpr uint64_t IterationStep = 128;
+        current.SetNumIterations<uint64_t>(BaseIterations + IterationStep * index);
+    };
+    constexpr unsigned PipelineWidth = 512;
+    constexpr unsigned PipelineHeight = 256;
+    double serialSeconds = 0;
+    double parallelSeconds = 0;
+    {
+        Fractal serial(PipelineWidth, PipelineHeight, nullptr, false, UINT64_MAX, true, GpuMode::Auto);
+        serial.GetRenderPool()->Drain();
+        serial.SetIterType(IterTypeEnum::Bits64);
+        ASSERT_TRUE(
+            serial.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x64)));
+        const auto serialStart = std::chrono::steady_clock::now();
+        for (uint64_t index = 0; index < Frames; ++index) {
+            configure(serial, index);
+            serial.CalcFractal(true);
+            ASSERT_TRUE(serial
+                            .SaveCurrentFractalWithResult(
+                                Environment::FromFsPath(directory.Path /
+                                                        ("serial-" + std::to_string(index) + ".png")),
                                 false,
+                                SaveOverwritePolicy::ReplaceExisting)
+                            .get()
+                            .Succeeded());
+        }
+        serial.CleanupThreads(true);
+        serialSeconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - serialStart).count();
+    }
+    {
+        Fractal parallel(PipelineWidth, PipelineHeight, nullptr, false, UINT64_MAX, true, GpuMode::Auto);
+        parallel.SetIterType(IterTypeEnum::Bits64);
+        ASSERT_TRUE(
+            parallel.SetRenderAlgorithm(GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Gpu1x64)));
+        const auto parallelStart = std::chrono::steady_clock::now();
+        std::vector<std::future<SaveResult>> saves;
+        for (uint64_t index = 0; index < Frames; ++index) {
+            saves.push_back(parallel.EnqueueRenderToPng(
+                "bounded movie pipeline comparison",
+                [configure, index](Fractal &current) { configure(current, index); },
+                Environment::FromFsPath(directory.Path / ("parallel-" + std::to_string(index) + ".png")),
+                SaveOverwritePolicy::ReplaceExisting,
+                [] { return false; }));
+        }
+        for (auto &save : saves) {
+            ASSERT_TRUE(save.get().Succeeded());
+        }
+        parallel.GetRenderPool()->Drain();
+        parallel.CleanupThreads(true);
+        parallelSeconds =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - parallelStart).count();
+    }
+    for (uint64_t index = 0; index < Frames; ++index) {
+        ASSERT_TRUE(FractalSharkCli::ReadMovieRgb8(
+                        directory.Path / ("serial-" + std::to_string(index) + ".png"), 512, 256) ==
+                    FractalSharkCli::ReadMovieRgb8(
+                        directory.Path / ("parallel-" + std::to_string(index) + ".png"), 512, 256));
+    }
+    FractalSharkLog::LogLine(__FILE__, __LINE__)
+        << "Movie pipeline comparison frames=" << Frames << " serial_seconds=" << serialSeconds
+        << " pipelined_seconds=" << parallelSeconds;
+#endif
+}
+const bool ChunkAssemblyRegistered =
+    TestFramework::RegisterCase("MovieVideo_ChunkAssembly",
+                                ChunkAssembly,
+                                true,
                                 std::getenv("FRACTALSHARK_TEST_FFMPEG")
                                     ? ""
                                     : "Set FRACTALSHARK_TEST_FFMPEG to enable tiny encoder tests",
                                 false);
-
-void
-ArchiveParallelismBenchmark()
-{
-    // Opt-in measurement: four copied PNGs per worker, no fractal renders.
-    // The ordinary movie suite skips this fixture. Its temporary jobs own all
-    // copied inputs/outputs, including cleanup after a failed assertion.
-    MovieTestDirectory directory;
-    const std::filesystem::path sources(Environment::ToFsPath(
-        Environment::Utf8ToWide(std::getenv("FRACTALSHARK_TEST_MOVIE_BENCHMARK_FRAMES"))));
-    std::vector<std::filesystem::path> frames;
-    for (const auto &entry : std::filesystem::directory_iterator(sources)) {
-        if (entry.path().extension() == ".png") {
-            frames.push_back(entry.path());
-        }
-    }
-    std::sort(frames.begin(), frames.end());
-    ASSERT_EQ(frames.size(), 4u);
-    const auto png = FractalSharkCli::ReadMovieText(frames.front());
-    unsigned width = 0, height = 0;
-    lodepng::State state;
-    ASSERT_EQ(
-        lodepng_inspect(
-            &width, &height, &state, reinterpret_cast<const unsigned char *>(png.data()), png.size()),
-        0u);
-    const auto logical = Environment::LogicalProcessorCount();
-    const auto execution = FractalSharkCli::PlanMovieExecution(width, height, logical);
-    const auto config = directory.Config("video-chunk-frames=4\n");
-    FractalSharkCli::MovieJob job(directory.Path / "job", config);
-    job.InitializeProgress(execution.size() * 4, true, 3);
-    for (uint64_t frame = 0; frame < execution.size() * 4; ++frame) {
-        const auto path = job.FramePath(frame);
-        std::filesystem::create_directories(path.parent_path());
-        std::filesystem::copy_file(frames[frame % 4], path);
-    }
-    const std::filesystem::path encoder(std::getenv("FRACTALSHARK_TEST_FFMPEG"));
-    auto legacy = execution.front();
-    legacy.DecoderThreads = logical > 1 ? logical - 1 : 1;
-    legacy.FilterThreads = legacy.DecoderThreads;
-    legacy.Tiles = FractalSharkCli::PlanMovieTiles(width, height, 1);
-    FractalSharkLog::Write("Movie benchmark phase=legacy workers=1 frames=4", __FILE__, __LINE__);
-    const auto started = std::chrono::steady_clock::now();
-    const FractalSharkCli::MovieVideo baseline(encoder, width, height, 60, legacy, [] { return false; });
-    const auto oldChunk = baseline.Archive(job, 0, 4);
-    FractalSharkLog::LogLine(__FILE__, __LINE__)
-        << "Movie benchmark legacy_seconds="
-        << std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count()
-        << " video_bytes=" << oldChunk.VideoBytes;
-    FractalSharkLog::LogLine(__FILE__, __LINE__)
-        << "Movie benchmark phase=parallel workers=" << execution.size()
-        << " frames=" << execution.size() * 4;
-    const auto parallelStarted = std::chrono::steady_clock::now();
-    std::vector<std::future<FractalSharkCli::MovieChunk>> workers;
-    for (const auto &slot : execution) {
-        workers.push_back(std::async(std::launch::async, [&, slot] {
-            const FractalSharkCli::MovieVideo video(
-                encoder, width, height, 60, slot, [] { return false; });
-            return video.Archive(job, slot.Slot * 4, 4);
-        }));
-    }
-    uint64_t videoBytes = 0;
-    for (auto &worker : workers) {
-        const auto chunk = worker.get();
-        ASSERT_EQ(chunk.RgbHash, oldChunk.RgbHash);
-        videoBytes += chunk.VideoBytes;
-    }
-    FractalSharkLog::LogLine(__FILE__, __LINE__)
-        << "Movie benchmark parallel_seconds="
-        << std::chrono::duration<double>(std::chrono::steady_clock::now() - parallelStarted).count()
-        << " video_bytes=" << videoBytes;
-}
-const bool ArchiveBenchmarkRegistered = TestFramework::RegisterCase(
-    "MovieVideo_ArchiveParallelismBenchmark",
-    ArchiveParallelismBenchmark,
-    false,
-    std::getenv("FRACTALSHARK_TEST_FFMPEG") && std::getenv("FRACTALSHARK_TEST_MOVIE_BENCHMARK_FRAMES")
-        ? ""
-        : "Set FRACTALSHARK_TEST_MOVIE_BENCHMARK_FRAMES to four PNGs for opt-in measurement",
-    false);
 
 void
 CodecRoundTrip()
 {
     MovieTestDirectory directory;
-    const auto config = directory.Config("video-chunk-frames=1000\n");
+    const auto config =
+        directory.Config("video-chunk-frames=1000\nvideo-encoder-args=" +
+                         std::string(FractalShark::LosslessMovieEncoderArguments()) + "\n");
     FractalSharkCli::MovieJob job(directory.Path / "job", config);
     job.InitializeProgress(1001, true, 30);
     FractalSharkCli::MovieVideo video(std::getenv("FRACTALSHARK_TEST_FFMPEG"),
-                                      16,
-                                      16,
-                                      60,
-                                      FractalSharkCli::PlanMovieExecution(16, 16, 32).front(),
+                                      256,
+                                      256,
+                                      job.Config(),
+                                      FractalSharkCli::PlanMovieExecution(32).front(),
                                       [] { return false; });
     video.Preflight(directory.Path);
     for (uint64_t i = 0; i < 1001; ++i) {
-        WriteFrame(job.FramePath(i), 16, 16, i);
+        WriteFrame(job.FramePath(i), 256, 256, i);
     }
     FractalSharkCli::MovieVideo cancelled(std::getenv("FRACTALSHARK_TEST_FFMPEG"),
-                                          16,
-                                          16,
-                                          60,
-                                          FractalSharkCli::PlanMovieExecution(16, 16, 32).front(),
+                                          256,
+                                          256,
+                                          job.Config(),
+                                          FractalSharkCli::PlanMovieExecution(32).front(),
                                           [] { return true; });
     ASSERT_THROWS(cancelled.Archive(job, 0, 1000), FractalSharkCli::MovieInterrupted);
     ASSERT_TRUE(std::filesystem::exists(job.FramePath(0)));
@@ -1256,22 +1391,15 @@ CodecRoundTrip()
     FractalSharkCli::WriteMovieText(job.VideoPath(1000), "incomplete movie");
     for (const auto first : {uint64_t{1000}, uint64_t{0}}) {
         const auto count = first == 1000 ? 1 : 1000;
-        FractalSharkCli::MovieHash expected;
-        for (uint64_t i = first; i < first + count; ++i) {
-            expected.Update(FractalSharkCli::ReadMovieRgb8(job.FramePath(i), 16, 16));
-        }
         const auto chunk = video.Archive(job, first, count);
-        ASSERT_EQ(chunk.RgbHash, expected.Finish());
+        ASSERT_EQ(chunk.Count, static_cast<uint64_t>(count));
         ASSERT_TRUE(std::filesystem::exists(job.FramePath(first)));
         ASSERT_FALSE(job.FindChunk(first).has_value());
-        video.Verify(job.VideoPath(first), count, chunk.RgbHash);
-        ASSERT_THROWS(video.Verify(job.VideoPath(first), count, std::string(64, '0')),
-                      FractalSharkSeriousException);
         job.CommitChunk(chunk);
         job.DeleteChunkPngs(chunk);
         ASSERT_FALSE(std::filesystem::exists(job.FramePath(first)));
     }
-    job.WriteConcatManifest(1001);
+    job.WriteConcatManifest();
     ASSERT_TRUE(FractalSharkCli::ReadMovieText(job.Directory() / "movie.ffconcat").find(".mkv") !=
                 std::string::npos);
     const auto pipelineConfig = directory.Config("video-chunk-frames=2\n");
@@ -1281,19 +1409,20 @@ CodecRoundTrip()
                                         std::getenv("FRACTALSHARK_TEST_FFMPEG"),
                                         GpuMode::Disabled,
                                         UINT64_MAX,
-                                        Settings),
+                                        VideoSettings),
               0);
     {
         FractalSharkCli::MovieJob state(pipelineJob, {});
         state.InitializeProgress(5, true, 4);
         ASSERT_EQ(state.Remaining(), 0u);
-        ASSERT_EQ(state.FindChunk(0)->Count, 2u);
-        ASSERT_EQ(state.FindChunk(2)->Count, 2u);
-        ASSERT_EQ(state.FindChunk(4)->Count, 1u);
+        const auto assembly = state.ReadAssembly();
+        ASSERT_TRUE(assembly.has_value());
+        ASSERT_EQ(assembly->NextChunk, 3u);
+        ASSERT_TRUE(std::filesystem::is_empty(pipelineJob / "chunks"));
         ASSERT_FALSE(std::filesystem::exists(state.FramePath(0)));
     }
-    ASSERT_EQ(FractalSharkCli::RunMovie(pipelineJob, {}, {}, GpuMode::Disabled, UINT64_MAX, Settings),
-              0);
+    ASSERT_EQ(
+        FractalSharkCli::RunMovie(pipelineJob, {}, {}, GpuMode::Disabled, UINT64_MAX, VideoSettings), 0);
 
     // A GUI-created folder starts and resumes with no external INI or encoder
     // arguments. Its only configuration is the file already inside that folder.
@@ -1305,34 +1434,32 @@ CodecRoundTrip()
     single.replace(single.find("zoom=16"), 7, "zoom=1");
     FractalShark::SaveMovieConfiguration(exported, single);
     ASSERT_EQ(FractalSharkCli::RunMovie(
-                  exported.JobDirectory, {}, {}, GpuMode::Disabled, UINT64_MAX, Settings),
+                  exported.JobDirectory, {}, {}, GpuMode::Disabled, UINT64_MAX, VideoSettings),
               0);
     ASSERT_EQ(FractalSharkCli::RunMovie(
-                  exported.JobDirectory, {}, {}, GpuMode::Disabled, UINT64_MAX, Settings),
+                  exported.JobDirectory, {}, {}, GpuMode::Disabled, UINT64_MAX, VideoSettings),
               0);
 
     // An odd stride visits every RGB16 value. Three channels repeat all 65536
-    // values, so the digest checks exhaustive rounding as well as pixel order.
+    // values; the four-frame assembly case checks conversion and pixel order.
     FractalSharkCli::MovieJob exhaustive(directory.Path / std::filesystem::path(u8"100% \u03b2"),
                                          config);
     WriteFrame(exhaustive.FramePath(0), 256, 256, 17);
     FractalSharkCli::MovieVideo wide(std::getenv("FRACTALSHARK_TEST_FFMPEG"),
                                      256,
                                      256,
-                                     60,
-                                     FractalSharkCli::PlanMovieExecution(256, 256, 32).front(),
+                                     job.Config(),
+                                     FractalSharkCli::PlanMovieExecution(32).front(),
                                      [] { return false; });
     const auto wideChunk = wide.Archive(exhaustive, 0, 1);
-    FractalSharkCli::MovieHash wideExpected;
-    wideExpected.Update(FractalSharkCli::ReadMovieRgb8(exhaustive.FramePath(0), 256, 256));
-    ASSERT_EQ(wideChunk.RgbHash, wideExpected.Finish());
+    ASSERT_EQ(wideChunk.Count, 1u);
 
     FractalSharkCli::MovieJob damaged(directory.Path / "damaged", config);
-    WriteFrame(damaged.FramePath(0), 16, 16, 0);
+    WriteFrame(damaged.FramePath(0), 256, 256, 0);
     WriteFrame(damaged.FramePath(1), 8, 32, 1);
     ASSERT_THROWS(video.Archive(damaged, 0, 2), FractalSharkSeriousException);
     ASSERT_FALSE(std::filesystem::exists(damaged.VideoPath(0)));
-    WriteFrame(damaged.FramePath(1), 16, 16, 1);
+    WriteFrame(damaged.FramePath(1), 256, 256, 1);
     auto corrupt = FractalSharkCli::ReadMovieText(damaged.FramePath(1));
     const auto idat = corrupt.find("IDAT");
     ASSERT_TRUE(idat != std::string::npos && idat >= 4);
@@ -1351,8 +1478,8 @@ CodecRoundTrip()
     ASSERT_THROWS(video.Archive(damaged, 9999, 2), FractalSharkSeriousException);
 
     // Interrupt an active archive while the render thread is producing the
-    // following chunk. Every completed PNG must reach the descending checkpoint
-    // before exit 130, even if finishEncoding observes cancellation first.
+    // following chunk. Every completed PNG must reach the ascending checkpoint
+    // before exit 130, even if a worker observes cancellation first.
     const auto pauseConfig = directory.Config("video-chunk-frames=4\n");
     auto pauseText = FractalSharkCli::ReadMovieText(pauseConfig);
     pauseText.replace(pauseText.find("zoom=16"), 7, "zoom=4294967296");
@@ -1367,8 +1494,7 @@ CodecRoundTrip()
     std::exception_ptr watchError;
     std::jthread interrupter([&](std::stop_token token) {
         try {
-            const auto nextPng =
-                pauseJob / "frames" / "00000000000000000000" / "00000000000000000031.png";
+            const auto nextPng = pauseJob / "frames" / "chunk_0000000001" / "frame_0000000004.png";
             while (!token.stop_requested()) {
                 if (std::filesystem::exists(nextPng)) {
                     for (const auto &entry : std::filesystem::directory_iterator(pauseJob / "chunks")) {
@@ -1400,13 +1526,13 @@ CodecRoundTrip()
         FractalSharkCli::MovieJob state(pauseJob, {});
         state.InitializeProgress(33, true, 32);
         ASSERT_TRUE(state.Remaining() < 33 && state.Remaining() > 0);
-        for (uint64_t index = state.Remaining(); index < 33; ++index) {
+        for (uint64_t index = 0; index < state.NextFrame(); ++index) {
             ASSERT_TRUE(state.FindChunk((index / 4) * 4).has_value() ||
                         std::filesystem::exists(state.FramePath(index)));
         }
-        // No completed orphan may be left below the checkpoint on an orderly
+        // No completed orphan may be left beyond the checkpoint on an orderly
         // stop. Such files would hide a skipped pending-save drain.
-        for (uint64_t index = 0; index < state.Remaining(); ++index) {
+        for (uint64_t index = state.NextFrame(); index < 33; ++index) {
             ASSERT_FALSE(std::filesystem::exists(state.FramePath(index)));
         }
     }
@@ -1416,7 +1542,7 @@ CodecRoundTrip()
 const bool CodecRegistered =
     TestFramework::RegisterCase("MovieVideo_1000FrameLosslessSingleKeyframe",
                                 CodecRoundTrip,
-                                false,
+                                true,
                                 std::getenv("FRACTALSHARK_TEST_FFMPEG")
                                     ? ""
                                     : "Set FRACTALSHARK_TEST_FFMPEG to enable FFmpeg integration",

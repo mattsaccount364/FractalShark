@@ -64,7 +64,6 @@
     <ClInclude Include="MovieJob.h" />
     <ClInclude Include="MovieRunner.h" />
     <ClInclude Include="MovieVideo.h" />
-    <ClInclude Include="MovieHash.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\FractalSharkLib\FractalSharkLib.vcxproj">

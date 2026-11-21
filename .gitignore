@@ -136,3 +136,8 @@ __pycache__
 validation-render-goldens/
 zm49 from cfjh/
 FractalShark/locations.txt
+
+
+
+
+*.movie

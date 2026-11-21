@@ -1230,7 +1230,7 @@ LinuxMainWindow::RequestMovieEncoder(std::string configuration, std::filesystem:
 {
     RequestOpenFile(
         "Exporting a zoom movie command",
-        "Select FFmpeg (requires libaom-av1)",
+        "Select FFmpeg (requires hevc_nvenc)",
         {{"All Files", {}}},
         [this,
          configuration = std::move(configuration),

@@ -1,15 +1,17 @@
 # Resumable zoom movies
 
-Movie mode keeps the center fixed, renders the deepest frame first, and works
-outward. Playback runs in the opposite order. It uses FractalShark's existing
-native reference-orbit and LA autosave and loader, with **unchanged flush and
-shutdown semantics**. A crash in the existing persistence window can require
-recalculating a reference. Incomplete reference calculations are not checkpointed.
+New movies keep the center fixed and render in playback order, from zoom one
+inward to the exact deep target. Before rendering, the renderer prepares one
+reference at the deepest remaining frame for each required orbit type, starting
+with the deepest view. Auto's two ordinary float modes share a reference. The
+normal cache reuses prepared references within their ranges. On resume, the
+native orbit loader can reuse references saved during an earlier run. A crash
+before an orbit is saved can require recalculating that reference.
 
 ## Export from the GUI
 
 Choose **Save → Export Zoom Movie Command…** in the Windows or Linux GUI. Choose
-an INI name and select an FFmpeg executable that includes `libaom-av1`. Choosing
+an INI name and select an FFmpeg executable that includes `hevc_nvenc`. Choosing
 `name.ini` creates a new `name.movie` folder containing `movie.ini` and the saved
 encoder path in `ffmpeg.txt`; no sibling INI is written. Existing job folders
 cannot be overwritten by exporting. The GUI
@@ -24,7 +26,8 @@ The INI defaults to `1.01` zoom per frame, `60` fps, and `1000` frames per chunk
 edit `movie.ini` inside the folder before starting to change these settings.
 The generated command contains only the executable and `--movie JOBDIR`, for
 both the first run and resumption. Rerun the command to resume the same job;
-changing settings after starting requires a new job directory.
+changing settings after starting requires a new job directory. The generated INI
+also contains commented lossless/HEVC/H.264 encoder examples.
 
 ## Create a configuration manually
 
@@ -46,6 +49,8 @@ wide-iterations=8192
 la-slope-ratio=8
 video-chunk-frames=1000
 video-fps=60
+render-order=wide-to-deep
+video-encoder-args=-c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 16 -profile:v main -pix_fmt nv12 -colorspace bt709 -color_range tv
 ```
 
 The coordinates above illustrate syntax; choose a target with enough accurate
@@ -69,17 +74,21 @@ quotes even when they contain spaces.
 ```
 
 Linux uses the same options, for example `--ffmpeg /usr/bin/ffmpeg`.
-The executable must include `libaom-av1`. An exact RGB round trip is checked before
-the first expensive render. FFprobe is not required.
+The executable must include `hevc_nvenc`, with a supported NVIDIA GPU and driver.
+Preflight checks encoder support at the requested resolution and hard-link support before
+rendering. There is no software encoder fallback. FFprobe is not required.
 
 Omitting `--ffmpeg` on creation produces PNGs only. Supplying it later compacts
 existing groups, including a finished job. An archive-enabled job requires its
 encoder on subsequent runs; a missing executable stops the job before more frames
-are rendered. `--no-gpu` and `--commit-cap-bytes` are runtime options. Put render
+are rendered. `--no-gpu` controls fractal rendering; archiving still requires NVENC.
+`--commit-cap-bytes` is a runtime option. Put render
 options in the INI rather than mixing them with `--movie`.
 
-Press Ctrl+C to request an orderly pause. The current render/reference calculation
-and pending PNG saves finish; an unfinished video encode may be cancelled. Run the
+Press Ctrl+C or hold Ctrl+Alt for three seconds to request an orderly pause. The
+Ctrl+Alt shortcut reads desktop key state on Windows and X11. On headless
+Linux, use Ctrl+C or SIGTERM. The current render/reference calculation and
+pending PNG saves finish, and an unfinished video encode may be cancelled. Run the
 same command to resume. An interrupted encoder restarts its chunk from retained
 PNGs, while completed frames and registered chunks are reused. An OS lock prevents two processes writing one job. The job
 snapshots its configuration and palette, so the original inputs are not needed on
@@ -90,75 +99,99 @@ Resume logs report rendered and remaining frames across all frame directories,
 the next frame index, and the number of ready archive chunks. Saved chunks are
 queued without waiting for their encoding before rendering the next missing frame.
 
+## Active wall time and rendering pipeline
+
+The CLI reports session and cumulative active wall time on completion, pause, or
+failure. It includes setup, reference preparation, rendering, PNG saves, encoding,
+assembly, waits, and cleanup. Time between runs is excluded. The CRC32-protected
+`time.txt` is atomically replaced every second and at orderly exit. A forced kill
+restores the last complete heartbeat. `progress.txt` uses the same replacement
+protocol for the saved frame frontier. On resume, the latest valid numbered
+record is migrated and its old names are retired after the replacement is durable.
+Jobs created before timing was available
+start tracking at their next launch; earlier active time cannot be reconstructed.
+
+Movie frames use the existing four renderer slots. Up to eight render/save requests
+may be outstanding. Frame state is prepared in order, GPU execution and PNG saves
+overlap, and checkpoints advance only through contiguous successful PNG saves.
+Each save owns its frame's iterations and captured coloring settings. Headless
+movie work does not enter presentation queues. Logs distinguish submitted frames,
+saved frames, and archive waits.
+
 ## Frames and iteration limits
 
-Frame zero has zoom one, at the target center. Frame indices increase toward the
-exact target zoom. Adjacent frames use the requested multiplier except for a
-possibly shorter first interval. Names have 20 digits and PNG directories hold at
-most 10,000 frames. The scheduler computes each view from its index and does not
-retain interactive navigation history or a list of all views.
-For example, folder `00000000000000000001` holds indices 10000 through 19999;
-those deeper frames are rendered before the lower indices in folder zero.
-Frame counts above `INT_MAX` are rejected. For jobs exceeding 10,000 frames,
-`video-chunk-frames` must divide 10,000 so a chunk stays within one directory.
-The CLI logs the ordinal, total, frame index, and iteration limit before every
-render, and identifies recovered PNGs and reused movie chunks separately.
+For new jobs, frame zero is zoom one and the last frame is the exact deep target.
+Indices increase in playback order. Adjacent frames use the requested multiplier
+except for a possibly shorter final interval. Names have ten digits, covering the supported
+`INT_MAX` frame-count limit. Every frame folder belongs to one video chunk:
+
+```text
+frames/chunk_0000000000/frame_0000000000.png
+frames/chunk_0000000000/frame_0000000001.png
+...
+frames/chunk_0000000001/frame_0000001000.png
+chunks/chunk_0000000000.mkv
+chunks/chunk_0000000001.mkv
+```
+
+With the default chunk size, the first folder holds the first 1,000 rendered
+frames. Only the last chunk may be shorter. Folder numbers increase with rendering;
+there is no separate 10,000-frame bucket or divisibility restriction. The scheduler
+computes views directly from indices. Progress records store the next ascending
+render index, and the CLI logs each frame before rendering it.
 
 Iteration limits grow linearly with logarithmic depth up to full LA v2 engagement,
 then continue linearly with the slope multiplied by `la-slope-ratio` (default 8).
 For AutoSelect, the transition follows the existing GPU/CPU algorithm tiers.
 Forced algorithms that always or never use full LA have a single linear segment.
 `wide-iterations` defaults to 8192, capped at `iterations`. Limits reach the exact
-configured target at the final playback frame. This curve is traversed backward
-while rendering.
+configured target at the final playback frame. New movies traverse this curve toward increasing iteration limits; legacy jobs keep their saved direction.
 
 The full target is stored once in the movie input. Progress files store indices,
 not per-frame coordinate strings. Existing native reference metadata still stores
 its own reference coordinates in its existing format.
 
-## Lossless video chunks
+## Video chunks and assembly
 
-Chunks cover fixed playback ranges (0–999, 1000–1999, etc.). Each is encoded in
-ascending playback order, although deeper chunks are produced first. The highest
-range can be shorter. One million frames normally produce 1,000 movie chunks.
+Chunks cover ascending render ranges (0�999, 1000�1999, etc.). New jobs encode
+frames in playback order, and their assembly manifest lists ascending chunks.
+One million frames normally produce 1,000 movies in the single `chunks/` folder.
 
-PNG output remains RGB16. **Video archives are RGB8:** each 16-bit channel is
-rounded using `(value + 128) / 257`, with no gamma conversion or dithering. AV1 is
-pixel-lossless relative to those RGB8 samples and uses inter-frame prediction.
-Deleting archived PNGs gives up their extra 16-bit precision, as intended for this
-mode. Existing CLI and GUI PNG output retain their usual precision.
+PNG output is RGB16. Before encoding, each channel is rounded to 8 bits using
+`(value + 128) / 257`, with no gamma conversion or dithering. The default HEVC
+NVENC profile converts those samples to BT.709 limited-range NV12 (4:2:0) and
+uses P5 with QP 16. The optional lossless profile preserves the RGB8 samples in
+full-range RGB using RExt and P4. Each chunk begins with a keyframe and uses no
+B-frames or lookahead. NV12 can round odd encoded dimensions up to even values.
+Use even dimensions or select RGB lossless to preserve an odd frame size.
+Lossless tuning is documented in [NVIDIA's programming guide](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/nvenc-video-encoder-api-prog-guide/index.html#encoder-tuning-info-and-preset-configurations);
+[FFmpeg maps `-tune lossless` directly to that mode](https://github.com/FFmpeg/FFmpeg/blob/master/libavcodec/nvenc_hevc.c).
+No dependency crosses chunks. Deleting source PNGs gives up their extra 16-bit
+precision; normal CLI and GUI PNG output retain their usual precision.
 
-Each Matroska chunk has exactly one initial keyframe. Subsequent frames can
-depend on earlier frames in that chunk, and no dependency crosses chunks. Encoder
-settings use libaom High profile, full-range identity RGB, lossless mode, CPU-used
-4, disabled alternate-reference frames/lookahead, and a fixed keyframe interval
-equal to the actual chunk length.
-
-Every encoded chunk is decoded and checked for exact RGB8 content, frame count,
-dimensions, and one initial keyframe. Only after durable movie publication and
-registry publication are its PNGs deleted. Interrupted deletion is safe to retry.
+FractalShark relies on the selected NVENC settings and validates the archive
+without hashing or decoding it a second time. FFmpeg must exit successfully,
+consume the expected input dimensions/count, report the expected encoded count in its final progress
+block, and produce a nonempty movie. Only after durable movie publication and
+registry publication is its entire frame folder deleted. Interrupted deletion is
+safe to retry. The empty `frames/` directory is removed after completion.
 Unregistered movies are regenerated from retained PNGs rather than trusted.
 Frame/chunk publication has movie-specific durability operations; native
 reference flush behavior is untouched.
 
-FFmpeg reads each chunk as a numbered PNG sequence, converts its pixels, and
-computes SHA-256 internally. Each worker creates a temporary directory containing
-hard links to exactly its input PNGs. This gives image2 a real end-of-sequence
-boundary: FFmpeg's input prefetch cannot reach a neighboring chunk being deleted
+FFmpeg reads each chunk as a numbered PNG sequence and converts its pixels
+directly to planar RGB8 for NVENC. New jobs read their numbered PNG sequence directly from their frame folder.
+That folder gives image2 a real end-of-sequence boundary: FFmpeg's input prefetch cannot reach a neighboring chunk being deleted
 by another worker. Hard links share the existing image data; no PNG data is copied
-or decoded by C++. The job filesystem must support hard links, as checked during
-preflight. Temporary input links are removed after use or on the next resume
-following a hard termination. Verification also hashes pixels inside FFmpeg;
-FractalShark receives only digests and frame metadata. Up to four archive workers
-each perform encoding followed by verification. The shared decoder budget is
+or decoded by C++. Older deep-first jobs retain their reverse hard-link input sequence and
+require hard-link support. Temporary legacy input links are removed after use or
+on the next resume following a hard termination. Only progress and diagnostic metadata crosses the
+process pipes. Up to four archive workers encode chunks concurrently. The shared decoder budget is
 logical processor count minus one, with a minimum of one; fewer processors also
 reduce the worker count. Fixed reservations divide that budget across workers,
 and each decoder is additionally capped by its chunk length. Filter threads use
-the worker's reservation. Every AV1 encoder independently requests up to 64 threads
-from the full processor-minus-one allowance, even for short chunks. Adaptive AV1
-tiling exposes parallel work within each frame; 5120-by-2160 images on a 32-thread
-machine use 8-by-4 tiles and 31 encoder threads per worker. Tiny preflight images
-use their own legal grid. These runtime choices do not change job identity.
+the worker's reservation. Encoding runs on NVIDIA NVENC hardware. PNG decoding,
+RGB conversion remain in FFmpeg on the CPU.
 FFmpeg runs at idle priority in a kill-on-close job
 on Windows and at nice level 19 in an owned process group on Linux. Cancellation
 is checked even while the process produces no output. A hard-killed Windows
@@ -175,40 +208,91 @@ count, worker limit, queued chunks, and remaining render count.
 Failed encoding stops new rendering and checkpoints successful pending PNG saves
 before reporting the error. Cancellation joins every worker before releasing the
 job lock. Unarchived PNGs remain available for resumption.
-Completion is reported only after rendering and all required archives finish.
-Logs report actual input/output bytes and encoding, verification, and archive-wait
+With an encoder enabled, completion is reported after the final movie is published.
+Logs report actual input/output bytes and encoding and archive-wait
 time; compression depends on the scene and zoom rate and is not guaranteed to
 beat PNG for every chunk.
 
-`movie.ffconcat` lists committed chunks in playback order. After completion:
+`movie.ffconcat` lists committed chunks in playback order while archiving. Once
+all chunks are ready, FFmpeg stream copies each into `movie.ts.partial`. The
+append is flushed and recorded in `assembly.txt` before its source MKV and
+completion record are removed. Disk use during assembly is the remaining chunks,
+the committed transport stream, and at most one in-progress chunk's output.
+The final rename publishes **`movie.ts`** as one playable file.
+
+After an interruption, rerun the original command. The job trims any unfinished
+tail and resumes at the first uncommitted chunk. Assembly uses FFmpeg without
+starting the renderer or NVENC when all chunks are already archived. A completed
+movie can be reopened by the CLI without FFmpeg. Keep `assembly.txt` with the job
+so the CLI can recognize the committed output. This assembly path supports
+durations below the MPEG-TS timestamp wrap (about 26.5 hours). Longer movies
+retain their MKV chunks and manifest for a separate join.
+
+Keep `movie.ini`, `profile.txt`, `progress.txt`, `time.txt`, and the native
+reference files with the job. To change render settings, create a new job
+directory. Existing deep-first jobs retain their
+saved direction, indices, and completed work; no frame/chunk remapping is needed.
+New jobs record wide-to-deep order explicitly. The immediately preceding HEVC
+metadata is upgraded automatically under the job lock, retaining completed movies,
+PNG files, and frame progress. Only small metadata uses CRC32; image data is never
+checksummed by the application during encoding. Publishing the upgraded profile
+last makes an interrupted upgrade safe to retry. Old AV1 jobs remain unsupported.
+
+## Encoder arguments and examples
+
+`video-encoder-args` is a whitespace-separated list of option/value pairs; double
+quotes group a value. It is passed as arguments, without shell expansion. The
+selected codec must be `hevc_nvenc` or `h264_nvenc`. Supported options cover preset,
+tune, profile, pixel format, rate control (`-rc`, `-qp`, `-cq`, `-b:v`, `-maxrate:v`,
+`-bufsize:v`, `-multipass`), AQ, level, and color metadata. Input/output paths,
+filters, frame limits, GOP boundaries, progress and process settings remain owned
+by FractalShark. Encoder settings are fixed for the job so chunks stay compatible.
+An omitted key defaults to HEVC QP 16 when starting a job. Legacy snapshots
+without the key resume with their original RGB lossless settings.
+
+Generated INIs include HEVC lossless, HEVC high/low quality, and H.264 high/low
+quality. HEVC High uses QP 16 by default and HEVC Low uses QP 22 for smaller
+files. Both use P5 and NV12. H.264 High uses P5/CQ18 and H.264 Low uses P1/CQ30,
+both with VBR. H.264 NVENC works at 3840x2160 on the tested
+RTX 5090; that driver reports a 4096-pixel H.264 width limit. Choose compatible
+movie dimensions before starting; the INI encoder arguments do not resize frames.
+The capability probe tests the actual selected settings and dimensions.
+
+For comparison, these full commands transcode an existing RGB8 movie. The H.264
+commands resize to width 3840 while preserving aspect ratio:
 
 ```text
-ffmpeg -f concat -safe 0 -i movie.ffconcat -c copy movie.mkv
+ffmpeg -i input.mkv -c:v hevc_nvenc -preset p4 -tune lossless -profile:v rext -pix_fmt gbrp -colorspace rgb -color_range pc hevc-lossless.mkv
+ffmpeg -i input.mkv -vf "scale=iw:ih:in_range=pc:out_range=tv:out_color_matrix=bt709,format=nv12" -c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 16 -profile:v main -pix_fmt nv12 -colorspace bt709 -color_range tv hevc-high.mkv
+ffmpeg -i input.mkv -vf "scale=iw:ih:in_range=pc:out_range=tv:out_color_matrix=bt709,format=nv12" -c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 22 -profile:v main -pix_fmt nv12 -colorspace bt709 -color_range tv hevc-low.mkv
+ffmpeg -i input.mkv -vf "scale=3840:-2:in_range=pc:out_range=tv:out_color_matrix=bt709,format=nv12" -c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18 -b:v 0 -profile:v high -colorspace bt709 -color_range tv h264-high.mkv
+ffmpeg -i input.mkv -vf "scale=3840:-2:in_range=pc:out_range=tv:out_color_matrix=bt709,format=nv12" -c:v h264_nvenc -preset p1 -tune hq -rc vbr -cq 30 -b:v 0 -profile:v high -colorspace bt709 -color_range tv h264-low.mkv
 ```
 
-Keep `movie.ini`, `profile.txt`, progress files, chunk completion records, and the
-native reference files with the job. Frame PNGs for committed chunks are removed
-automatically. To change render settings, create a new job directory.
+Every chunk has a fresh encoder session and identical stream settings. The GOP
+length is the configured chunk size (minimum two), even for the partial last chunk.
+Assembly with `-c copy` remuxes compressed packets without decoding or
+re-encoding. It still reads and writes the compressed bytes.
 
 ## Tests
 
 The normal `FractalSharkTest --filter 'Movie*'` suite covers scheduling, recovery,
-hashes, PNG conversion, and render/resume. Set `FRACTALSHARK_TEST_FFMPEG` to an
-absolute executable path to enable the 1,000-frame codec integration case:
+metadata checksums, PNG conversion, and render/resume. Set `FRACTALSHARK_TEST_FFMPEG` to an
+absolute executable path to enable the existing NVENC integration cases on an
+NVIDIA-equipped machine. Those cases require `--use-gpu`:
 
 ```powershell
 $env:FRACTALSHARK_TEST_FFMPEG = 'C:\FFMPEG\bin\ffmpeg.exe'
-.\Debug\FractalSharkTest.exe --filter 'Movie*'
+.\Debug\FractalSharkTest.exe --use-gpu --filter 'Movie*'
 ```
 
 For fast resume-scheduler validation with FFmpeg, exclude the separate codec case:
 
 ```powershell
-.\Debug\FractalSharkTest.exe --filter 'Movie*' --exclude 'MovieVideo_1000FrameLosslessSingleKeyframe'
+.\Debug\FractalSharkTest.exe --use-gpu --filter 'Movie*' --exclude 'MovieVideo_1000FrameLosslessSingleKeyframe'
 ```
 
-The `MovieResume_*` regression cases use pre-generated 16-by-16 PNGs and at most
+The `MovieResume_*` regression cases use pre-generated 256-by-256 PNGs and at most
 eight actual tiny renders per rendering case. Per-chunk encoder gates prove
 concurrent starts, out-of-order completion, bounded rendering overlap, cancellation,
-and resumption after failure. Synthetic PNGs also test mixed legacy/tiled chunk
-assembly. Production-size frame indices and directory boundaries use metadata only.
+and resumption after failure. Synthetic PNGs also check zoom-in chunk assembly. Production-size frame indices and directory boundaries use metadata only.

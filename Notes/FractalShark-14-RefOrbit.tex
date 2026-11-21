@@ -49,6 +49,14 @@ the location of the reference at the zoom depth, while \code{T} stores the
 coefficients consumed by nearby pixel orbits.  Computing a reference at high
 precision does not imply that every stored sample has that same precision.
 
+The render cache selects the deepest eligible reference of the requested type.
+Eligibility includes the reference center, the iteration budget, and, for an
+orbit terminated by periodicity, the generation radius. The periodicity test
+depends on that radius, so an orbit truncated for a wider viewport can obscure
+structure when reused at a deeper zoom. An interactive cache miss generates a
+reference at the requested viewport radius. The double-float renderers apply
+the radius check to the orbit derived from the corresponding double source.
+
 Orbit construction is initiated through \code{AddPerturbationReferencePoint()}, which:
 
 \begin{enumerate}

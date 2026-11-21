@@ -181,7 +181,7 @@ MainWindow::OnExportZoomMovie()
                                        kExecutableFileFilter,
                                        L"exe",
                                        0,
-                                       L"Select FFmpeg (requires libaom-av1)",
+                                       L"Select FFmpeg (requires hevc_nvenc)",
                                        L"ffmpeg.exe");
     if (ffmpeg.empty()) {
         return;

@@ -1123,6 +1123,112 @@ Fractal::CalcFractal(RendererIndex idx, bool drawFractal, CalcContext &ctx)
     }
 }
 
+std::future<SaveResult>
+Fractal::EnqueueRenderToPng(std::string_view operationName,
+                            std::function<void(Fractal &)> prepare,
+                            std::wstring filename,
+                            SaveOverwritePolicy overwrite,
+                            std::function<bool()> cancelled)
+{
+    return m_RenderPool->EnqueueRenderToPng(
+        operationName, std::move(prepare), std::move(filename), overwrite, std::move(cancelled));
+}
+
+void
+Fractal::PrepareReferenceForCurrentView()
+{
+    // Run through EnqueueMutation before any movie frames. Only reference/LA
+    // lookup and preparation occur: no GPU allocation, pixel launch or save.
+    const auto algorithm = GetRenderAlgorithm().Algorithm;
+    auto prepare = [&]<typename IterType>() {
+        IterateRenderAlgs([&](auto index) {
+            constexpr auto candidate = std::get<index.value>(RenderAlgorithmsTuple);
+            if constexpr (candidate.RequiresReferencePoints) {
+                if (algorithm != candidate.Algorithm) {
+                    return;
+                }
+                if constexpr (candidate.Algorithm == RenderAlgorithmEnum::Gpu1x32PerturbedScaled ||
+                              candidate.Algorithm == RenderAlgorithmEnum::Gpu2x32PerturbedScaled) {
+                    m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                                     double,
+                                                                     double,
+                                                                     PerturbExtras::Bad,
+                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
+                } else if constexpr (candidate.Algorithm ==
+                                     RenderAlgorithmEnum::GpuHDRx32PerturbedScaled) {
+                    m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                                     HDRFloat<float>,
+                                                                     float,
+                                                                     PerturbExtras::Bad,
+                                                                     RefOrbitCalc::Extras::None>(m_Ptz);
+                } else {
+                    // These are numeric representation selections, matching
+                    // CalcGpuPerturbationFractalLAv2's double-to-2x32 mapping.
+                    using OrbitType = typename decltype(candidate)::MainType;
+                    using OrbitSubtype = typename decltype(candidate)::SubType;
+                    using PreparedType =
+                        typename DoubleTo2x32Converter<OrbitType, OrbitSubtype>::ConditionalT;
+                    using PreparedSubtype =
+                        typename DoubleTo2x32Converter<OrbitType, OrbitSubtype>::ConditionalSubType;
+                    constexpr auto extras = candidate.RequiresCompression
+                                                ? PerturbExtras::SimpleCompression
+                                                : PerturbExtras::Disable;
+                    constexpr auto la =
+                        candidate.LAv2 == LAv2Mode::Full || candidate.LAv2 == LAv2Mode::LAO
+                            ? RefOrbitCalc::Extras::IncludeLAv2
+                            : RefOrbitCalc::Extras::None;
+                    m_RefOrbit.GetAndCreateUsefulPerturbationResults<IterType,
+                                                                     PreparedType,
+                                                                     PreparedSubtype,
+                                                                     extras,
+                                                                     la,
+                                                                     OrbitType>(m_Ptz);
+                }
+            }
+        });
+    };
+    if (GetIterType() == IterTypeEnum::Bits32) {
+        prepare.template operator()<uint32_t>();
+    } else {
+        prepare.template operator()<uint64_t>();
+    }
+}
+
+void
+Fractal::QueueRenderedPng(std::unique_ptr<RenderPngWork> request, ItersMemoryContainer &iterations)
+{
+    // Reserve before transferring the frame. Encoding never reads live Fractal
+    // state, and completion does not retain the large snapshot after publication.
+    m_SavePool->Submit([&] {
+        auto save = std::make_unique<PngParallelSave>(
+            PngParallelSave::Type::PngImg,
+            request->CpuEncoder ? PngParallelSave::EncoderBackend::Cpu
+                                : PngParallelSave::EncoderBackend::Gpu,
+            request->Filename,
+            request->Overwrite,
+            iterations,
+            false,
+            request->NumIterations,
+            request->PaletteRotation,
+            request->PaletteDepth,
+            request->MaxIterations,
+            std::move(request->Palette),
+            *m_SavePool,
+            [this](ItersMemoryContainer &&returned) { ReturnIterMemory(std::move(returned)); });
+        return FractalSaveThreadPool::Task(
+            [save = std::move(save), request = std::move(request)]() mutable {
+                // Transport errors across this worker boundary into the movie future.
+                try {
+                    request->Complete(save->Run());
+                } catch (...) {
+                    if (request->Completion) {
+                        request->Fail(std::current_exception());
+                    }
+                }
+            });
+    });
+}
+
 RenderJobHandle
 Fractal::EnqueueRender(std::string_view operationName)
 {

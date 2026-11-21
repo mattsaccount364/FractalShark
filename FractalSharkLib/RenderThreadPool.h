@@ -6,6 +6,7 @@
 #include "PointZoomBBConverter.h"
 #include "RenderAlgorithm.h"
 #include "RenderOverlaySnapshot.h"
+#include "SaveResult.h"
 
 #include <atomic>
 #include <chrono>
@@ -35,12 +36,51 @@ enum class RenderWorkMode {
     Render,
     MutationOnly,
     RecolorCurrentFrame,
+    RenderToPng,
+};
+
+// A headless request has one owner: queue -> renderer worker -> PNG worker.
+// The promise survives until PNG publication, while a discarded request resolves
+// as failed so cancellation cannot leave a caller waiting forever.
+struct RenderPngWork {
+    std::wstring Filename;
+    SaveOverwritePolicy Overwrite;
+    std::function<bool()> Cancelled;
+    uint64_t PreparationOrder = 0;
+    uint64_t NumIterations = 0;
+    uint64_t MaxIterations = 0;
+    uint64_t PaletteRotation = 0;
+    uint32_t PaletteDepth = 0;
+    bool CpuEncoder = false;
+    std::vector<Color16> Palette;
+    std::optional<std::promise<SaveResult>> Completion{std::in_place};
+    ~RenderPngWork()
+    {
+        if (Completion) {
+            Complete({SaveOutcome::Failed, Filename, 0, "Render cancelled before PNG publication"});
+        }
+    }
+    void
+    Complete(SaveResult result)
+    {
+        auto promise = std::move(*Completion);
+        Completion.reset();
+        promise.set_value(std::move(result));
+    }
+    void
+    Fail(std::exception_ptr error)
+    {
+        auto promise = std::move(*Completion);
+        Completion.reset();
+        promise.set_exception(std::move(error));
+    }
 };
 
 // Snapshot of all render-relevant state, captured at enqueue time.
 // Workers read exclusively from this, never from live Fractal members.
 struct RenderWorkItem {
     RenderWorkMode WorkMode = RenderWorkMode::Render;
+    std::unique_ptr<RenderPngWork> Png;
 
     // Human-readable description shown in the console queue log.
     std::string OperationName;
@@ -286,7 +326,12 @@ public:
 
     // Enqueue a render job. Returns a handle for optional waiting.
     // Captures a snapshot of render state at call time.
-    RenderJobHandle Enqueue(const RenderWorkItem &item);
+    RenderJobHandle Enqueue(RenderWorkItem item);
+    std::future<SaveResult> EnqueueRenderToPng(std::string_view operationName,
+                                               std::function<void(Fractal &)> prepare,
+                                               std::wstring filename,
+                                               SaveOverwritePolicy overwrite,
+                                               std::function<bool()> cancelled);
 
     // Enqueue a render-only job for the Fractal's current state.
     RenderJobHandle EnqueueRender(std::string_view operationName);
@@ -492,6 +537,10 @@ private:
     // (m_CurIters, changed flags, etc.). Multiple workers can compute concurrently
     // on different renderers, but CalcFractal itself modifies shared state.
     std::mutex m_CalcFractalMutex;
+    // Movie preparation is FIFO, but its GPU work/saving completes independently.
+    std::condition_variable m_PngPreparationCV;
+    uint64_t m_NextPngOrder = 0;       // work queue mutex
+    uint64_t m_NextPngPreparation = 0; // calculation mutex
 
     // Frame completion queue
     FrameCompletionQueue m_FrameQueue;

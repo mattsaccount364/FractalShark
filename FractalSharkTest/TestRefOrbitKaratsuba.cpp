@@ -4788,6 +4788,70 @@ TEST(RefOrbitDynamicPrecision_WarningThenCancellation)
     checkCancellation.template operator()<HDRFloat<double>>();
 }
 
+TEST(RefOrbit_InteractiveZoomRespectsPeriodicReferenceRadius)
+{
+    RenderTests::ScopedDirectory directory("RefOrbit_InteractiveZoomRespectsPeriodicReferenceRadius");
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    fractal.SetIterType(IterTypeEnum::Bits64);
+    fractal.SetNumIterations<uint64_t>(64);
+    fractal.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+    ASSERT_TRUE(fractal.SetRenderAlgorithm(
+        GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64PerturbedBLA)));
+
+    // The critical point has a short periodic orbit at both views. Exercise
+    // the normal command queue and inspect which generation radius it rendered.
+    const PointZoomBBConverter wide(HighPrecision{0},
+                                    HighPrecision{0},
+                                    HighPrecision{1e10},
+                                    PointZoomBBConverter::TestMode::Disabled);
+    const auto renderAt = [&](const PointZoomBBConverter &view) {
+        fractal
+            .EnqueueCommand("set test view", [&](Fractal &current) { current.RecenterViewCalc(view); })
+            .Wait();
+        fractal.GetRenderPool()->Drain();
+        RefOrbitDetails details;
+        fractal.GetSomeDetails(details);
+        ASSERT_TRUE(details.InternalPeriodMaybeZero != 0);
+        return std::move(details.ZoomFactor);
+    };
+
+    const auto wideGeneration = renderAt(wide);
+    const auto deep = wide.ZoomedAtCenter(-0.3);
+    const auto deepGeneration = renderAt(deep);
+    ASSERT_TRUE(deepGeneration > wideGeneration);
+    // Match the double radius stored by InitResults. In particular, an
+    // interactive miss must not narrow the radius to look ahead.
+    const auto height = fractal.GetMaxY() - fractal.GetMinY();
+    const HighPrecision expected = HighPrecision{2} / HighPrecision{static_cast<double>(height) / 2.0};
+    ASSERT_TRUE(deepGeneration == expected);
+    ASSERT_TRUE(renderAt(deep) == deepGeneration);
+    ASSERT_TRUE(renderAt(wide) == deepGeneration);
+
+    // An HDR radius has a negative exponent at this zoom. Verify that both
+    // lookups accept it at the generation view, including the read-only check
+    // used by GPU renderers before allocation.
+    RefOrbitCalc calculator(fractal, UINT64_MAX);
+    calculator.SetPerturbationAlg(RefOrbitCalc::PerturbationAlg::STPeriodicity);
+    const auto getHdrReference = [&] {
+        return calculator.GetAndCreateUsefulPerturbationResults<uint64_t,
+                                                                HDRFloat<float>,
+                                                                float,
+                                                                PerturbExtras::Disable,
+                                                                RefOrbitCalc::Extras::None>(
+            fractal.GetPtz());
+    };
+    const auto *hdr = getHdrReference();
+    ASSERT_TRUE(hdr->GetPeriodMaybeZero() != 0);
+    ASSERT_TRUE((calculator.GetUsefulPerturbationResults<uint64_t,
+                                                         HDRFloat<float>,
+                                                         float,
+                                                         PerturbExtras::Disable,
+                                                         RefOrbitCalc::Extras::None>() == hdr));
+    ASSERT_TRUE(getHdrReference() == hdr);
+}
+
 TEST(RefOrbitDynamicPrecision_ConvertedWarningReport)
 {
     MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());

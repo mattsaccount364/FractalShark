@@ -1,3 +1,4 @@
+#include "ConsoleLog.h"
 #include "Environment.h"
 #include "GpuTestRuntime.h"
 #include "HighPrecision.h"
@@ -18,6 +19,8 @@
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <Windows.h>
+#include <fcntl.h>
+#include <io.h>
 #else
 #include <sys/resource.h>
 #include <unistd.h>
@@ -37,12 +40,39 @@ MovieTestEncoder(int argc, char **argv, const char *controlPath)
     }
     bool pngSequence = false;
     std::string first;
+    std::string joinChunk;
     for (int i = 1; i + 1 < argc; ++i) {
-        if (std::string_view(argv[i]) == "-i" && std::string_view(argv[i + 1]).ends_with(".png")) {
-            pngSequence = true;
+        if (std::string_view(argv[i]) == "-i") {
+            const std::string_view source(argv[i + 1]);
+            pngSequence = source.ends_with(".png");
+            if (source.ends_with(".mkv")) {
+                const std::filesystem::path input(
+                    Environment::ToFsPath(Environment::Utf8ToWide(source)));
+                joinChunk = input.filename().string();
+            }
         }
         if (std::string_view(argv[i]) == "-start_number") {
             first = argv[i + 1];
+        }
+    }
+    if (!joinChunk.empty()) {
+#ifdef _WIN32
+        // The remuxer sends binary transport packets through stdout.
+        if (_setmode(_fileno(stdout), _O_BINARY) == -1) {
+            return 2;
+        }
+#endif
+        const auto hold = control / ("hold-join-" + joinChunk);
+        if (std::filesystem::exists(hold) ||
+            std::filesystem::exists(control / ("fail-join-" + joinChunk))) {
+            std::cout << "unfinished transport bytes" << std::flush;
+            std::ofstream(control / ("started-join-" + joinChunk)).put('\n');
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+            while (std::filesystem::exists(hold) && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            FractalSharkLog::Write("Intentional stream-copy failure", __FILE__, __LINE__);
+            return 42;
         }
     }
     if (pngSequence && std::filesystem::exists(control / "hold")) {
@@ -66,7 +96,7 @@ MovieTestEncoder(int argc, char **argv, const char *controlPath)
         }
     }
     // Reuse Environment's pipe, priority, and job/group ownership abstractions.
-    // stdout is FFmpeg's small hash protocol; diagnostics remain on stderr.
+    // Preserve FFmpeg's stdout and stderr, including binary transport packets.
     const auto result = Environment::RunMovieProcess(
         Environment::ToFsPath(Environment::Utf8ToWide(encoder)),
         std::vector<std::string>(argv + 1, argv + argc),

@@ -560,15 +560,36 @@ choice and triggers any necessary reconfiguration.
   \item \emph{Save} (submenu): Output and benchmarking commands.
     \begin{itemize}
       \item \emph{Save Location...} (command): Saves the current location/view parameters.
-      \item \emph{Export Zoom Movie Command...} (command): Exports a movie INI
+      \item \emph{Export Zoom Movie Command...} (command): Creates a movie job folder
       for the current center and target zoom, prompts for FFmpeg, and copies a
       CLI command. The export preserves full coordinate precision, dimensions,
       antialiasing, and the final iteration limit. Auto algorithms and the CLI's
       default palette settings are used. The editable defaults are a zoom
       multiplier of \code{1.01}, \code{60} frames per second, and \code{1000}
-      frames per chunk. The job directory is \code{<ini-stem>.movie} beside the
-      INI. Execute the command in PowerShell on Windows or a POSIX shell on Linux;
-      executing it again resumes the job. FFmpeg must include \code{libaom-av1}.
+      frames per chunk. Choosing \code{name.ini} creates
+      \code{name.movie/movie.ini}, with the encoder path saved in
+      \code{ffmpeg.txt} inside the same folder. No separate INI is written.
+      Edit \code{movie.ini} before the first run to change defaults. Existing
+      job folders cannot be overwritten by export. The command requires only
+      \code{--movie JOBDIR} for both starting and resuming. Execute it in
+      PowerShell on Windows or a POSIX shell on Linux.
+      FFmpeg must include \code{libaom-av1}. Per-frame progress appears in the
+      CLI log. FFmpeg reads numbered PNG chunks and hashes the RGB8 pixels
+      internally; each encoded chunk is fully decoded and verified before PNG
+      deletion. Temporary hard-link directories isolate each input sequence
+      without copying image data, preventing FFmpeg prefetch from reading a
+      neighboring chunk during its deletion. The job filesystem must support
+      hard links. Up to four archive workers run concurrently. Their shared
+      decoder budget leaves one logical processor available when possible;
+      each AV1 encoder independently receives the full thread allowance, capped
+      at 64, and an adaptive tile grid exposes parallel work within each frame.
+      FFmpeg runs at low scheduling priority. On Windows a job
+      object also terminates FFmpeg if the renderer is forcibly terminated.
+      Resumption renders the next missing frame while saved PNG chunks are
+      archived. Rendering may wait for archive capacity after one new chunk
+      fills; any completed archive can free capacity, and the CLI identifies
+      that wait explicitly. Interruption cancels and joins all archive workers
+      before releasing the job lock; retained PNGs support the next resumption.
       \item \emph{Save High Res Bitmap} (command): Saves a high-resolution
       bitmap render.  The output resolution matches the current window
       dimensions (or a scaled multiple thereof).  A file-save dialog is

@@ -1215,27 +1215,13 @@ LinuxMainWindow::OnExportZoomMovie()
     RequireUiState(fractal && overlay, "Exporting a zoom movie command");
     std::string configuration = FractalShark::CaptureMovieConfiguration(*fractal);
     RequestSaveFile("Exporting a zoom movie command",
-                    "Save zoom movie configuration",
+                    "Name new movie job (name.ini creates name.movie/movie.ini)",
                     FractalShark::MakeTimestampedOutputStem() + ".ini",
                     {{"Movie Configuration (*.ini)", {".ini"}}, {"All Files", {}}},
                     [this, configuration = std::move(configuration)](std::string filename) mutable {
                         const std::filesystem::path configurationPath =
                             FractalShark::AppendExtensionIfMissing(std::move(filename), ".ini");
-                        if (std::filesystem::exists(configurationPath)) {
-                            // The shared Linux file picker does not confirm replacement itself.
-                            RequestPick(
-                                "Exporting a zoom movie command",
-                                "Replace existing movie configuration?",
-                                {"Replace existing INI", "Cancel"},
-                                [this, configuration = std::move(configuration), configurationPath](
-                                    size_t index) mutable {
-                                    if (index == 0) {
-                                        RequestMovieEncoder(std::move(configuration), configurationPath);
-                                    }
-                                });
-                        } else {
-                            RequestMovieEncoder(std::move(configuration), configurationPath);
-                        }
+                        RequestMovieEncoder(std::move(configuration), configurationPath);
                     });
 }
 

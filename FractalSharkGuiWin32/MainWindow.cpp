@@ -171,8 +171,8 @@ MainWindow::OnExportZoomMovie()
     const auto filename = OpenFileDialog(OpenBoxType::Save,
                                          kMovieIniFileFilter,
                                          L"ini",
-                                         OFN_PATHMUSTEXIST | OFN_OVERWRITEPROMPT,
-                                         L"Save zoom movie configuration",
+                                         OFN_PATHMUSTEXIST,
+                                         L"Name new movie job (name.ini creates name.movie/movie.ini)",
                                          Environment::Utf8ToWide(MakeTimestampedOutputStem() + ".ini"));
     if (filename.empty()) {
         return;

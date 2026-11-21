@@ -4,74 +4,16 @@
 #include "MovieRunner.h"
 #include "MovieVideo.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <csignal>
 #include <deque>
 #include <future>
-
-#ifdef _WIN32
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <Windows.h>
-#endif
+#include <thread>
 
 namespace FractalSharkCli {
 namespace {
-std::atomic<bool> StopRequested{false};
-static_assert(std::atomic<bool>::is_always_lock_free);
-void
-StopMovie(int)
-{
-    StopRequested.store(true, std::memory_order_relaxed);
-}
-#ifdef _WIN32
-BOOL WINAPI
-ConsoleStop(DWORD event)
-{
-    if (event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT) {
-        StopMovie(0);
-        return TRUE;
-    }
-    return FALSE;
-}
-#endif
-class MovieSignals {
-public:
-    MovieSignals()
-    {
-        StopRequested.store(false, std::memory_order_relaxed);
-        m_Previous = std::signal(SIGINT, StopMovie);
-#ifdef _WIN32
-        if (!SetConsoleCtrlHandler(ConsoleStop, TRUE)) {
-            throw FractalSharkSeriousException("Cannot install movie console stop handler");
-        }
-#else
-        m_PreviousTerm = std::signal(SIGTERM, StopMovie);
-#endif
-    }
-    ~MovieSignals()
-    {
-        std::signal(SIGINT, m_Previous);
-#ifdef _WIN32
-        SetConsoleCtrlHandler(ConsoleStop, FALSE);
-#else
-        std::signal(SIGTERM, m_PreviousTerm);
-#endif
-    }
-
-private:
-    decltype(&StopMovie) m_Previous;
-#ifndef _WIN32
-    decltype(&StopMovie) m_PreviousTerm;
-#endif
-};
-
 long double
 ResolveLaDepth(const RenderAlgorithm &algorithm, bool gpuBypassed, long double targetDepth)
 {
@@ -119,20 +61,34 @@ RunMovieJob(const std::filesystem::path &directory,
             uint64_t commitCapBytes,
             const std::function<MovieRenderSettings(const MovieConfig &)> &buildSettings)
 {
-    MovieSignals signals;
-    const auto stopped = [] { return StopRequested.load(std::memory_order_relaxed); };
+    Environment::MovieInterruptScope signals;
+    const auto stopped = [&] { return signals.StopRequested(); };
+    std::atomic<bool> cancelArchive{false};
+    const auto archiveStopped = [&] {
+        return stopped() || cancelArchive.load(std::memory_order_relaxed);
+    };
     MovieJob job(directory, configuration);
     const auto encoder = job.Encoder(ffmpeg);
     auto settings = buildSettings(job.Config());
     const auto &target = settings.Request;
-    std::unique_ptr<MovieVideo> video;
+    std::vector<std::unique_ptr<MovieVideo>> videos;
     if (!encoder.empty()) {
-        video = std::make_unique<MovieVideo>(encoder,
-                                             static_cast<unsigned>(target.Width),
-                                             static_cast<unsigned>(target.Height),
-                                             job.Config().Fps,
-                                             stopped);
-        video->Preflight(job.Directory());
+        const auto execution = PlanMovieExecution(static_cast<unsigned>(target.Width),
+                                                  static_cast<unsigned>(target.Height),
+                                                  Environment::LogicalProcessorCount());
+        for (const auto &slot : execution) {
+            videos.push_back(std::make_unique<MovieVideo>(encoder,
+                                                          static_cast<unsigned>(target.Width),
+                                                          static_cast<unsigned>(target.Height),
+                                                          job.Config().Fps,
+                                                          slot,
+                                                          archiveStopped));
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Movie archive slot=" << slot.Slot << " decoder_budget=" << slot.DecoderThreads
+                << " filter_threads=" << slot.FilterThreads << " encoder_threads=" << slot.EncoderThreads
+                << " tiles=" << slot.Tiles.Columns << 'x' << slot.Tiles.Rows;
+        }
+        videos.front()->Preflight(job.Directory());
     }
     // Existing native autosave/load uses the working directory. Set it exactly
     // once, before constructing Fractal or starting renderer workers, with other
@@ -179,28 +135,112 @@ RunMovieJob(const std::filesystem::path &directory,
         target.Perturbation == RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision) {
         fractal.LoadPerturbationOrbits();
     }
-    std::future<MovieChunk> encoding;
-    const auto finishEncoding = [&] {
-        if (encoding.valid()) {
-            const auto chunk = encoding.get();
-            job.CommitChunk(chunk);
-            job.DeleteChunkPngs(chunk);
-            job.WriteConcatManifest(schedule.FrameCount());
+    struct ReadyChunk {
+        uint64_t First;
+        uint64_t Count;
+    };
+    // Workers read immutable job paths. Only this thread publishes completion
+    // records, deletes PNGs, and updates the ordered assembly manifest.
+    std::deque<ReadyChunk> readyChunks;
+    std::vector<std::future<MovieChunk>> encoding(videos.size());
+    struct ArchiveLifetime {
+        std::atomic<bool> &Cancelled;
+        ~ArchiveLifetime() { Cancelled.store(true, std::memory_order_relaxed); }
+    } archiveLifetime{cancelArchive};
+    // Declared after the futures so exceptional exits cancel all processes
+    // before future destructors join and before the job lock closes.
+    std::exception_ptr archiveFailure;
+    const auto activeArchives = [&] {
+        return std::count_if(
+            encoding.begin(), encoding.end(), [](const auto &future) { return future.valid(); });
+    };
+    const auto serviceEncoding = [&] {
+        for (auto &future : encoding) {
+            if (!future.valid() ||
+                future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+                continue;
+            }
+            try {
+                const auto chunk = future.get();
+                job.CommitChunk(chunk);
+                job.DeleteChunkPngs(chunk);
+                job.WriteConcatManifest(schedule.FrameCount());
+            } catch (const MovieInterrupted &) {
+                // Cancellation must not skip the pending PNG checkpoint
+                // drain. An unsolicited interruption remains an error.
+                if (!archiveStopped() && !archiveFailure) {
+                    archiveFailure = std::current_exception();
+                    cancelArchive.store(true, std::memory_order_relaxed);
+                }
+            } catch (...) {
+                // Preserve the first failure while joining EVERY worker and
+                // checkpointing successful PNG saves at the render boundary.
+                if (!archiveFailure) {
+                    archiveFailure = std::current_exception();
+                }
+                cancelArchive.store(true, std::memory_order_relaxed);
+            }
+        }
+        if (stopped() || archiveFailure) {
+            return;
+        }
+        for (size_t slot = 0; slot < encoding.size() && !readyChunks.empty(); ++slot) {
+            if (encoding[slot].valid()) {
+                continue;
+            }
+            const auto range = readyChunks.front();
+            // Native ownership and scheduling priority remain in Environment.
+            try {
+                encoding[slot] = std::async(std::launch::async, [&, slot, range] {
+                    return videos[slot]->Archive(job, range.First, range.Count);
+                });
+            } catch (...) {
+                // Thread creation can fail too; retain the same PNG-drain
+                // contract as a subprocess failure rather than unwinding now.
+                archiveFailure = std::current_exception();
+                cancelArchive.store(true, std::memory_order_relaxed);
+                return;
+            }
+            readyChunks.pop_front();
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Movie archive started slot=" << slot << " chunk=" << range.First
+                << " active_workers=" << activeArchives() << " worker_limit=" << videos.size()
+                << " queued_chunks=" << readyChunks.size();
         }
     };
-    const auto queueEncoding = [&](uint64_t first, uint64_t count) {
-        finishEncoding();
-        if (video && !stopped()) {
-            encoding = std::async(std::launch::async,
-                                  [&, first, count] { return video->Archive(job, first, count); });
+    constexpr auto ArchivePollInterval = std::chrono::milliseconds(50);
+    const auto waitForArchiveCapacity = [&] {
+        const auto started = std::chrono::steady_clock::now();
+        const bool waiting = !readyChunks.empty() && !stopped() && !archiveFailure;
+        if (waiting) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Movie waiting for archive capacity active_workers=" << activeArchives()
+                << " worker_limit=" << videos.size() << " queued_chunks=" << readyChunks.size()
+                << " remaining=" << job.Remaining();
+        }
+        // Recovery never calls this wait. After one new chunk fills, wait for
+        // its FIFO entry to start before collecting another. Poll all workers:
+        // a slow oldest chunk must not hide a free slot or a later failure.
+        while (!readyChunks.empty() && !stopped() && !archiveFailure) {
+            serviceEncoding();
+            if (!readyChunks.empty() && !stopped() && !archiveFailure) {
+                std::this_thread::sleep_for(ArchivePollInterval);
+            }
+        }
+        if (waiting) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Movie archive_wait_seconds="
+                << std::chrono::duration<double>(std::chrono::steady_clock::now() - started).count();
         }
     };
-    // Reconcile already completed groups before rendering more. This also
-    // compacts a previously PNG-only job without staging all file paths in RAM.
+    // Reconcile metadata and enqueue recovered chunks without waiting for any
+    // encoder. The next missing frame must not sit behind a second queue entry.
     const auto chunkFrames = job.Config().ChunkFrames;
     for (uint64_t end = schedule.FrameCount(); end != 0 && !stopped();) {
         const auto first = ((end - 1) / chunkFrames) * chunkFrames;
         if (const auto chunk = job.FindChunk(first)) {
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Movie reusing archived chunk=" << first << " frames=" << chunk->Count;
             job.DeleteChunkPngs(*chunk);
             job.SkipArchivedChunk(*chunk);
         } else {
@@ -213,8 +253,8 @@ RunMovieJob(const std::filesystem::path &directory,
                     break;
                 }
             }
-            if (complete && first >= job.Remaining() && video) {
-                queueEncoding(first, end - first);
+            if (complete && first >= job.Remaining() && !videos.empty()) {
+                readyChunks.push_back({first, end - first});
             }
         }
         end = first;
@@ -235,9 +275,13 @@ RunMovieJob(const std::filesystem::path &directory,
         pending.pop_front();
     };
     FractalSharkLog::LogLine(__FILE__, __LINE__)
-        << "Movie frames=" << schedule.FrameCount() << " remaining=" << job.Remaining()
-        << " video=" << (video ? "AV1 RGB8 lossless" : "disabled");
-    while (job.Remaining() != 0 && !stopped()) {
+        << "Movie frames=" << schedule.FrameCount()
+        << " rendered=" << schedule.FrameCount() - job.Remaining() << " remaining=" << job.Remaining()
+        << " next_frame=" << (job.Remaining() ? std::to_string(job.Remaining() - 1) : "none")
+        << " ready_chunks=" << readyChunks.size() << " archive_workers=" << videos.size()
+        << " video=" << (!videos.empty() ? "AV1 RGB8 lossless" : "disabled");
+    serviceEncoding();
+    while (job.Remaining() != 0 && !stopped() && !archiveFailure) {
         const auto first = ((job.Remaining() - 1) / chunkFrames) * chunkFrames;
         const auto count = std::min(chunkFrames, schedule.FrameCount() - first);
         if (const auto chunk = job.FindChunk(first)) {
@@ -245,10 +289,10 @@ RunMovieJob(const std::filesystem::path &directory,
             continue;
         }
         auto next = job.Remaining();
-        while (next > first && !stopped()) {
-            if (encoding.valid() &&
-                encoding.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
-                finishEncoding();
+        while (next > first && !stopped() && !archiveFailure) {
+            serviceEncoding();
+            if (stopped() || archiveFailure) {
+                break;
             }
             while (!pending.empty() && (pending.size() >= 4 ||
                                         pending.front().Completion.wait_for(std::chrono::seconds(0)) ==
@@ -277,12 +321,16 @@ RunMovieJob(const std::filesystem::path &directory,
                     std::filesystem::remove(path);
                 }
                 if (valid) {
+                    FractalSharkLog::LogLine(__FILE__, __LINE__) << "Movie reusing PNG frame=" << index;
                     Environment::FlushMovieFile(path);
                     job.CompleteFrame(index);
                     continue;
                 }
             }
             SetMovieFrame(fractal, target, schedule, index);
+            FractalSharkLog::LogLine(__FILE__, __LINE__)
+                << "Movie rendering " << schedule.FrameCount() - index << '/' << schedule.FrameCount()
+                << " frame=" << index << " iterations=" << schedule.IterationsAt(index);
             fractal.CalcFractal(true);
             pending.push_back(
                 {index,
@@ -292,11 +340,31 @@ RunMovieJob(const std::filesystem::path &directory,
         while (!pending.empty()) {
             finishPng();
         }
-        if (job.Remaining() == first && video && !stopped()) {
-            queueEncoding(first, count);
+        if (job.Remaining() == first && !videos.empty() && !stopped() && !archiveFailure) {
+            readyChunks.push_back({first, count});
+            serviceEncoding();
+            waitForArchiveCapacity();
         }
     }
-    finishEncoding();
+    // A completed PNG-only job can enter with no rendering left and many
+    // recovered ranges. Drain every queued archive before reporting completion.
+    while (!stopped() && !archiveFailure && (activeArchives() != 0 || !readyChunks.empty())) {
+        serviceEncoding();
+        if (activeArchives() != 0) {
+            std::this_thread::sleep_for(ArchivePollInterval);
+        }
+    }
+    // Stop/failure prevents launches, but all owned workers must finish before
+    // releasing the lock or reporting the saved frontier.
+    while (activeArchives() != 0) {
+        serviceEncoding();
+        if (activeArchives() != 0) {
+            std::this_thread::sleep_for(ArchivePollInterval);
+        }
+    }
+    if (archiveFailure) {
+        std::rethrow_exception(archiveFailure);
+    }
     fractal.CleanupThreads(true);
     job.WriteConcatManifest(schedule.FrameCount());
     FractalSharkLog::LogLine(__FILE__, __LINE__)

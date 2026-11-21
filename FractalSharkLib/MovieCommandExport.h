@@ -14,6 +14,7 @@ enum class MovieCommandShell { PowerShell, Posix };
 struct MovieCommandExport {
     std::filesystem::path ConfigurationPath;
     std::filesystem::path JobDirectory;
+    std::filesystem::path FfmpegExecutable;
     std::string Command;
 };
 
@@ -31,8 +32,10 @@ MovieCommandExport BuildMovieCommandExport(const std::filesystem::path &configur
                                            const std::filesystem::path &ffmpegExecutable,
                                            MovieCommandShell shell);
 
-// All dialogs must finish before publication. A failed publication throws at the
-// existing GUI boundary; the clipboard is updated by the caller only on success.
+// The chosen INI name supplies the stem of a new .movie directory; movie.ini
+// and ffmpeg.txt live inside it. Existing jobs are never replaced by an export.
+// All dialogs must finish before publication. The clipboard is updated only
+// after both files have been published successfully.
 void SaveMovieConfiguration(const MovieCommandExport &output, std::string_view configuration);
 bool CopyMovieCommandToClipboard(const MovieCommandExport &output);
 std::string DescribeMovieCommandExport(const MovieCommandExport &output, bool copied);

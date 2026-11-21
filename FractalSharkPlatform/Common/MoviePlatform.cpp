@@ -3,7 +3,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cerrno>
+#include <chrono>
+#include <csignal>
 #include <exception>
 #include <system_error>
 #include <thread>
@@ -19,6 +22,7 @@
 #include <signal.h>
 #include <spawn.h>
 #include <sys/file.h>
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 extern char **environ;
@@ -26,7 +30,25 @@ extern char **environ;
 
 namespace Environment {
 namespace {
+std::atomic<bool> Interrupted{false};
+std::atomic<bool> InterruptOwned{false};
+static_assert(std::atomic<bool>::is_always_lock_free);
+
+void
+InterruptMovie(int)
+{
+    Interrupted.store(true, std::memory_order_relaxed);
+}
 #ifdef _WIN32
+BOOL WINAPI
+ConsoleInterrupt(DWORD event)
+{
+    if (event == CTRL_C_EVENT || event == CTRL_BREAK_EVENT) {
+        InterruptMovie(0);
+        return TRUE;
+    }
+    return FALSE;
+}
 class NativeFile {
 public:
     HANDLE Value = INVALID_HANDLE_VALUE;
@@ -162,6 +184,68 @@ ReadPipe(NativeFile &pipe, const std::function<void(std::span<const unsigned cha
 }
 } // namespace
 
+struct MovieInterruptScope::Impl {
+    decltype(&InterruptMovie) Previous;
+#ifndef _WIN32
+    struct sigaction PreviousInt;
+    struct sigaction PreviousTerm;
+#endif
+};
+
+MovieInterruptScope::MovieInterruptScope() : m_Impl(std::make_unique<Impl>())
+{
+    if (InterruptOwned.exchange(true)) {
+        throw std::system_error(std::make_error_code(std::errc::device_or_resource_busy),
+                                "movie interrupt subscription already owned");
+    }
+    Interrupted.store(false, std::memory_order_relaxed);
+#ifdef _WIN32
+    if (!SetConsoleCtrlHandler(ConsoleInterrupt, TRUE)) {
+        InterruptOwned.store(false);
+        SystemFailure("install movie console handler");
+    }
+    m_Impl->Previous = std::signal(SIGINT, InterruptMovie);
+    if (m_Impl->Previous == SIG_ERR) {
+        SetConsoleCtrlHandler(ConsoleInterrupt, FALSE);
+        InterruptOwned.store(false);
+        SystemFailure("install movie interrupt handler");
+    }
+#else
+    // sigaction retains the subscription across repeated Ctrl+C requests.
+    struct sigaction action{};
+    action.sa_handler = InterruptMovie;
+    sigemptyset(&action.sa_mask);
+    if (sigaction(SIGINT, &action, &m_Impl->PreviousInt) != 0) {
+        InterruptOwned.store(false);
+        SystemFailure("install movie interrupt handler");
+    }
+    if (sigaction(SIGTERM, &action, &m_Impl->PreviousTerm) != 0) {
+        const auto error = errno;
+        sigaction(SIGINT, &m_Impl->PreviousInt, nullptr);
+        InterruptOwned.store(false);
+        throw std::system_error(error, std::generic_category(), "install movie termination handler");
+    }
+#endif
+}
+
+MovieInterruptScope::~MovieInterruptScope()
+{
+#ifdef _WIN32
+    std::signal(SIGINT, m_Impl->Previous);
+    SetConsoleCtrlHandler(ConsoleInterrupt, FALSE);
+#else
+    sigaction(SIGTERM, &m_Impl->PreviousTerm, nullptr);
+    sigaction(SIGINT, &m_Impl->PreviousInt, nullptr);
+#endif
+    InterruptOwned.store(false);
+}
+
+bool
+MovieInterruptScope::StopRequested() const
+{
+    return Interrupted.load(std::memory_order_relaxed);
+}
+
 struct MovieJobLock::Impl {
     NativeFile File;
 };
@@ -254,7 +338,8 @@ RunMovieProcess(
     const std::vector<std::string> &arguments,
     const std::function<void(const std::function<void(std::span<const unsigned char>)> &)> &input,
     const std::function<void(std::span<const unsigned char>)> &output,
-    const std::function<void(std::string_view)> &errorOutput)
+    const std::function<void(std::string_view)> &errorOutput,
+    const std::function<bool()> &stop)
 {
     NativeFile inputRead, inputWrite, outputRead, outputWrite, errorRead, errorWrite;
     MakePipe(inputRead, inputWrite);
@@ -273,16 +358,37 @@ RunMovieProcess(
     startup.StartupInfo.hStdOutput = outputWrite.Value;
     startup.StartupInfo.hStdError = errorWrite.Value;
     SIZE_T attributeBytes = 0;
-    InitializeProcThreadAttributeList(nullptr, 1, 0, &attributeBytes);
+    constexpr DWORD AttributeCount = 2;
+    InitializeProcThreadAttributeList(nullptr, AttributeCount, 0, &attributeBytes);
     std::vector<unsigned char> attributes(attributeBytes);
     startup.lpAttributeList = reinterpret_cast<LPPROC_THREAD_ATTRIBUTE_LIST>(attributes.data());
-    if (!InitializeProcThreadAttributeList(startup.lpAttributeList, 1, 0, &attributeBytes)) {
+    if (!InitializeProcThreadAttributeList(
+            startup.lpAttributeList, AttributeCount, 0, &attributeBytes)) {
         SystemFailure("initialize movie process handles");
     }
     struct AttributeCleanup {
         LPPROC_THREAD_ATTRIBUTE_LIST Value;
         ~AttributeCleanup() { DeleteProcThreadAttributeList(Value); }
     } attributeCleanup{startup.lpAttributeList};
+    // The non-inheritable job is owned only by this call. Atomic assignment
+    // closes the launch/assignment crash window: killing the renderer closes
+    // its last job handle and kills FFmpeg, including any descendants.
+    NativeFile job;
+    job.Value = CreateJobObjectW(nullptr, nullptr);
+    JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+    limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+    if (job.Value == nullptr ||
+        !SetInformationJobObject(
+            job.Value, JobObjectExtendedLimitInformation, &limits, sizeof(limits)) ||
+        !UpdateProcThreadAttribute(startup.lpAttributeList,
+                                   0,
+                                   PROC_THREAD_ATTRIBUTE_JOB_LIST,
+                                   &job.Value,
+                                   sizeof(job.Value),
+                                   nullptr,
+                                   nullptr)) {
+        SystemFailure("own movie process job");
+    }
     HANDLE inherited[] = {inputRead.Value, outputWrite.Value, errorWrite.Value};
     if (!UpdateProcThreadAttribute(startup.lpAttributeList,
                                    0,
@@ -303,7 +409,7 @@ RunMovieProcess(
                         nullptr,
                         nullptr,
                         TRUE,
-                        CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT,
+                        CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT | IDLE_PRIORITY_CLASS,
                         nullptr,
                         nullptr,
                         &startup.StartupInfo,
@@ -313,7 +419,7 @@ RunMovieProcess(
     NativeFile processHandle, threadHandle;
     processHandle.Value = process.hProcess;
     threadHandle.Value = process.hThread;
-    const auto terminate = [&] { TerminateProcess(processHandle.Value, 1); };
+    const auto terminate = [&] { TerminateJobObject(job.Value, 1); };
 #else
     posix_spawn_file_actions_t actions;
     int result = posix_spawn_file_actions_init(&actions);
@@ -324,6 +430,22 @@ RunMovieProcess(
         posix_spawn_file_actions_t *Value;
         ~ActionsCleanup() { posix_spawn_file_actions_destroy(Value); }
     } actionsCleanup{&actions};
+    posix_spawnattr_t attributes;
+    result = posix_spawnattr_init(&attributes);
+    if (result != 0) {
+        throw std::system_error(result, std::generic_category(), "initialize movie process group");
+    }
+    struct AttributesCleanup {
+        posix_spawnattr_t *Value;
+        ~AttributesCleanup() { posix_spawnattr_destroy(Value); }
+    } attributesCleanup{&attributes};
+    result = posix_spawnattr_setpgroup(&attributes, 0);
+    if (result == 0) {
+        result = posix_spawnattr_setflags(&attributes, POSIX_SPAWN_SETPGROUP);
+    }
+    if (result != 0) {
+        throw std::system_error(result, std::generic_category(), "set movie process group");
+    }
     for (const auto pair : {std::pair{inputRead.Value, STDIN_FILENO},
                             std::pair{outputWrite.Value, STDOUT_FILENO},
                             std::pair{errorWrite.Value, STDERR_FILENO}}) {
@@ -340,19 +462,19 @@ RunMovieProcess(
     }
     argv.push_back(nullptr);
     pid_t process;
-    result = posix_spawn(&process, executable.c_str(), &actions, nullptr, argv.data(), environ);
+    result = posix_spawn(&process, executable.c_str(), &actions, &attributes, argv.data(), environ);
     if (result != 0) {
         throw std::system_error(result, std::generic_category(), "start movie encoder");
     }
-    const auto terminate = [&] { kill(process, SIGKILL); };
+    const auto terminate = [&] { kill(-process, SIGKILL); };
     ScopedPipeSignal pipeSignal;
 #endif
     inputRead.Close();
     outputWrite.Close();
     errorWrite.Close();
-    MovieProcessResult response{-1, {}};
-    std::exception_ptr outputError, errorError, inputError;
-    std::jthread stdoutThread, stderrThread;
+    MovieProcessResult response{-1, {}, false};
+    std::exception_ptr outputError, errorError, inputError, stopError;
+    std::jthread stdoutThread, stderrThread, stopThread;
     // Declared after the thread owners: on unwind kill before joining readers,
     // including failure to construct the second thread. Reap only after their
     // callbacks finish, so a late callback cannot signal a recycled Unix PID.
@@ -367,6 +489,10 @@ RunMovieProcess(
         }
     } childCleanup{[&] {
         terminate();
+        stopThread.request_stop();
+        if (stopThread.joinable()) {
+            stopThread.join();
+        }
         if (stdoutThread.joinable()) {
             stdoutThread.join();
         }
@@ -381,6 +507,31 @@ RunMovieProcess(
         }
 #endif
     }};
+#ifndef _WIN32
+    // Set before starting pipe workers. ESRCH means a very short-lived child
+    // already exited; its status is still collected below.
+    constexpr int MovieNice = 19;
+    if (setpriority(PRIO_PROCESS, static_cast<id_t>(process), MovieNice) != 0 && errno != ESRCH) {
+        SystemFailure("lower movie process priority");
+    }
+#endif
+    stopThread = std::jthread([&](std::stop_token token) {
+        try {
+            constexpr auto StopPollInterval = std::chrono::milliseconds(100);
+            while (!token.stop_requested()) {
+                if (stop && stop()) {
+                    response.Cancelled = true;
+                    terminate();
+                    return;
+                }
+                std::this_thread::sleep_for(StopPollInterval);
+            }
+        } catch (...) {
+            // Callback exceptions cannot escape a worker thread.
+            stopError = std::current_exception();
+            terminate();
+        }
+    });
     stdoutThread = std::jthread([&] {
         try {
             ReadPipe(outputRead, output);
@@ -408,38 +559,57 @@ RunMovieProcess(
         }
     });
     try {
-        input([&](std::span<const unsigned char> bytes) {
-            while (!bytes.empty()) {
+        if (input) {
+            input([&](std::span<const unsigned char> bytes) {
+                while (!bytes.empty()) {
 #ifdef _WIN32
-                DWORD written = 0;
-                const auto count = static_cast<DWORD>(std::min<size_t>(bytes.size(), 65536));
-                if (!WriteFile(inputWrite.Value, bytes.data(), count, &written, nullptr)) {
-                    SystemFailure("write movie process pipe");
-                }
-#else
-                const auto written = write(inputWrite.Value, bytes.data(), bytes.size());
-                if (written < 0) {
-                    if (errno == EINTR) {
-                        continue;
+                    DWORD written = 0;
+                    const auto count = static_cast<DWORD>(std::min<size_t>(bytes.size(), 65536));
+                    if (!WriteFile(inputWrite.Value, bytes.data(), count, &written, nullptr)) {
+                        SystemFailure("write movie process pipe");
                     }
-                    SystemFailure("write movie process pipe");
-                }
+#else
+                    const auto written = write(inputWrite.Value, bytes.data(), bytes.size());
+                    if (written < 0) {
+                        if (errno == EINTR) {
+                            continue;
+                        }
+                        SystemFailure("write movie process pipe");
+                    }
 #endif
-                if (written == 0) {
-                    throw std::system_error(std::make_error_code(std::errc::broken_pipe));
+                    if (written == 0) {
+                        throw std::system_error(std::make_error_code(std::errc::broken_pipe));
+                    }
+                    bytes = bytes.subspan(static_cast<size_t>(written));
                 }
-                bytes = bytes.subspan(static_cast<size_t>(written));
-            }
-        });
+            });
+        }
     } catch (...) {
         inputError = std::current_exception();
         terminate();
     }
     inputWrite.Close();
+#ifdef _WIN32
+    if (WaitForSingleObject(processHandle.Value, INFINITE) != WAIT_OBJECT_0) {
+        SystemFailure("wait for movie encoder");
+    }
+#else
+    // Observe exit without reaping: callbacks/monitor must never signal a PID
+    // that has been recycled for an unrelated process.
+    siginfo_t exited{};
+    while (waitid(P_PID, static_cast<id_t>(process), &exited, WEXITED | WNOWAIT) < 0) {
+        if (errno != EINTR) {
+            SystemFailure("wait for movie encoder");
+        }
+    }
+#endif
+    stopThread.request_stop();
+    stopThread.join();
+    // A descendant must not retain a pipe after the owned process exits.
+    terminate();
     stdoutThread.join();
     stderrThread.join();
 #ifdef _WIN32
-    WaitForSingleObject(processHandle.Value, INFINITE);
     DWORD code;
     if (!GetExitCodeProcess(processHandle.Value, &code)) {
         SystemFailure("wait for movie encoder");
@@ -455,6 +625,13 @@ RunMovieProcess(
     response.ExitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 128 + WTERMSIG(status);
 #endif
     childCleanup.Finished = true;
+    if (stopError) {
+        std::rethrow_exception(stopError);
+    }
+    // Broken pipes caused by cancellation are an orderly outcome.
+    if (response.Cancelled) {
+        return response;
+    }
     if (outputError) {
         std::rethrow_exception(outputError);
     }

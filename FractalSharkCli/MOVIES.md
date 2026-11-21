@@ -8,8 +8,11 @@ recalculating a reference. Incomplete reference calculations are not checkpointe
 
 ## Export from the GUI
 
-Choose **Save → Export Zoom Movie Command…** in the Windows or Linux GUI. Save
-the INI and select an FFmpeg executable that includes `libaom-av1`. The GUI
+Choose **Save → Export Zoom Movie Command…** in the Windows or Linux GUI. Choose
+an INI name and select an FFmpeg executable that includes `libaom-av1`. Choosing
+`name.ini` creates a new `name.movie` folder containing `movie.ini` and the saved
+encoder path in `ffmpeg.txt`; no sibling INI is written. Existing job folders
+cannot be overwritten by exporting. The GUI
 locates the neighboring CLI executable, or asks for its location if necessary.
 After saving, it copies the command and displays it for review. Paste it into
 PowerShell on Windows or a POSIX shell on Linux to start rendering.
@@ -18,8 +21,9 @@ The current view becomes the final playback frame. The export preserves its
 full coordinate precision, dimensions, antialiasing, and final iteration limit.
 It uses Auto render/reference algorithms and the CLI's default palette settings.
 The INI defaults to `1.01` zoom per frame, `60` fps, and `1000` frames per chunk;
-edit it before starting to change these settings. The job directory is
-`<ini-stem>.movie` beside the INI. Rerun the command to resume the same job;
+edit `movie.ini` inside the folder before starting to change these settings.
+The generated command contains only the executable and `--movie JOBDIR`, for
+both the first run and resumption. Rerun the command to resume the same job;
 changing settings after starting requires a new job directory.
 
 ## Create a configuration manually
@@ -76,9 +80,15 @@ options in the INI rather than mixing them with `--movie`.
 
 Press Ctrl+C to request an orderly pause. The current render/reference calculation
 and pending PNG saves finish; an unfinished video encode may be cancelled. Run the
-same command to resume. An OS lock prevents two processes writing one job. The job
+same command to resume. An interrupted encoder restarts its chunk from retained
+PNGs, while completed frames and registered chunks are reused. An OS lock prevents two processes writing one job. The job
 snapshots its configuration and palette, so the original inputs are not needed on
 resume. Rendering settings and the resolved CPU/GPU profile remain fixed.
+The `movie.lock` file normally remains after exit; the OS handle, rather than
+the presence of that file, determines whether the job is locked.
+Resume logs report rendered and remaining frames across all frame directories,
+the next frame index, and the number of ready archive chunks. Saved chunks are
+queued without waiting for their encoding before rendering the next missing frame.
 
 ## Frames and iteration limits
 
@@ -87,6 +97,12 @@ exact target zoom. Adjacent frames use the requested multiplier except for a
 possibly shorter first interval. Names have 20 digits and PNG directories hold at
 most 10,000 frames. The scheduler computes each view from its index and does not
 retain interactive navigation history or a list of all views.
+For example, folder `00000000000000000001` holds indices 10000 through 19999;
+those deeper frames are rendered before the lower indices in folder zero.
+Frame counts above `INT_MAX` are rejected. For jobs exceeding 10,000 frames,
+`video-chunk-frames` must divide 10,000 so a chunk stays within one directory.
+The CLI logs the ordinal, total, frame index, and iteration limit before every
+render, and identifies recovered PNGs and reused movie chunks separately.
 
 Iteration limits grow linearly with logarithmic depth up to full LA v2 engagement,
 then continue linearly with the slope multiplied by `la-slope-ratio` (default 8).
@@ -125,9 +141,42 @@ Unregistered movies are regenerated from retained PNGs rather than trusted.
 Frame/chunk publication has movie-specific durability operations; native
 reference flush behavior is untouched.
 
-The pipeline allows one batch encoding, one batch collecting, and at most four
-pending PNG saves. Slow encoding applies backpressure. Failed encoding preserves
-PNGs and stops further accumulation. Logs report actual input/output bytes and
+FFmpeg reads each chunk as a numbered PNG sequence, converts its pixels, and
+computes SHA-256 internally. Each worker creates a temporary directory containing
+hard links to exactly its input PNGs. This gives image2 a real end-of-sequence
+boundary: FFmpeg's input prefetch cannot reach a neighboring chunk being deleted
+by another worker. Hard links share the existing image data; no PNG data is copied
+or decoded by C++. The job filesystem must support hard links, as checked during
+preflight. Temporary input links are removed after use or on the next resume
+following a hard termination. Verification also hashes pixels inside FFmpeg;
+FractalShark receives only digests and frame metadata. Up to four archive workers
+each perform encoding followed by verification. The shared decoder budget is
+logical processor count minus one, with a minimum of one; fewer processors also
+reduce the worker count. Fixed reservations divide that budget across workers,
+and each decoder is additionally capped by its chunk length. Filter threads use
+the worker's reservation. Every AV1 encoder independently requests up to 64 threads
+from the full processor-minus-one allowance, even for short chunks. Adaptive AV1
+tiling exposes parallel work within each frame; 5120-by-2160 images on a 32-thread
+machine use 8-by-4 tiles and 31 encoder threads per worker. Tiny preflight images
+use their own legal grid. These runtime choices do not change job identity.
+FFmpeg runs at idle priority in a kill-on-close job
+on Windows and at nice level 19 in an owned process group on Linux. Cancellation
+is checked even while the process produces no output. A hard-killed Windows
+renderer also kills its encoder through the job object.
+
+The pipeline allows up to four batches archiving, one batch collecting, and at most four
+pending PNG saves. On resume, an inherited backlog of ready chunks may also be
+queued. Rendering can collect one new chunk alongside that backlog; it waits for
+archive capacity only after that new chunk fills, until the chunk starts encoding.
+Any completed worker can free capacity; completion does not wait for the oldest
+chunk. Completion records and PNG deletion stay on the render thread, and the
+assembly manifest remains in playback order. The wait log names the active worker
+count, worker limit, queued chunks, and remaining render count.
+Failed encoding stops new rendering and checkpoints successful pending PNG saves
+before reporting the error. Cancellation joins every worker before releasing the
+job lock. Unarchived PNGs remain available for resumption.
+Completion is reported only after rendering and all required archives finish.
+Logs report actual input/output bytes and encoding, verification, and archive-wait
 time; compression depends on the scene and zoom rate and is not guaranteed to
 beat PNG for every chunk.
 
@@ -151,3 +200,15 @@ absolute executable path to enable the 1,000-frame codec integration case:
 $env:FRACTALSHARK_TEST_FFMPEG = 'C:\FFMPEG\bin\ffmpeg.exe'
 .\Debug\FractalSharkTest.exe --filter 'Movie*'
 ```
+
+For fast resume-scheduler validation with FFmpeg, exclude the separate codec case:
+
+```powershell
+.\Debug\FractalSharkTest.exe --filter 'Movie*' --exclude 'MovieVideo_1000FrameLosslessSingleKeyframe'
+```
+
+The `MovieResume_*` regression cases use pre-generated 16-by-16 PNGs and at most
+eight actual tiny renders per rendering case. Per-chunk encoder gates prove
+concurrent starts, out-of-order completion, bounded rendering overlap, cancellation,
+and resumption after failure. Synthetic PNGs also test mixed legacy/tiled chunk
+assembly. Production-size frame indices and directory boundaries use metadata only.

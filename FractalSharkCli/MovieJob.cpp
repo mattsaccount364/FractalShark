@@ -90,7 +90,9 @@ void
 RemoveMovieTemporary(const std::filesystem::path &path)
 {
     std::error_code error;
-    std::filesystem::remove(path, error);
+    // Reserved encoder temporaries include private hard-link input directories.
+    // The exclusive job lock is held; no new worker can own these stale names.
+    std::filesystem::remove_all(path, error);
     if (error) {
         // An orphaned encoder may still hold this file. Unique output names
         // prevent collisions, and the next resume retries the cleanup.
@@ -306,9 +308,10 @@ MovieSchedule::MovieSchedule(const HighPrecision &targetZoom,
         throw FractalSharkSeriousException("Movie zoom-per-frame exceeds supported scale precision");
     }
     const auto intervals = std::ceil(m_Depth / m_StepDepth);
-    // Conservatively stay below 2^64: MSVC long double has double precision.
-    if (!std::isfinite(intervals) || intervals >= std::ldexp(1.0L, 64) - 4096 || m_StepDepth <= 0) {
-        throw FractalSharkSeriousException("Movie frame count overflows 64 bits");
+    // FFmpeg image2 accepts a signed-int starting index. Excessive frame counts
+    // are configuration errors, rather than requiring another input protocol.
+    if (!std::isfinite(intervals) || intervals > std::numeric_limits<int>::max() || m_StepDepth <= 0) {
+        throw FractalSharkSeriousException("Movie frame count exceeds INT_MAX");
     }
     auto intervalCount = static_cast<uint64_t>(intervals);
     HighPrecision tolerance{m_Target};
@@ -328,12 +331,15 @@ MovieSchedule::MovieSchedule(const HighPrecision &targetZoom,
         --intervalCount;
     }
     while (!reachesTarget(intervalCount)) {
-        if (intervalCount == UINT64_MAX - 1) {
-            throw FractalSharkSeriousException("Movie frame count overflows 64 bits");
+        if (intervalCount >= static_cast<uint64_t>(std::numeric_limits<int>::max()) - 1) {
+            throw FractalSharkSeriousException("Movie frame count exceeds INT_MAX");
         }
         ++intervalCount;
     }
     m_FrameCount = intervalCount + 1;
+    if (m_FrameCount > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        throw FractalSharkSeriousException("Movie frame count exceeds INT_MAX");
+    }
 }
 uint64_t
 MovieSchedule::FrameCount() const
@@ -467,6 +473,13 @@ MovieJob::LaDepth() const
 void
 MovieJob::InitializeProgress(uint64_t frameCount, bool gpuBypassed, long double laDepth)
 {
+    if (frameCount == 0 || frameCount > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        throw FractalSharkSeriousException("Movie frame count must be between one and INT_MAX");
+    }
+    if (frameCount > MovieFramesPerDirectory && MovieFramesPerDirectory % m_Config.ChunkFrames != 0) {
+        throw FractalSharkSeriousException(
+            "Movies over 10000 frames require video-chunk-frames to divide 10000");
+    }
     const auto profilePath = m_Directory / "profile.txt";
     if (std::filesystem::exists(profilePath)) {
         const auto profile = Unseal(profilePath);
@@ -542,7 +555,7 @@ MovieJob::SkipArchivedChunk(const MovieChunk &chunk)
 std::filesystem::path
 MovieJob::FramePath(uint64_t index) const
 {
-    return m_Directory / "frames" / Padded(index / 10000) / (Padded(index) + ".png");
+    return m_Directory / "frames" / Padded(index / MovieFramesPerDirectory) / (Padded(index) + ".png");
 }
 std::filesystem::path
 MovieJob::VideoPath(uint64_t first) const
@@ -624,11 +637,11 @@ MovieJob::Encoder(const std::filesystem::path &overridePath)
         if (!std::filesystem::is_regular_file(absolute)) {
             throw FractalSharkSeriousException("FFmpeg executable does not exist");
         }
-        WriteMovieText(hint, absolute.string());
+        WriteMovieText(hint, Environment::WideToUtf8(Environment::FromFsPath(absolute)));
         return absolute;
     }
     if (std::filesystem::exists(hint)) {
-        const std::filesystem::path saved(ReadMovieText(hint));
+        const auto saved = Environment::ToFsPath(Environment::Utf8ToWide(ReadMovieText(hint)));
         if (!std::filesystem::is_regular_file(saved)) {
             throw FractalSharkSeriousException("Saved FFmpeg path is unavailable; supply --ffmpeg PATH");
         }

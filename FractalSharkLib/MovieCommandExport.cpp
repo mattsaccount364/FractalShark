@@ -129,30 +129,64 @@ BuildMovieCommandExport(const std::filesystem::path &configuration,
         throw FractalSharkSeriousException("Movie export requires configuration, CLI, and FFmpeg paths");
     }
     MovieCommandExport output;
-    output.ConfigurationPath = std::filesystem::absolute(configuration).lexically_normal();
+    const auto chosen = std::filesystem::absolute(configuration).lexically_normal();
     output.JobDirectory =
-        output.ConfigurationPath.parent_path() /
-        (output.ConfigurationPath.stem().native() + std::filesystem::path(".movie").native());
+        chosen.parent_path() / (chosen.stem().native() + std::filesystem::path(".movie").native());
+    output.ConfigurationPath = output.JobDirectory / "movie.ini";
     const auto cliPath = std::filesystem::absolute(cliExecutable).lexically_normal();
-    const auto ffmpegPath = std::filesystem::absolute(ffmpegExecutable).lexically_normal();
+    output.FfmpegExecutable = std::filesystem::absolute(ffmpegExecutable).lexically_normal();
+    // The saved encoder path must obey the same single-line contract as command
+    // arguments even though it no longer appears in the generated command.
+    QuoteMovieArgument(output.FfmpegExecutable, shell);
     output.Command = shell == MovieCommandShell::PowerShell ? "& " : "";
     output.Command += QuoteMovieArgument(cliPath, shell) + " --movie " +
-                      QuoteMovieArgument(output.JobDirectory, shell) + " --movie-config " +
-                      QuoteMovieArgument(output.ConfigurationPath, shell) + " --ffmpeg " +
-                      QuoteMovieArgument(ffmpegPath, shell);
+                      QuoteMovieArgument(output.JobDirectory, shell);
     return output;
 }
 
 void
 SaveMovieConfiguration(const MovieCommandExport &output, std::string_view configuration)
 {
-    const auto result =
-        SaveFileTransaction::Write(Environment::FromFsPath(output.ConfigurationPath),
-                                   SaveOverwritePolicy::ReplaceExisting,
-                                   [configuration](std::ostream &stream) { stream << configuration; });
-    if (!result.Succeeded()) {
-        throw FractalSharkSeriousException("Could not save movie configuration: " + result.Diagnostic);
+    std::error_code error;
+    if (!std::filesystem::create_directory(output.JobDirectory, error)) {
+        throw FractalSharkSeriousException("Could not create new movie job folder: " +
+                                           (error ? error.message() : "destination already exists"));
     }
+    struct UnfinishedExport {
+        const MovieCommandExport &Output;
+        bool Complete = false;
+        bool EncoderWritten = false;
+        bool ConfigurationWritten = false;
+        ~UnfinishedExport()
+        {
+            if (!Complete) {
+                // Own only these newly created files. Never recursively delete
+                // a directory that another process might have started using.
+                std::error_code ignored;
+                if (ConfigurationWritten) {
+                    std::filesystem::remove(Output.ConfigurationPath, ignored);
+                }
+                if (EncoderWritten) {
+                    std::filesystem::remove(Output.JobDirectory / "ffmpeg.txt", ignored);
+                }
+                std::filesystem::remove(Output.JobDirectory, ignored);
+            }
+        }
+    } cleanup{output};
+    const auto write = [](const std::filesystem::path &path, std::string_view text) {
+        const auto result = SaveFileTransaction::Write(Environment::FromFsPath(path),
+                                                       SaveOverwritePolicy::SkipExisting,
+                                                       [text](std::ostream &stream) { stream << text; });
+        if (!result.Succeeded() || result.Outcome != SaveOutcome::Written) {
+            throw FractalSharkSeriousException("Could not save movie job: " + result.Diagnostic);
+        }
+    };
+    write(output.JobDirectory / "ffmpeg.txt", PathUtf8(output.FfmpegExecutable));
+    cleanup.EncoderWritten = true;
+    // Publish the config last: a folder-only CLI invocation requires it.
+    write(output.ConfigurationPath, configuration);
+    cleanup.ConfigurationWritten = true;
+    cleanup.Complete = true;
 }
 
 std::string
@@ -162,7 +196,8 @@ DescribeMovieCommandExport(const MovieCommandExport &output, bool copied)
                               : "Could not copy to clipboard. Copy this command manually.\n\n") +
            output.Command + "\n\nConfiguration: " + PathUtf8(output.ConfigurationPath) +
            "\nMovie job: " + PathUtf8(output.JobDirectory) +
-           "\n\nEdit the INI before starting to change the defaults:\n"
+           "\nFFmpeg: " + PathUtf8(output.FfmpegExecutable) +
+           "\n\nEdit movie.ini inside the job folder before starting to change the defaults:\n"
            "1.01x zoom per frame; 60 fps; 1000-frame chunks.\n"
            "Current size, antialiasing, and final iteration limit; Auto algorithms; default palette.\n"
            "Run the command to render, or rerun it to resume.\n"

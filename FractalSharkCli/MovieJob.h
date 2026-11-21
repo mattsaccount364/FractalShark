@@ -12,6 +12,9 @@
 
 namespace FractalSharkCli {
 
+// This existing on-disk bucket size is independent of video chunk size.
+inline constexpr uint64_t MovieFramesPerDirectory = 10'000;
+
 struct MovieConfig {
     std::map<std::string, std::string> Values;
     uint64_t ChunkFrames = 1000;
@@ -96,8 +99,9 @@ private:
     long double m_LaDepth = 0;
 };
 
-// Validate the complete PNG and dimensions before adopting a frame or encoding
-// it. RGB16 conversion is nearest rounding without gamma changes or dithering.
+// Validate an orphan PNG before adopting it during recovery. Normal chunk
+// encoding/verification happens entirely in FFmpeg. RGB16 conversion is nearest
+// rounding without gamma changes or dithering.
 std::vector<unsigned char> ReadMovieRgb8(const std::filesystem::path &path,
                                          unsigned width,
                                          unsigned height);

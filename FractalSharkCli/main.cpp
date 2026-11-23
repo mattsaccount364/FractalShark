@@ -53,64 +53,6 @@ enum class CliMode { SingleShot, Server, Client };
 constexpr int ConsoleWidth = 80;
 constexpr int ConsoleHeight = 40;
 
-struct PerturbationAlgorithmOption {
-    std::string_view Name;
-    RefOrbitCalc::PerturbationAlg Value;
-};
-
-// Parsing and help share the exact CLI spellings so every advertised reference backend is accepted.
-constexpr auto PerturbationAlgorithms = std::array{
-    PerturbationAlgorithmOption{"Auto", RefOrbitCalc::PerturbationAlg::Auto},
-    PerturbationAlgorithmOption{"ST", RefOrbitCalc::PerturbationAlg::ST},
-    PerturbationAlgorithmOption{"MT", RefOrbitCalc::PerturbationAlg::MT},
-    PerturbationAlgorithmOption{"STPeriodicity", RefOrbitCalc::PerturbationAlg::STPeriodicity},
-    PerturbationAlgorithmOption{"MTPeriodicity3", RefOrbitCalc::PerturbationAlg::MTPeriodicity3},
-    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighSTMed",
-                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighSTMed},
-    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed1",
-                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed1},
-    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed2",
-                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed2},
-    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed3",
-                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed3},
-    PerturbationAlgorithmOption{"MTPeriodicity3PerturbMTHighMTMed4",
-                                RefOrbitCalc::PerturbationAlg::MTPeriodicity3PerturbMTHighMTMed4},
-    PerturbationAlgorithmOption{"MTPeriodicity5", RefOrbitCalc::PerturbationAlg::MTPeriodicity5},
-    PerturbationAlgorithmOption{"MTPeriodicity9Karatsuba",
-                                RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba},
-    PerturbationAlgorithmOption{"MTPeriodicity9KaratsubaDynamicPrecision",
-                                RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision},
-    PerturbationAlgorithmOption{"GPU", RefOrbitCalc::PerturbationAlg::GPU}};
-
-template <std::size_t N>
-consteval bool
-ValidatePerturbationAlgorithms(const std::array<PerturbationAlgorithmOption, N> &algorithms)
-{
-    // Checking values as well as cardinality catches an omitted mode hidden by a duplicate.
-    // Parsing and help consume this same table, so a new enum cannot silently be GUI-only.
-    constexpr auto count = static_cast<std::size_t>(RefOrbitCalc::PerturbationAlg::Count);
-    if (N != count) {
-        return false;
-    }
-    std::array<bool, count> seen{};
-    for (std::size_t i = 0; i < N; ++i) {
-        const auto index = static_cast<std::size_t>(algorithms[i].Value);
-        if (index >= count || seen[index] || algorithms[i].Name.empty()) {
-            return false;
-        }
-        seen[index] = true;
-        for (std::size_t j = 0; j < i; ++j) {
-            if (algorithms[i].Name == algorithms[j].Name) {
-                return false;
-            }
-        }
-    }
-    return true;
-}
-
-static_assert(ValidatePerturbationAlgorithms(PerturbationAlgorithms),
-              "Every PerturbationAlg must have exactly one unique, nonempty CLI name");
-
 struct CliArgs {
     int Width = 1024;
     int Height = 768;
@@ -151,19 +93,11 @@ struct CliArgs {
     bool Help = false;
 };
 
-bool
-IsCliRenderAlgorithm(const RenderAlgorithm &algorithm)
-{
-    // MAX marks an unavailable/internal algorithm and cannot be used to render an image.
-    return algorithm.Algorithm != RenderAlgorithmEnum::MAX && algorithm.AlgorithmStr &&
-           algorithm.AlgorithmStr[0] != '\0';
-}
-
 void
 PrintRenderAlgorithms(std::string_view indent)
 {
     for (const auto &algorithm : RenderAlgorithms) {
-        if (IsCliRenderAlgorithm(algorithm)) {
+        if (FractalShark::IsCliRenderAlgorithm(algorithm)) {
             std::cout << indent << algorithm.AlgorithmStr << "\n";
         }
     }
@@ -255,7 +189,7 @@ PrintUsage()
                  "Reference orbits:\n"
                  "  --perturbation-alg NAME\n"
                  "                    Select reference generation; valid case-sensitive names:\n";
-    for (const auto &algorithm : PerturbationAlgorithms) {
+    for (const auto &algorithm : FractalShark::PerturbationAlgorithms) {
         std::cout << "                      " << algorithm.Name << "\n";
     }
     std::cout
@@ -311,7 +245,7 @@ std::optional<RenderAlgorithm>
 ParseRenderAlgorithm(const std::string &name)
 {
     for (const auto &algorithm : RenderAlgorithms) {
-        if (IsCliRenderAlgorithm(algorithm) && name == algorithm.AlgorithmStr) {
+        if (FractalShark::IsCliRenderAlgorithm(algorithm) && name == algorithm.AlgorithmStr) {
             return algorithm;
         }
     }
@@ -321,7 +255,7 @@ ParseRenderAlgorithm(const std::string &name)
 constexpr std::optional<RefOrbitCalc::PerturbationAlg>
 ParsePerturbationAlg(std::string_view name)
 {
-    for (const auto &algorithm : PerturbationAlgorithms) {
+    for (const auto &algorithm : FractalShark::PerturbationAlgorithms) {
         if (name == algorithm.Name) {
             return algorithm.Value;
         }
@@ -331,7 +265,7 @@ ParsePerturbationAlg(std::string_view name)
 
 // Exercise the actual parser at compile time, including the newly exposed dynamic mode.
 static_assert([] {
-    for (const auto &algorithm : PerturbationAlgorithms) {
+    for (const auto &algorithm : FractalShark::PerturbationAlgorithms) {
         if (ParsePerturbationAlg(algorithm.Name) != algorithm.Value) {
             return false;
         }

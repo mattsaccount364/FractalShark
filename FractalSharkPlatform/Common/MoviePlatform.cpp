@@ -8,6 +8,7 @@
 #include <chrono>
 #include <csignal>
 #include <optional>
+#include <random>
 #include <system_error>
 #include <thread>
 
@@ -258,6 +259,41 @@ MovieJobLock::MovieJobLock(const std::filesystem::path &path) : m_Impl(std::make
 #endif
 }
 MovieJobLock::~MovieJobLock() = default;
+
+std::filesystem::path
+ReserveMoviePartialFile(const std::filesystem::path &directory)
+{
+    std::random_device random;
+    constexpr unsigned ReservationAttempts = 16;
+    for (unsigned attempt = 0; attempt < ReservationAttempts; ++attempt) {
+        const auto path = directory / (".fractalshark-" + std::to_string(random()) + "-" +
+                                       std::to_string(random()) + ".ts.partial");
+        NativeFile file;
+#ifdef _WIN32
+        file.Value = CreateFileW(
+            path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (file.Value == INVALID_HANDLE_VALUE) {
+            const auto error = GetLastError();
+            if (error == ERROR_FILE_EXISTS || error == ERROR_ALREADY_EXISTS) {
+                continue;
+            }
+            SystemFailure("reserve movie staging file");
+        }
+#else
+        file.Value = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+        if (file.Value < 0) {
+            if (errno == EEXIST) {
+                continue;
+            }
+            SystemFailure("reserve movie staging file");
+        }
+#endif
+        file.Close();
+        FlushMovieFile(path);
+        return path;
+    }
+    throw FractalSharkSeriousException("Unable to reserve a unique movie staging file");
+}
 
 void
 FlushMovieFile(const std::filesystem::path &path)

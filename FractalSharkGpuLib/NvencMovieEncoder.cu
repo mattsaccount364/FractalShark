@@ -16,6 +16,31 @@
 namespace FractalShark {
 namespace {
 
+struct HevcLevelLimits {
+    unsigned Idc;
+    uint32_t MaxPictureSamples;
+    uint64_t MaxSamplesPerSecond;
+    uint32_t MainKbps;
+    uint32_t HighKbps;
+};
+
+// H.265 Annex A luma and VCL bitrate limits for the 8-bit Main profile.
+constexpr HevcLevelLimits HevcLevels[] = {
+    {NV_ENC_LEVEL_HEVC_1, 36'864, 552'960, 128, 0},
+    {NV_ENC_LEVEL_HEVC_2, 122'880, 3'686'400, 1'500, 0},
+    {NV_ENC_LEVEL_HEVC_21, 245'760, 7'372'800, 3'000, 0},
+    {NV_ENC_LEVEL_HEVC_3, 552'960, 16'588'800, 6'000, 0},
+    {NV_ENC_LEVEL_HEVC_31, 983'040, 33'177'600, 10'000, 0},
+    {NV_ENC_LEVEL_HEVC_4, 2'228'224, 66'846'720, 12'000, 30'000},
+    {NV_ENC_LEVEL_HEVC_41, 2'228'224, 133'693'440, 20'000, 50'000},
+    {NV_ENC_LEVEL_HEVC_5, 8'912'896, 267'386'880, 25'000, 100'000},
+    {NV_ENC_LEVEL_HEVC_51, 8'912'896, 534'773'760, 40'000, 160'000},
+    {NV_ENC_LEVEL_HEVC_52, 8'912'896, 1'069'547'520, 60'000, 240'000},
+    {NV_ENC_LEVEL_HEVC_6, 35'651'584, 1'069'547'520, 60'000, 240'000},
+    {NV_ENC_LEVEL_HEVC_61, 35'651'584, 2'139'095'040, 120'000, 480'000},
+    {NV_ENC_LEVEL_HEVC_62, 35'651'584, 4'278'190'080, 240'000, 800'000},
+};
+
 void
 CheckCuda(cudaError_t result)
 {
@@ -96,6 +121,53 @@ ConvertMovieColors(const Color16 *colors,
 }
 
 } // namespace
+
+MovieHevcRateControl
+ResolveMovieHevcRateControl(
+    unsigned width, unsigned height, unsigned fps, MovieHevcTier tier, const MovieHevcOptions &options)
+{
+    if (width == 0 || height == 0 || fps == 0 || options.PeakMbps == 0) {
+        throw FractalSharkSeriousException(
+            "HEVC playback requires positive dimensions, FPS and bitrate");
+    }
+    // Count coded samples, including padding for NVENC's 8-sample luma blocks.
+    constexpr uint64_t LumaBlockSize = 8;
+    const auto align = [](uint64_t dimension) {
+        return (dimension + LumaBlockSize - 1) / LumaBlockSize * LumaBlockSize;
+    };
+    const auto codedWidth = align(width);
+    const auto codedHeight = align(height);
+    for (const auto &level : HevcLevels) {
+        const auto tierLimit = tier == MovieHevcTier::High ? level.HighKbps : level.MainKbps;
+        // Annex A also limits each coded dimension to sqrt(8 * MaxLumaPs).
+        const auto maxDimensionSquared = 8ull * level.MaxPictureSamples;
+        if (tierLimit == 0 || codedWidth > maxDimensionSquared / codedWidth ||
+            codedHeight > maxDimensionSquared / codedHeight) {
+            continue;
+        }
+        const auto samples = codedWidth * codedHeight;
+        if (samples > level.MaxPictureSamples || fps > level.MaxSamplesPerSecond / samples) {
+            continue;
+        }
+        constexpr uint32_t BitsPerKilobit = 1'000;
+        constexpr uint64_t BitsPerMegabit = 1'000'000;
+        const auto peak = static_cast<uint32_t>(
+            std::min(options.PeakMbps * BitsPerMegabit, uint64_t{tierLimit} * BitsPerKilobit));
+        const auto average = std::min(peak, options.AverageBitsPerSecond.value_or(peak * 2 / 3));
+        // NVENC expresses VBV size and initial fullness in bits, not milliseconds.
+        constexpr unsigned MillisecondsPerSecond = 1000;
+        const auto bufferBits = [&](unsigned milliseconds) {
+            return static_cast<uint32_t>(uint64_t{peak} * milliseconds / MillisecondsPerSecond);
+        };
+        return {tier,
+                level.Idc,
+                peak,
+                average,
+                bufferBits(options.BufferMilliseconds),
+                bufferBits(options.InitialMilliseconds)};
+    }
+    throw FractalSharkSeriousException("HEVC playback dimensions and frame rate exceed level 6.2");
+}
 
 struct NvencMovieEncoder::Impl {
     struct Surface {
@@ -234,6 +306,11 @@ struct NvencMovieEncoder::Impl {
             throw FractalSharkSeriousException(
                 "This NVIDIA device cannot encode the selected movie profile at the requested size");
         }
+        if (settings.Codec == MovieCodec::Hevc &&
+            settings.Hevc.LevelIdc > static_cast<unsigned>(Cap(codec, NV_ENC_CAPS_LEVEL_MAX))) {
+            throw FractalSharkSeriousException(
+                "This NVIDIA device cannot encode the required HEVC level");
+        }
 
         const std::array presets{NV_ENC_PRESET_P1_GUID,
                                  NV_ENC_PRESET_P2_GUID,
@@ -261,17 +338,24 @@ struct NvencMovieEncoder::Impl {
         rc.enableLookahead = 0;
         rc.disableIadapt = 1;
         rc.zeroReorderDelay = 1;
-        rc.rateControlMode = h264 ? NV_ENC_PARAMS_RC_VBR : NV_ENC_PARAMS_RC_CONSTQP;
+        rc.rateControlMode = Rgb ? NV_ENC_PARAMS_RC_CONSTQP : NV_ENC_PARAMS_RC_VBR;
         rc.multiPass = NV_ENC_MULTI_PASS_DISABLED;
         if (h264) {
             rc.targetQuality = static_cast<uint8_t>(settings.Quality);
             rc.averageBitRate = 0;
             rc.maxBitRate = 0;
-        } else {
-            const auto qp = Rgb ? 0u : settings.Quality;
-            rc.constQP = {qp, qp, qp};
+        } else if (Rgb) {
+            rc.constQP = {};
             rc.enableAQ = 0;
             rc.enableTemporalAQ = 0;
+        } else {
+            // A quality target can raise QP in complex scenes to meet the playback budget.
+            rc.targetQuality = static_cast<uint8_t>(settings.Quality);
+            rc.targetQualityLSB = settings.QualityFraction;
+            rc.averageBitRate = settings.Hevc.AverageBitsPerSecond;
+            rc.maxBitRate = settings.Hevc.PeakBitsPerSecond;
+            rc.vbvBufferSize = settings.Hevc.BufferBits;
+            rc.vbvInitialDelay = settings.Hevc.InitialBufferBits;
         }
         NV_ENC_CONFIG_H264_VUI_PARAMETERS *vui = nullptr;
         if (h264) {
@@ -289,6 +373,12 @@ struct NvencMovieEncoder::Impl {
             h.repeatSPSPPS = 1;
             h.chromaFormatIDC = Rgb ? 3 : 1;
             h.inputBitDepth = h.outputBitDepth = NV_ENC_BIT_DEPTH_8;
+            if (!Rgb) {
+                h.minCUSize = NV_ENC_HEVC_CUSIZE_8x8;
+                h.tier = settings.Hevc.Tier == MovieHevcTier::High ? NV_ENC_TIER_HEVC_HIGH
+                                                                   : NV_ENC_TIER_HEVC_MAIN;
+                h.level = settings.Hevc.LevelIdc;
+            }
             vui = &h.hevcVUIParameters;
         }
         vui->videoSignalTypePresentFlag = 1;

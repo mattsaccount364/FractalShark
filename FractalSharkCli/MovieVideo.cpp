@@ -59,8 +59,7 @@ SealProgramTable(std::array<unsigned char, N> &table)
 } // namespace
 
 MovieVideo::MovieVideo(MovieJob &job)
-    : m_Job(job), m_Partial(job.Directory() / "movie.ts.partial"),
-      m_Target(job.Directory() / "movie.ts"), m_Next(job.NextFrame()), m_Bytes(job.VideoBytes())
+    : m_Job(job), m_Target(job.VideoOutputPath()), m_Next(job.NextFrame()), m_Bytes(job.VideoBytes())
 {
     if (job.FrameCount() == 0 ||
         job.FrameCount() * ClockHz >= (TimestampSpan - PresentationLead) * job.Config().Video.Fps) {
@@ -69,6 +68,7 @@ MovieVideo::MovieVideo(MovieJob &job)
     if (m_Bytes % PacketBytes != 0 || (m_Next == 0) != (m_Bytes == 0)) {
         throw FractalSharkSeriousException("Movie checkpoint does not describe a transport prefix");
     }
+    m_Partial = job.StagingVideoPath();
     const auto partialStatus = std::filesystem::symlink_status(m_Partial);
     const auto targetStatus = std::filesystem::symlink_status(m_Target);
     const bool hasPartial = std::filesystem::exists(partialStatus);

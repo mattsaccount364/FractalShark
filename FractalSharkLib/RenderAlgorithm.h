@@ -1357,3 +1357,15 @@ GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum algorithm)
 {
     return RenderAlgorithms[static_cast<size_t>(algorithm)];
 }
+
+namespace FractalShark {
+
+constexpr bool
+IsCliRenderAlgorithm(const RenderAlgorithm &algorithm)
+{
+    // MAX marks an unavailable/internal algorithm and cannot be used to render an image.
+    return algorithm.Algorithm != RenderAlgorithmEnum::MAX && algorithm.AlgorithmStr &&
+           algorithm.AlgorithmStr[0] != '\0';
+}
+
+} // namespace FractalShark

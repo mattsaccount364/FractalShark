@@ -25,6 +25,8 @@ private:
 // Movie jobs alone use these durability operations. Native reference mappings and
 // ordinary PNG publication deliberately retain their existing flush semantics.
 void FlushMovieFile(const std::filesystem::path &path);
+// Reserve a unique, empty staging file in the final movie's directory.
+std::filesystem::path ReserveMoviePartialFile(const std::filesystem::path &directory);
 void PublishMovieFile(const std::filesystem::path &temporary,
                       const std::filesystem::path &target,
                       bool replace);

@@ -562,24 +562,38 @@ choice and triggers any necessary reconfiguration.
       \item \emph{Save Location...} (command): Saves the current location/view parameters.
       \item \emph{Export Zoom Movie Command} (command): Creates a movie folder
       with an INI for the current center and target zoom. The GUI copies the
-      folder-only CLI command for PowerShell or a POSIX shell. The default
-      profile uses HEVC at QP~16 with BT.709 limited-range NV12. The INI also
-      offers QP~22, H.264, RGB8 lossless HEVC, and PNG-only profiles. Lossless
+      folder-only CLI command for PowerShell or a POSIX shell. The defaults
+      are 30 frames per second and a $1.02\times$ zoom per frame. The default
+      HEVC profile uses BT.709 limited-range NV12, High tier, and a variable
+      bitrate quality target of 16 with a peak of up to 180~Mb/s. A Main-tier
+      profile targets quality 22 and up to 50~Mb/s. The coded size and frame
+      rate determine the level and may lower these limits. The INI also offers
+      H.264, RGB8 lossless HEVC, and PNG-only profiles. Lossless
       encoding preserves the RGB8 values obtained by rounding the original
       RGB16 samples.
+
+      The exported INI preserves the full center and expresses zoom with at
+      most 39 significant decimal digits. Commented entries list the accepted
+      algorithms, render orders, and profiles. The lossy HEVC controls include
+      fractional target quality, average and peak bitrate, and decoder buffer
+      size and initial fill. The \code{video-output} key accepts an absolute
+      transport stream path in an existing directory, defaulting next to the INI.
 
       Movie startup prepares each needed reference representation at its
       deepest remaining view. The renderer then submits up to four frames
       concurrently to a native NVENC session. A video-only MPEG transport
-      stream records frames in playback order. The encoder places IDRs at
+      stream records frames in playback order. Staging occurs on the output
+      volume and checkpoint metadata resides in the job folder. The encoder places IDRs at
       startup, at the configured interval, and at the first resumed frame.
 
-      The CLI checkpoints the completed frame count and durable stream length
-      in \code{progress.txt}. On restart, it truncates any uncommitted suffix
-      and continues from that frame. Press \code{Ctrl+C} or hold \code{Ctrl+Alt}
-      for three seconds to save the completed prefix and pause. Active wall
-      time is persisted in \code{time.txt} and excludes downtime. The final
-      \code{movie.ts} is published when the last frame is durable.
+      The CLI writes the total and checkpointed frame counts, completion
+      percentage, durable stream length, and active wall time together in
+      \code{movie-state.ini}. The elapsed time is in milliseconds and excludes
+      downtime. On restart, the CLI truncates any uncommitted suffix and
+      continues after the last checkpointed frame. Press \code{Ctrl+C} or hold
+      \code{Ctrl+Alt} for three seconds to save the completed prefix and pause.
+      The final \code{movie.ts} is published when the last frame is durable.
+      Jobs from earlier state formats require a new job folder.
       \item \emph{Save High Res Bitmap} (command): Saves a high-resolution
       bitmap render.  The output resolution matches the current window
       dimensions (or a scaled multiple thereof).  A file-save dialog is

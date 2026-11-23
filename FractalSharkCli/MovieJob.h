@@ -18,13 +18,14 @@ namespace FractalSharkCli {
 struct MovieConfig {
     std::map<std::string, std::string> Values;
     FractalShark::MovieVideoSettings Video;
+    std::filesystem::path VideoOutput;
     uint64_t WideIterations = 8192;
     double SlopeRatio = 8;
     bool WideToDeep = true;
 
     static MovieConfig Load(const std::filesystem::path &path);
     std::vector<std::string> RenderArguments() const;
-    std::string Serialize() const;
+    std::string Serialize(bool includeComments) const;
 };
 
 class MovieSchedule {
@@ -58,7 +59,7 @@ private:
     uint64_t m_FrameCount;
 };
 
-// All tracked paths are relative to this job. The OS lock remains owned until
+// The job owns its checkpoint and staging path. The OS lock remains owned until
 // all render/save/encoding workers have stopped, including exceptional exits.
 class MovieJob {
 public:
@@ -69,6 +70,8 @@ public:
     uint64_t ElapsedMilliseconds() const;
     const MovieConfig &Config() const;
     const std::filesystem::path &Directory() const;
+    const std::filesystem::path &VideoOutputPath() const;
+    std::filesystem::path StagingVideoPath() const;
     void InitializeProgress(uint64_t frameCount, bool gpuBypassed, long double laDepth);
     uint64_t FrameCount() const;
     uint64_t Remaining() const;
@@ -82,24 +85,13 @@ public:
     std::filesystem::path FramePath(uint64_t index) const;
 
 private:
-    void SaveProfile();
-    void RestoreProgress();
-    void SaveProgress();
     std::filesystem::path m_Directory;
     Environment::MovieJobLock m_Lock;
     MovieConfig m_Config;
-    // The checksum identifies the frozen render and encoder settings.
-    std::string m_Identity;
-    std::string m_ConfigChecksum;
-    uint64_t m_FrameCount = 0;
-    uint64_t m_NextFrame = 0;
-    uint64_t m_VideoBytes = 0;
-    uint64_t m_Sequence = 0;
-    bool m_GpuBypassed = false;
-    long double m_LaDepth = 0;
-    class Timing;
-    // Destroy/stop the heartbeat before releasing the job lock above.
-    std::unique_ptr<Timing> m_Timing;
+    std::filesystem::path m_VideoOutput;
+    class State;
+    // Stop the state heartbeat before releasing the job lock above.
+    std::unique_ptr<State> m_State;
 };
 
 // Validate a PNG left between publication and its PNG-only checkpoint.

@@ -190,6 +190,16 @@ RunMovieJob(MovieJob &job,
         if (!signals.StopRequested()) {
             encoder = std::make_unique<FractalShark::NvencMovieEncoder>(
                 static_cast<unsigned>(target.Width), static_cast<unsigned>(target.Height), config.Video);
+            if (config.Video.Codec == FractalShark::MovieCodec::Hevc) {
+                const auto &rate = config.Video.Hevc;
+                FractalSharkLog::LogLine(__FILE__, __LINE__)
+                    << "Movie HEVC profile=" << config.Values.at("video-profile")
+                    << " fps=" << config.Video.Fps << " cq=" << config.Values.at("video-cq")
+                    << " tier=" << (rate.Tier == FractalShark::MovieHevcTier::High ? "high" : "main")
+                    << " level_idc=" << rate.LevelIdc << " peak_bps=" << rate.PeakBitsPerSecond
+                    << " average_bps=" << rate.AverageBitsPerSecond << " vbv_bits=" << rate.BufferBits
+                    << " vbv_initial_bits=" << rate.InitialBufferBits;
+            }
         }
     }
 

@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -11,14 +12,46 @@ struct Color16;
 namespace FractalShark {
 
 enum class MovieCodec { Hevc, HevcRgbLossless, H264, PngOnly };
+enum class MovieHevcTier { Main, High };
+
+struct MovieHevcOptions {
+    static constexpr unsigned DefaultHighPeakMbps = 180;
+    static constexpr unsigned DefaultLowPeakMbps = 50;
+    static constexpr unsigned DefaultBufferMilliseconds = 250;
+    static constexpr unsigned DefaultInitialMilliseconds = 100;
+    static constexpr unsigned MaximumPeakMbps = 800;
+    static constexpr unsigned MaximumBufferMilliseconds = 1000;
+
+    unsigned PeakMbps = DefaultHighPeakMbps;
+    std::optional<uint32_t> AverageBitsPerSecond;
+    unsigned BufferMilliseconds = DefaultBufferMilliseconds;
+    unsigned InitialMilliseconds = DefaultInitialMilliseconds;
+};
+
+struct MovieHevcRateControl {
+    MovieHevcTier Tier = MovieHevcTier::High;
+    unsigned LevelIdc = 0;
+    uint32_t PeakBitsPerSecond = 0;
+    uint32_t AverageBitsPerSecond = 0;
+    uint32_t BufferBits = 0;
+    uint32_t InitialBufferBits = 0;
+};
 
 struct MovieVideoSettings {
+    static constexpr unsigned DefaultFps = 30;
+
     MovieCodec Codec = MovieCodec::Hevc;
     unsigned Preset = 5;
     unsigned Quality = 16;
-    unsigned Fps = 60;
+    uint8_t QualityFraction = 0; // NVENC's fractional byte in an unsigned 8.8 quality target.
+    unsigned Fps = DefaultFps;
     uint32_t GopFrames = 1000;
+    MovieHevcRateControl Hevc;
 };
+
+// Resolve the playback budget without consulting a driver so a job can seal it before encoding.
+MovieHevcRateControl ResolveMovieHevcRateControl(
+    unsigned width, unsigned height, unsigned fps, MovieHevcTier tier, const MovieHevcOptions &options);
 
 // The movie queue owns each slot from render submission through consumption
 // of its compressed access unit. Surface writes may occur on render threads.

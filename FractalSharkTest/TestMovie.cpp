@@ -11,6 +11,7 @@
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <csignal>
 #include <cstdlib>
 #include <fstream>
@@ -86,6 +87,30 @@ Settings(const FractalSharkCli::MovieConfig &config)
     settings.Request.Algorithm = GetRenderAlgorithmTupleEntry(RenderAlgorithmEnum::Cpu64);
     return settings;
 }
+
+void
+CheckGeneratedMovieComments(const std::string &ini)
+{
+    ASSERT_FALSE(ini.contains("\n\n\n"));
+    for (const std::string_view key : {"render-algorithm",
+                                       "perturbation-alg",
+                                       "render-order",
+                                       "video-profile",
+                                       "video-preset",
+                                       "video-cq",
+                                       "video-max-bitrate-mbps",
+                                       "video-average-bitrate-mbps",
+                                       "video-vbv-buffer-ms",
+                                       "video-vbv-initial-ms",
+                                       "video-output"}) {
+        const auto comments = FractalShark::MovieIniComments(key);
+        ASSERT_TRUE(comments.starts_with("\n# "));
+        ASSERT_TRUE(ini.contains('\n' + comments + std::string(key) + '='));
+    }
+    ASSERT_TRUE(ini.contains("1920x1080: Level 4"));
+    ASSERT_TRUE(ini.contains("5120x2160: Level 6"));
+    ASSERT_TRUE(ini.contains("An omitted value defaults to two-thirds of the effective peak"));
+}
 } // namespace
 
 TEST(MovieExport_CapturesViewAndDefaultsIndependentlyOfPalette)
@@ -110,22 +135,43 @@ TEST(MovieExport_CapturesViewAndDefaultsIndependentlyOfPalette)
         directory.Path / "target.ini", "cli", FractalShark::MovieCommandShell::Posix);
     FractalShark::SaveMovieConfiguration(output, configuration);
     const auto config = FractalSharkCli::MovieConfig::Load(output.ConfigurationPath);
+    CheckGeneratedMovieComments(FractalSharkCli::ReadMovieText(output.ConfigurationPath));
     ASSERT_EQ(config.Values.at("center-x"), fractal.GetPtz().GetPtX().str());
     ASSERT_EQ(config.Values.at("center-y"), fractal.GetPtz().GetPtY().str());
-    ASSERT_EQ(config.Values.at("zoom"), fractal.GetPtz().GetZoomFactor().str());
+    ASSERT_TRUE(HighPrecision(config.Values.at("zoom")) == fractal.GetPtz().GetZoomFactor());
     ASSERT_EQ(config.Values.at("width"), "40");
     ASSERT_EQ(config.Values.at("height"), "24");
     ASSERT_EQ(config.Values.at("antialiasing"), "3");
     ASSERT_EQ(config.Values.at("iterations"), "12345");
     ASSERT_EQ(config.Values.at("render-algorithm"), "AutoSelect");
     ASSERT_EQ(config.Values.at("perturbation-alg"), "Auto");
-    ASSERT_EQ(config.Values.at("zoom-per-frame"), "1.01");
+    ASSERT_EQ(config.Values.at("zoom-per-frame"), "1.02");
     ASSERT_EQ(config.WideIterations, 8192u);
-    ASSERT_EQ(config.Video.Fps, 60u);
+    ASSERT_EQ(config.Video.Fps, 30u);
     ASSERT_EQ(config.Video.GopFrames, 1000u);
     ASSERT_EQ(config.SlopeRatio, 8);
     ASSERT_EQ(config.Values.at("video-profile"), "hevc-high");
     ASSERT_EQ(config.Video.Quality, 16u);
+    ASSERT_EQ(config.Values.at("video-max-bitrate-mbps"), "180");
+    ASSERT_EQ(config.Values.at("video-average-bitrate-mbps"), "20");
+    ASSERT_EQ(config.Values.at("video-vbv-buffer-ms"), "250");
+    ASSERT_EQ(config.Values.at("video-vbv-initial-ms"), "100");
+    ASSERT_EQ(config.VideoOutput, std::filesystem::canonical(output.JobDirectory) / "movie.ts");
+    for (const auto &algorithm : RenderAlgorithms) {
+        if (FractalShark::IsCliRenderAlgorithm(algorithm)) {
+            ASSERT_TRUE(configuration.contains(std::string("# render-algorithm=") +
+                                               algorithm.AlgorithmStr + '\n'));
+        }
+    }
+    for (const auto &algorithm : FractalShark::PerturbationAlgorithms) {
+        ASSERT_TRUE(configuration.contains("# perturbation-alg=" + std::string(algorithm.Name) + '\n'));
+    }
+    for (const auto order : FractalShark::MovieRenderOrders) {
+        ASSERT_TRUE(configuration.contains("# render-order=" + std::string(order) + '\n'));
+    }
+    for (const auto &profile : FractalShark::MovieVideoProfiles) {
+        ASSERT_TRUE(configuration.contains("# video-profile=" + std::string(profile.Name) + "  # "));
+    }
     ASSERT_TRUE(configuration.find("hevc-low") != std::string::npos);
     ASSERT_TRUE(configuration.find("palette") == std::string::npos);
     ASSERT_FALSE(std::filesystem::exists(directory.Path / "target.ini"));
@@ -134,7 +180,7 @@ TEST(MovieExport_CapturesViewAndDefaultsIndependentlyOfPalette)
     ASSERT_TRUE(output.Command.find("--ffmpeg") == std::string::npos);
     ASSERT_THROWS(FractalShark::SaveMovieConfiguration(output, "replacement"),
                   FractalSharkSeriousException);
-    ASSERT_EQ(FractalSharkCli::ReadMovieText(output.ConfigurationPath), configuration);
+    ASSERT_TRUE(FractalSharkCli::ReadMovieText(output.ConfigurationPath).starts_with(configuration));
     ASSERT_EQ(std::distance(std::filesystem::directory_iterator(directory.Path),
                             std::filesystem::directory_iterator()),
               1);
@@ -168,7 +214,11 @@ TEST(MovieExport_PreservesCoordinatesBeyondCommandLineLimits)
     const auto config = FractalSharkCli::MovieConfig::Load(output.ConfigurationPath);
     ASSERT_TRUE(config.Values.at("center-x").size() > 32768);
     ASSERT_EQ(config.Values.at("center-x"), fractal.GetPtz().GetPtX().str());
-    ASSERT_EQ(config.Values.at("zoom"), fractal.GetPtz().GetZoomFactor().str());
+    const auto &zoom = config.Values.at("zoom");
+    ASSERT_TRUE(zoom.find('e') <= 40);
+    const auto ratio = HighPrecision(zoom) / fractal.GetPtz().GetZoomFactor();
+    ASSERT_TRUE(ratio > HighPrecision("0.9999999999999999999999999999999999999"));
+    ASSERT_TRUE(ratio < HighPrecision("1.0000000000000000000000000000000000001"));
     ASSERT_TRUE(output.Command.size() < 32768);
     ASSERT_TRUE(output.Command.find("--center-x") == std::string::npos);
 }
@@ -273,10 +323,21 @@ TEST(MovieExport_RendersAndResumesFromExportedConfiguration)
     const auto output = FractalShark::BuildMovieCommandExport(
         directory.Path / "target.ini", "cli", FractalShark::MovieCommandShell::Posix);
     FractalShark::SaveMovieConfiguration(output, configuration);
-    const auto profile = configuration.find("video-profile=hevc-high");
+    configuration = FractalSharkCli::ReadMovieText(output.ConfigurationPath);
+    const auto profile = configuration.find("\nvideo-profile=hevc-high\n");
     ASSERT_TRUE(profile != std::string::npos);
     configuration.replace(
-        profile, std::string_view("video-profile=hevc-high").size(), "video-profile=png-only");
+        profile + 1, std::string_view("video-profile=hevc-high").size(), "video-profile=png-only");
+    for (const std::string_view key : {"video-preset",
+                                       "video-cq",
+                                       "video-max-bitrate-mbps",
+                                       "video-average-bitrate-mbps",
+                                       "video-vbv-buffer-ms",
+                                       "video-vbv-initial-ms"}) {
+        const auto setting = configuration.find('\n' + std::string(key) + '=');
+        ASSERT_TRUE(setting != std::string::npos);
+        configuration.insert(setting + 1, "# ");
+    }
     FractalSharkCli::WriteMovieText(output.ConfigurationPath, configuration);
     ASSERT_EQ(
         FractalSharkCli::RunMovie(output.JobDirectory, {}, GpuMode::Disabled, UINT64_MAX, Settings), 0);
@@ -316,16 +377,66 @@ TEST(MovieExport_ClipboardFailuresPreserveManualCopyRecovery)
     const std::string configuration =
         "[movie]\ncenter-x=0\ncenter-y=0\nzoom=1\nzoom-per-frame=1.01\niterations=64\n";
     FractalShark::SaveMovieConfiguration(output, configuration);
+    const auto saved = FractalSharkCli::ReadMovieText(output.ConfigurationPath);
     ASSERT_FALSE(FractalShark::CopyMovieCommandToClipboard(output));
     clipboard.Throw = true;
     ASSERT_FALSE(FractalShark::CopyMovieCommandToClipboard(output));
-    ASSERT_EQ(FractalSharkCli::ReadMovieText(output.ConfigurationPath), configuration);
+    ASSERT_EQ(FractalSharkCli::ReadMovieText(output.ConfigurationPath), saved);
     clipboard.Throw = false;
     clipboard.Accept = true;
     ASSERT_TRUE(FractalShark::CopyMovieCommandToClipboard(output));
     ASSERT_EQ(clipboard.Text, output.Command);
 }
 #endif
+
+TEST(MovieConfig_ResolvesHevcPlaybackBudget)
+{
+    MovieTestDirectory directory;
+    const auto ini = directory.Path / "playback.ini";
+    const auto load = [&](const std::string &options) {
+        FractalSharkCli::WriteMovieText(
+            ini, "[movie]\ncenter-x=0\ncenter-y=0\nzoom=1\niterations=64\n" + options);
+        return FractalSharkCli::MovieConfig::Load(ini);
+    };
+    const auto high = load("width=5120\nheight=2160\n");
+    ASSERT_EQ(high.Values.at("zoom-per-frame"), "1.02");
+    ASSERT_EQ(high.Video.Fps, 30u);
+    ASSERT_TRUE(high.Video.Hevc.Tier == FractalShark::MovieHevcTier::High);
+    ASSERT_EQ(high.Video.Hevc.LevelIdc, 180u);
+    ASSERT_EQ(high.Video.Hevc.PeakBitsPerSecond, 180'000'000u);
+    ASSERT_EQ(high.Video.Hevc.AverageBitsPerSecond, 120'000'000u);
+    ASSERT_EQ(high.Video.Hevc.BufferBits, 45'000'000u);
+    ASSERT_EQ(high.Video.Hevc.InitialBufferBits, 18'000'000u);
+
+    const auto low = load("width=1920\nheight=1080\nvideo-profile=hevc-low\n");
+    ASSERT_TRUE(low.Video.Hevc.Tier == FractalShark::MovieHevcTier::Main);
+    ASSERT_EQ(low.Video.Quality, 22u);
+    ASSERT_EQ(low.Video.Hevc.LevelIdc, 120u);
+    ASSERT_EQ(low.Video.Hevc.PeakBitsPerSecond, 12'000'000u);
+
+    const auto custom = load("width=3840\nheight=2160\nvideo-fps=60\nzoom-per-frame=1.01\n"
+                             "video-cq=20\nvideo-max-bitrate-mbps=140\n");
+    ASSERT_EQ(custom.Values.at("zoom-per-frame"), "1.01");
+    ASSERT_EQ(custom.Video.Fps, 60u);
+    ASSERT_EQ(custom.Video.Quality, 20u);
+    ASSERT_EQ(custom.Video.Hevc.LevelIdc, 153u);
+    ASSERT_EQ(custom.Video.Hevc.PeakBitsPerSecond, 140'000'000u);
+    const auto tuned = load("width=5120\nheight=2160\nvideo-cq=16.625\nvideo-max-bitrate-mbps=160\n"
+                            "video-average-bitrate-mbps=95.25\nvideo-vbv-buffer-ms=500\n"
+                            "video-vbv-initial-ms=200\n");
+    ASSERT_EQ(tuned.Video.Quality, 16u);
+    ASSERT_EQ(tuned.Video.QualityFraction, 160u);
+    ASSERT_EQ(tuned.Video.Hevc.AverageBitsPerSecond, 95'250'000u);
+    ASSERT_EQ(tuned.Video.Hevc.BufferBits, 80'000'000u);
+    ASSERT_EQ(tuned.Video.Hevc.InitialBufferBits, 32'000'000u);
+    ASSERT_THROWS(load("video-vbv-buffer-ms=100\nvideo-vbv-initial-ms=200\n"),
+                  FractalSharkSeriousException);
+    ASSERT_THROWS(load("video-output=relative.ts\n"), FractalSharkSeriousException);
+    ASSERT_THROWS(load("video-max-bitrate-mbps=0\n"), FractalSharkSeriousException);
+    ASSERT_THROWS(load("video-profile=png-only\nvideo-max-bitrate-mbps=50\n"),
+                  FractalSharkSeriousException);
+    ASSERT_THROWS(load("video-qp=16\n"), FractalSharkSeriousException);
+}
 
 TEST(MovieSchedule_EndpointsCurveAndHugeExponents)
 {
@@ -374,7 +485,9 @@ TEST(MovieJob_RejectsUnsupportedFrameCounts)
     ASSERT_THROWS(
         job.InitializeProgress(static_cast<uint64_t>(std::numeric_limits<int>::max()) + 1, true, 0),
         FractalSharkSeriousException);
-    ASSERT_FALSE(std::filesystem::exists(job.Directory() / "profile.txt"));
+    const auto state = FractalSharkCli::ReadMovieText(job.Directory() / "movie-state.ini");
+    ASSERT_TRUE(state.find("\ntotal-frames=0\n") != std::string::npos);
+    ASSERT_TRUE(state.find("\npercent-complete=unknown\n") != std::string::npos);
     job.InitializeProgress(10001, true, 0);
     ASSERT_EQ(job.Remaining(), 10001u);
     ASSERT_EQ(job.FramePath(8999).parent_path().filename().string(), "chunk_0000000002");
@@ -496,6 +609,66 @@ TEST(MovieRunner_OrderlyStopAndResume)
     ASSERT_EQ(FractalSharkCli::RunMovie(job, {}, GpuMode::Disabled, UINT64_MAX, Settings), 0);
 }
 
+TEST(MovieJob_RejectsLegacyMetadataBeforeWriting)
+{
+    MovieTestDirectory directory;
+    const auto configuration = directory.Config("");
+    const auto jobPath = directory.Path / "job";
+    std::filesystem::create_directory(jobPath);
+    const auto legacy = jobPath / "progress.txt";
+    FractalSharkCli::WriteMovieText(legacy, "legacy checkpoint");
+    ASSERT_THROWS(FractalSharkCli::MovieJob(jobPath, configuration), FractalSharkSeriousException);
+    ASSERT_EQ(FractalSharkCli::ReadMovieText(legacy), "legacy checkpoint");
+    ASSERT_FALSE(std::filesystem::exists(jobPath / "movie-state.ini"));
+    ASSERT_FALSE(std::filesystem::exists(jobPath / "movie.lock"));
+    ASSERT_FALSE(std::filesystem::exists(jobPath / "movie.ini"));
+}
+
+TEST(MovieJob_HeartbeatKeepsCheckpointAndElapsedTime)
+{
+    MovieTestDirectory directory;
+    const auto configuration = directory.Config("");
+    const auto jobPath = directory.Path / "job";
+    const auto statePath = jobPath / "movie-state.ini";
+    uint64_t persistedTime;
+    uint64_t durableBytes;
+    {
+        FractalSharkCli::MovieJob job(jobPath, configuration);
+        job.InitializeProgress(2, true, 2.5L);
+        const std::array<unsigned char, 300> unit{0, 0, 1, 0x26};
+        FractalSharkCli::MovieVideo video(job);
+        video.Append(0, unit, true);
+        video.Finish();
+        durableBytes = job.VideoBytes();
+        const auto committedWrite = std::filesystem::last_write_time(statePath);
+        const auto elapsedTime = [](const std::string &state) {
+            constexpr std::string_view Key = "\nactive-time-ms=";
+            const auto offset = state.find(Key);
+            ASSERT_TRUE(offset != std::string::npos);
+            return std::stoull(state.substr(offset + Key.size()));
+        };
+        const auto committedTime = elapsedTime(FractalSharkCli::ReadMovieText(statePath));
+
+        // Wait for an idle heartbeat without doing any more render or video work.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (std::filesystem::last_write_time(statePath) == committedWrite &&
+               std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        const auto state = FractalSharkCli::ReadMovieText(statePath);
+        persistedTime = elapsedTime(state);
+        ASSERT_TRUE(persistedTime > committedTime);
+        ASSERT_TRUE(state.find("\ncheckpointed-frames=1\n") != std::string::npos);
+        ASSERT_TRUE(state.find("\nvideo-bytes=" + std::to_string(durableBytes) + '\n') !=
+                    std::string::npos);
+    }
+    FractalSharkCli::MovieJob job(jobPath, {});
+    ASSERT_EQ(job.NextFrame(), 1u);
+    ASSERT_EQ(job.VideoBytes(), durableBytes);
+    ASSERT_EQ(job.LaDepth(), 2.5L);
+    ASSERT_TRUE(job.ElapsedMilliseconds() >= persistedTime);
+}
+
 TEST(MovieVideo_TruncatesUncommittedTailAndPublishes)
 {
     MovieTestDirectory directory;
@@ -509,6 +682,9 @@ TEST(MovieVideo_TruncatesUncommittedTailAndPublishes)
     uint64_t durableBytes;
     {
         FractalSharkCli::MovieJob job(jobPath, configuration);
+        CheckGeneratedMovieComments(FractalSharkCli::ReadMovieText(jobPath / "movie.ini"));
+        ASSERT_EQ(job.Config().Video.Hevc.PeakBitsPerSecond, 30'000'000u);
+        ASSERT_EQ(job.Config().Video.Hevc.AverageBitsPerSecond, 20'000'000u);
         job.InitializeProgress(3, true, 0);
         ASSERT_THROWS(FractalSharkCli::MovieJob(jobPath, configuration), std::system_error);
         FractalSharkCli::MovieVideo video(job);
@@ -518,6 +694,9 @@ TEST(MovieVideo_TruncatesUncommittedTailAndPublishes)
         ASSERT_EQ(job.NextFrame(), 1u);
         durableBytes = job.VideoBytes();
         ASSERT_EQ(durableBytes % 188, 0u);
+        const auto state = FractalSharkCli::ReadMovieText(jobPath / "movie-state.ini");
+        ASSERT_TRUE(state.find("\ntotal-frames=3\ncheckpointed-frames=1\npercent-complete=33.33\n") !=
+                    std::string::npos);
         ASSERT_FALSE(std::filesystem::exists(target));
         video.Append(1, unit, false);
     }
@@ -538,6 +717,8 @@ TEST(MovieVideo_TruncatesUncommittedTailAndPublishes)
     FractalSharkCli::MovieJob job(jobPath, {});
     FractalSharkCli::MovieVideo(job).Finish();
     ASSERT_EQ(job.NextFrame(), 3u);
+    const auto state = FractalSharkCli::ReadMovieText(jobPath / "movie-state.ini");
+    ASSERT_TRUE(state.find("\ncheckpointed-frames=3\npercent-complete=100.00\n") != std::string::npos);
     const auto transport = FractalSharkCli::ReadMovieText(target);
     unsigned accessUnits = 0;
     for (size_t offset = 0; offset < transport.size(); offset += 188) {
@@ -548,4 +729,52 @@ TEST(MovieVideo_TruncatesUncommittedTailAndPublishes)
         }
     }
     ASSERT_EQ(accessUnits, 3u);
+}
+
+TEST(MovieVideo_ResumesCustomDestinationAndPreservesCollision)
+{
+    MovieTestDirectory directory;
+    const auto destination = directory.Path / "other drive";
+    std::filesystem::create_directory(destination);
+    const auto target = destination / Environment::ToFsPath(Environment::Utf8ToWide("zoom \xC3\xA9.ts"));
+    const auto configuration = directory.Config(
+        "video-output=" + Environment::WideToUtf8(Environment::FromFsPath(target)) + '\n');
+    const auto jobPath = directory.Path / "job";
+    const std::array<unsigned char, 300> unit{0, 0, 1, 0x26};
+    std::filesystem::path partial;
+    uint64_t durableBytes;
+    {
+        FractalSharkCli::MovieJob job(jobPath, configuration);
+        job.InitializeProgress(2, true, 0);
+        FractalSharkCli::MovieVideo video(job);
+        partial = job.StagingVideoPath();
+        ASSERT_EQ(partial.parent_path(), std::filesystem::canonical(destination));
+        const auto state = FractalSharkCli::ReadMovieText(jobPath / "movie-state.ini");
+        ASSERT_TRUE(state.find("\nstaging-filename=" + partial.filename().string() + '\n') !=
+                    std::string::npos);
+        video.Append(0, unit, true);
+        video.Finish();
+        durableBytes = job.VideoBytes();
+        std::ofstream torn(partial, std::ios::binary | std::ios::app);
+        torn << "interrupted write";
+    }
+    {
+        FractalSharkCli::MovieJob job(jobPath, {});
+        ASSERT_EQ(job.NextFrame(), 1u);
+        ASSERT_EQ(job.StagingVideoPath(), partial);
+        FractalSharkCli::MovieVideo video(job);
+        ASSERT_EQ(std::filesystem::file_size(partial), durableBytes);
+        video.Append(1, unit, true);
+        FractalSharkCli::WriteMovieText(target, "unrelated file");
+        ASSERT_THROWS(video.Finish(), std::system_error);
+        ASSERT_EQ(FractalSharkCli::ReadMovieText(target), "unrelated file");
+        ASSERT_EQ(std::filesystem::file_size(partial), job.VideoBytes());
+    }
+    ASSERT_THROWS(FractalSharkCli::MovieJob(directory.Path / "new job", configuration),
+                  FractalSharkSeriousException);
+    std::filesystem::remove(target);
+    FractalSharkCli::MovieJob job(jobPath, {});
+    FractalSharkCli::MovieVideo(job).Finish();
+    ASSERT_EQ(std::filesystem::file_size(target), job.VideoBytes());
+    ASSERT_FALSE(std::filesystem::exists(partial));
 }

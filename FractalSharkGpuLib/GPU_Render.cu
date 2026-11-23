@@ -7,6 +7,7 @@
 #include <stdio.h>
 
 #include "GPU_Render.h"
+#include "NvencMovieEncoder.h"
 #include "QuadDouble/gqd_basic.cuh"
 #include "QuadFloat/gqf_basic.cuh"
 #include "dbldbl.cuh"
@@ -703,6 +704,27 @@ uint32_t
 GPURenderer::SyncComputeStream()
 {
     return cudaStreamSynchronize(m_ComputeStream);
+}
+
+uint32_t
+GPURenderer::WriteMovieSurface(FractalShark::NvencMovieEncoder &encoder,
+                               size_t surface,
+                               uint64_t iterations,
+                               bool wideIterations)
+{
+    // Prepare the device iteration buffer on its producing stream. WriteGpu
+    // fences this stream before the queue hands the surface to the encoder.
+    const auto result =
+        wideIterations
+            ? RunAntialiasing(iterations, m_ComputeStream, FractalShark::ColoringMode::PaletteLookup)
+            : RunAntialiasing(static_cast<uint32_t>(iterations),
+                              m_ComputeStream,
+                              FractalShark::ColoringMode::PaletteLookup);
+    if (result != 0) {
+        cudaStreamSynchronize(m_ComputeStream);
+        return result;
+    }
+    return encoder.WriteGpu(surface, OutputColorMatrix.aa_colors, m_ComputeStream);
 }
 
 uint32_t

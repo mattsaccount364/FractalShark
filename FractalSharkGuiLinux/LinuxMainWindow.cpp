@@ -359,10 +359,9 @@ private:
         std::string extension,
         std::vector<FractalShark::Linux::ImGuiOverlay::FileDialogFilter> filters);
     void SaveLocation(bool scaleToMaximum);
-    void RequestMovieEncoder(std::string configuration, std::filesystem::path configurationPath);
+    void RequestMovieCli(std::string configuration, std::filesystem::path configurationPath);
     void FinishMovieExport(std::string configuration,
                            std::filesystem::path configurationPath,
-                           std::filesystem::path ffmpeg,
                            std::filesystem::path cli);
     void DoSaveRefOrbit(::CompressToDisk compression);
     void DoLoadRefOrbitImag(::ImaginaSettings settings);
@@ -1221,48 +1220,37 @@ LinuxMainWindow::OnExportZoomMovie()
                     [this, configuration = std::move(configuration)](std::string filename) mutable {
                         const std::filesystem::path configurationPath =
                             FractalShark::AppendExtensionIfMissing(std::move(filename), ".ini");
-                        RequestMovieEncoder(std::move(configuration), configurationPath);
+                        RequestMovieCli(std::move(configuration), configurationPath);
                     });
 }
 
 void
-LinuxMainWindow::RequestMovieEncoder(std::string configuration, std::filesystem::path configurationPath)
+LinuxMainWindow::RequestMovieCli(std::string configuration, std::filesystem::path configurationPath)
 {
-    RequestOpenFile(
-        "Exporting a zoom movie command",
-        "Select FFmpeg (requires hevc_nvenc)",
-        {{"All Files", {}}},
-        [this,
-         configuration = std::move(configuration),
-         configurationPath = std::move(configurationPath)](std::string ffmpeg) mutable {
-            const auto cli = FractalShark::FindMovieCliExecutable(
-                Environment::ExecutablePath(), FractalShark::MovieCommandShell::Posix);
-            if (cli) {
-                FinishMovieExport(std::move(configuration), std::move(configurationPath), ffmpeg, *cli);
-            } else {
-                RequestOpenFile(
-                    "Exporting a zoom movie command",
+    const auto cli = FractalShark::FindMovieCliExecutable(Environment::ExecutablePath(),
+                                                          FractalShark::MovieCommandShell::Posix);
+    if (cli) {
+        FinishMovieExport(std::move(configuration), std::move(configurationPath), *cli);
+        return;
+    }
+    RequestOpenFile("Exporting a zoom movie command",
                     "Locate FractalSharkCli",
                     {{"All Files", {}}},
                     [this,
                      configuration = std::move(configuration),
-                     configurationPath = std::move(configurationPath),
-                     ffmpeg = std::move(ffmpeg)](std::string selected) mutable {
+                     configurationPath = std::move(configurationPath)](std::string selected) mutable {
                         FinishMovieExport(
-                            std::move(configuration), std::move(configurationPath), ffmpeg, selected);
+                            std::move(configuration), std::move(configurationPath), selected);
                     });
-            }
-        });
 }
 
 void
 LinuxMainWindow::FinishMovieExport(std::string configuration,
                                    std::filesystem::path configurationPath,
-                                   std::filesystem::path ffmpeg,
                                    std::filesystem::path cli)
 {
     const auto output = FractalShark::BuildMovieCommandExport(
-        configurationPath, cli, ffmpeg, FractalShark::MovieCommandShell::Posix);
+        configurationPath, cli, FractalShark::MovieCommandShell::Posix);
     FractalShark::SaveMovieConfiguration(output, configuration);
     const bool copied = FractalShark::CopyMovieCommandToClipboard(output);
     const auto message = FractalShark::DescribeMovieCommandExport(output, copied);

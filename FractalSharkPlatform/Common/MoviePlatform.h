@@ -1,14 +1,26 @@
 #pragma once
 
 #include <filesystem>
-#include <functional>
 #include <memory>
-#include <span>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace Environment {
+
+enum class MovieDriver { Cuda, Nvenc };
+
+// Resolve driver APIs lazily so CPU programs can start without a GPU driver.
+class MovieDriverLibrary {
+public:
+    explicit MovieDriverLibrary(MovieDriver driver);
+    ~MovieDriverLibrary();
+    MovieDriverLibrary(const MovieDriverLibrary &) = delete;
+    MovieDriverLibrary &operator=(const MovieDriverLibrary &) = delete;
+    void *Symbol(const char *name) const;
+
+private:
+    void *m_Library;
+};
 
 // Movie jobs alone use these durability operations. Native reference mappings and
 // ordinary PNG publication deliberately retain their existing flush semantics.
@@ -29,12 +41,6 @@ private:
     std::unique_ptr<Impl> m_Impl;
 };
 
-struct MovieProcessResult {
-    int ExitCode;
-    std::string ErrorOutput;
-    bool Cancelled;
-};
-
 // A standalone movie owns the process-wide interrupt subscription. Native
 // handlers only set a lock-free flag; no renderer or callback runs in a handler.
 class MovieInterruptScope {
@@ -49,18 +55,5 @@ private:
     struct Impl;
     std::unique_ptr<Impl> m_Impl;
 };
-
-// No shell is involved. Both output pipes are drained concurrently with the
-// producer, with bounded stderr retention. Callback exceptions terminate/reap
-// the child and propagate; native failures use std::system_error. The process
-// runs at low priority in an owned job/group. Cancellation is polled even when
-// pipes are quiet, terminates that ownership group, and returns Cancelled.
-MovieProcessResult RunMovieProcess(
-    const std::filesystem::path &executable,
-    const std::vector<std::string> &arguments,
-    const std::function<void(const std::function<void(std::span<const unsigned char>)> &)> &input,
-    const std::function<void(std::span<const unsigned char>)> &output,
-    const std::function<void(std::string_view)> &errorOutput,
-    const std::function<bool()> &stop);
 
 } // namespace Environment

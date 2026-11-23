@@ -53,6 +53,46 @@ DefaultFilename(uint64_t index, const std::wstring &extension)
     return name.str();
 }
 
+// Offline PNG and video use identical palette saturation and antialiasing.
+template <typename IterType>
+void
+ForEachCpuColor(const ItersMemoryContainer &frame,
+                uint64_t numIterations,
+                uint64_t rotation,
+                uint32_t depth,
+                uint64_t maxIterations,
+                const std::vector<Color16> &palette,
+                const auto &consume)
+{
+    const auto *iterations = frame.GetIters<IterType>();
+    const size_t aa = frame.m_Antialiasing;
+    const auto samples = static_cast<uint32_t>(aa * aa);
+    const auto limit = maxIterations - 1;
+    for (size_t y = 0; y < frame.m_OutputHeight; ++y) {
+        for (size_t x = 0; x < frame.m_OutputWidth; ++x) {
+            uint32_t red = 0, green = 0, blue = 0;
+            for (size_t sy = 0; sy < aa; ++sy) {
+                const size_t row = (y * aa + sy) * frame.m_RoundedWidth;
+                for (size_t sx = 0; sx < aa; ++sx) {
+                    const uint64_t count = iterations[row + x * aa + sx];
+                    if (count < numIterations) {
+                        const uint64_t rotated =
+                            count >= limit || rotation >= limit - count ? limit : count + rotation;
+                        const auto &color = palette[(rotated >> depth) % palette.size()];
+                        red += color.r;
+                        green += color.g;
+                        blue += color.b;
+                    }
+                }
+            }
+            consume({static_cast<uint16_t>(red / samples),
+                     static_cast<uint16_t>(green / samples),
+                     static_cast<uint16_t>(blue / samples),
+                     UINT16_MAX});
+        }
+    }
+}
+
 } // namespace
 
 PngParallelSave::PngParallelSave(Type type,
@@ -178,45 +218,19 @@ PngParallelSave::EncodeCpuPngTyped(std::vector<unsigned char> &pngBytes, std::ws
         return 1;
     }
     std::vector<unsigned char> raw(byteCount);
-    const auto *iterations = m_CurIters.GetIters<IterType>();
-    const size_t aa = m_CurIters.m_Antialiasing;
-    const uint32_t samples = static_cast<uint32_t>(aa * aa);
     size_t offset = 0;
-    for (size_t y = 0; y < m_CurIters.m_OutputHeight; ++y) {
-        for (size_t x = 0; x < m_CurIters.m_OutputWidth; ++x) {
-            // At most sixteen 16-bit samples: uint32_t is exact and division
-            // truncates identically to the former floating-point accumulation.
-            uint32_t red = 0;
-            uint32_t green = 0;
-            uint32_t blue = 0;
-            for (size_t sy = 0; sy < aa; ++sy) {
-                const size_t row = (y * aa + sy) * m_CurIters.m_RoundedWidth;
-                for (size_t sx = 0; sx < aa; ++sx) {
-                    const uint64_t count = iterations[row + x * aa + sx];
-                    if (count < m_NumIterations) {
-                        const uint64_t limit = m_MaxPossibleIters - 1;
-                        // Saturate before addition, including rotations near UINT64_MAX.
-                        const uint64_t rotated = count >= limit || m_PaletteRotate >= limit - count
-                                                     ? limit
-                                                     : count + m_PaletteRotate;
-                        const auto &color =
-                            m_PaletteColors[(rotated >> m_PaletteAuxDepth) % m_PaletteColors.size()];
-                        red += color.r;
-                        green += color.g;
-                        blue += color.b;
-                    }
-                }
-            }
-            const auto writeSample = [&](uint32_t sum) {
-                const auto value = static_cast<uint16_t>(sum / samples);
-                raw[offset++] = static_cast<unsigned char>(value >> 8);
-                raw[offset++] = static_cast<unsigned char>(value);
-            };
-            writeSample(red);
-            writeSample(green);
-            writeSample(blue);
-        }
-    }
+    ForEachCpuColor<IterType>(m_CurIters,
+                              m_NumIterations,
+                              m_PaletteRotate,
+                              m_PaletteAuxDepth,
+                              m_MaxPossibleIters,
+                              m_PaletteColors,
+                              [&](Color16 color) {
+                                  for (const auto value : {color.r, color.g, color.b}) {
+                                      raw[offset++] = static_cast<unsigned char>(value >> 8);
+                                      raw[offset++] = static_cast<unsigned char>(value);
+                                  }
+                              });
     // Preserve the CPU encoder policy while removing the intermediate Color16
     // image and the wrapper's 32-bit raw-buffer size arithmetic.
     lodepng::State state;
@@ -236,6 +250,25 @@ PngParallelSave::EncodeCpuPngTyped(std::vector<unsigned char> &pngBytes, std::ws
         error = L"PNG encoder failed: " + WidenForLog(lodepng_error_text(code));
     }
     return static_cast<int>(code);
+}
+
+std::vector<Color16>
+PngParallelSave::ColorCpuFrame(const ItersMemoryContainer &frame,
+                               uint64_t numIterations,
+                               uint64_t rotation,
+                               uint32_t depth,
+                               uint64_t maxIterations,
+                               const std::vector<Color16> &palette)
+{
+    std::vector<Color16> colors;
+    colors.reserve(frame.m_OutputWidth * frame.m_OutputHeight);
+    const auto append = [&](Color16 color) { colors.push_back(color); };
+    if (frame.GetIterType() == IterTypeEnum::Bits32) {
+        ForEachCpuColor<uint32_t>(frame, numIterations, rotation, depth, maxIterations, palette, append);
+    } else {
+        ForEachCpuColor<uint64_t>(frame, numIterations, rotation, depth, maxIterations, palette, append);
+    }
+    return colors;
 }
 
 void

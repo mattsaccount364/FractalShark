@@ -250,6 +250,10 @@ jobs:
           do
             echo "== $binary =="
             ldd "$binary"
+            if readelf -d "$binary" | grep -E '\(NEEDED\)' | grep -Eq 'lib(nvidia-encode|cuda)\.so'; then
+              echo "$binary requires a GPU driver at process startup" >&2
+              exit 1
+            fi
             readelf -V "$binary" | grep -E 'GLIBC_|GLIBCXX_|CXXABI_' || true
 
             if readelf -V "$binary" | grep -Eq 'GLIBC_(2\.(3[6-9]|[4-9][0-9])|[3-9][0-9]\.)'; then

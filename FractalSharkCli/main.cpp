@@ -124,7 +124,6 @@ struct CliArgs {
     bool BatchSet = false;
     std::string MovieDirectory;
     std::string MovieConfiguration;
-    std::string Ffmpeg;
 
     ViewSource Source = ViewSource::None;
     size_t BuiltinView = 0;
@@ -194,7 +193,7 @@ PrintUsage()
            "  FractalSharkCli --connect [--endpoint NAME] <the render arguments above>\n"
            "  FractalSharkCli --connect --endpoint NAME --shutdown\n"
            "  FractalSharkCli [--connect [--endpoint NAME]] --batch FILE [--clear-reference-orbits]\n"
-           "  FractalSharkCli --movie JOBDIR [--movie-config FILE] [--ffmpeg PATH]\n"
+           "  FractalSharkCli --movie JOBDIR [--movie-config FILE]\n"
            "                  [--no-gpu] [--commit-cap-bytes N]\n"
            "\n"
            "  FractalSharkCli --list-render-algorithms\n"
@@ -214,9 +213,7 @@ PrintUsage()
            "  --batch FILE      Read a batch file; put render options in its image sections\n"
            "  --movie JOBDIR    Create or resume a standalone zoom movie\n"
            "  --movie-config FILE  Movie INI (required only when creating a job)\n"
-           "  --ffmpeg PATH     Optional FFmpeg executable. New movies default to HEVC NVENC NV12 QP "
-           "16\n"
-           "                    Joins completed chunks into movie.ts and reclaims them as they commit\n"
+           "                    Writes resumable NVENC video to movie.ts\n"
            "                    Pause with Ctrl+C or hold Ctrl+Alt for three seconds on the desktop\n"
            "\n"
            "View and image dimensions:\n"
@@ -411,14 +408,12 @@ ParseArgs(int argc, char *argv[], CliArgs &a, std::ostream &errorOut)
 
     for (int i = 1; i < argc; ++i) {
         std::string_view arg = argv[i];
-        if (arg == "--movie" || arg == "--movie-config" || arg == "--ffmpeg") {
+        if (arg == "--movie" || arg == "--movie-config") {
             const auto value = expectValue(i, argv[i]);
             if (!value || !*value) {
                 return false;
             }
-            auto &destination = arg == "--movie"          ? a.MovieDirectory
-                                : arg == "--movie-config" ? a.MovieConfiguration
-                                                          : a.Ffmpeg;
+            auto &destination = arg == "--movie" ? a.MovieDirectory : a.MovieConfiguration;
             if (!destination.empty()) {
                 errorOut << "error: duplicate movie option\n";
                 return false;
@@ -709,7 +704,7 @@ ParseHighPrecision(const std::string &text,
 bool
 ValidateRenderArgs(const CliArgs &args, std::string &error, bool fromClient)
 {
-    if (!args.MovieDirectory.empty() || !args.MovieConfiguration.empty() || !args.Ffmpeg.empty()) {
+    if (!args.MovieDirectory.empty() || !args.MovieConfiguration.empty()) {
         error = "movie options are not image render requests";
         return false;
     }
@@ -1510,7 +1505,6 @@ RunCli(int argc, char *argv[])
         return FractalSharkCli::RunMovie(
             args.MovieDirectory,
             args.MovieConfiguration,
-            args.Ffmpeg,
             args.GpuRuntimeMode,
             args.CommitCapBytes,
             [&](const FractalSharkCli::MovieConfig &config) {
@@ -1538,8 +1532,8 @@ RunCli(int argc, char *argv[])
                 return settings;
             });
     }
-    if (!args.MovieConfiguration.empty() || !args.Ffmpeg.empty()) {
-        FractalSharkLog::Write("--movie-config and --ffmpeg require --movie JOBDIR", __FILE__, __LINE__);
+    if (!args.MovieConfiguration.empty()) {
+        FractalSharkLog::Write("--movie-config requires --movie JOBDIR", __FILE__, __LINE__);
         return 2;
     }
     if (args.BatchSet) {

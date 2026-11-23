@@ -24,13 +24,9 @@
 
 namespace FractalSharkCli {
 namespace {
-// Format identity also salts every checkpoint and chunk record. Old playback-
-// indexed AV1 jobs cannot be mistaken for ascending HEVC render-order jobs.
-constexpr std::string_view MovieFormat = "FractalSharkMovie3-hevc-nvenc-render-order";
-constexpr std::string_view PreviousMovieFormat = "FractalSharkMovie2-hevc-nvenc-render-order";
-constexpr std::string_view AssemblyFormat = "FractalSharkAssembly1-mpegts";
-constexpr std::array ProgressNames{"progress.txt", "progress-0.txt", "progress-1.txt"};
-constexpr std::array TimingNames{"time.txt", "time-0.txt", "time-1.txt"};
+constexpr std::string_view MovieFormat = "FractalSharkNativeMovie1";
+constexpr auto ProgressName = "progress.txt";
+constexpr auto TimingName = "time.txt";
 
 std::string
 Trim(std::string_view text)
@@ -65,7 +61,7 @@ Seal(const std::string &payload)
     return MovieMetadataChecksum(payload) + "\n" + payload;
 }
 std::optional<std::string>
-Unseal(const std::filesystem::path &path, bool allowPrevious)
+Unseal(const std::filesystem::path &path)
 {
     if (!std::filesystem::exists(path)) {
         return std::nullopt;
@@ -73,67 +69,11 @@ Unseal(const std::filesystem::path &path, bool allowPrevious)
     const auto contents = ReadMovieText(path);
     const auto newline = contents.find('\n');
     constexpr size_t CrcDigits = 8;
-    constexpr size_t PreviousChecksumDigits = 64;
     if (newline == CrcDigits && MovieMetadataChecksum(std::string_view(contents).substr(newline + 1)) ==
                                     contents.substr(0, newline)) {
         return contents.substr(newline + 1);
     }
-    // Only the one-time HEVC upgrade accepts obsolete checksum headers. Their
-    // payloads are checked structurally against the locked job and movie sizes;
-    // no cryptographic implementation is retained for these small old records.
-    if (allowPrevious && newline == PreviousChecksumDigits &&
-        contents.substr(0, newline).find_first_not_of("0123456789abcdef") == std::string::npos) {
-        return contents.substr(newline + 1);
-    }
     return std::nullopt;
-}
-
-// Both running checkpoints use the same sealed identity, sequence and value.
-// The numbered files are accepted only as migration inputs. A .tmp file is
-// never authoritative, even if all its bytes reached storage before a crash.
-struct MovieCheckpoint {
-    uint64_t Sequence = 0;
-    uint64_t Value = 0;
-    bool HasLegacyFiles = false;
-};
-
-MovieCheckpoint
-ReadCheckpoint(const std::filesystem::path &directory,
-               const std::array<const char *, 3> &names,
-               std::string_view identity,
-               uint64_t maximum)
-{
-    MovieCheckpoint best;
-    for (size_t index = 0; index < names.size(); ++index) {
-        const auto path = directory / names[index];
-        if (!std::filesystem::exists(path)) {
-            continue;
-        }
-        best.HasLegacyFiles |= index != 0;
-        if (const auto record = Unseal(path, false)) {
-            std::istringstream input(*record);
-            std::string savedIdentity;
-            uint64_t sequence = 0, value = 0;
-            input >> savedIdentity >> sequence >> value;
-            if (input && savedIdentity == identity && sequence > best.Sequence && value <= maximum) {
-                input >> std::ws;
-                if (input.eof()) {
-                    best.Sequence = sequence;
-                    best.Value = value;
-                }
-            }
-        }
-    }
-    return best;
-}
-
-void
-RemoveLegacyCheckpoints(const std::filesystem::path &directory, const std::array<const char *, 3> &names)
-{
-    // Only retire the migration inputs after the canonical record is durable.
-    for (size_t index = 1; index < names.size(); ++index) {
-        std::filesystem::remove(directory / names[index]);
-    }
 }
 
 std::filesystem::path
@@ -161,54 +101,26 @@ ScalePower(const HighPrecision &base, uint64_t exponent)
     }
     return factor;
 }
-void
-RemoveMovieTemporary(const std::filesystem::path &path)
-{
-    std::error_code error;
-    // Reserved encoder temporaries include private hard-link input directories.
-    // The exclusive job lock is held; no new worker can own these stale names.
-    std::filesystem::remove_all(path, error);
-    if (error) {
-        // An orphaned encoder may still hold this file. Unique output names
-        // prevent collisions, and the next resume retries the cleanup.
-        FractalSharkLog::LogLine(__FILE__, __LINE__)
-            << "Retaining unfinished movie temporary for later cleanup: " << path.string() << ": "
-            << error.message();
-    }
-}
-void
-RemoveUnfinishedMovies(const std::filesystem::path &directory)
-{
-    for (const auto &entry : std::filesystem::directory_iterator(directory)) {
-        const auto name = entry.path().filename().string();
-        if (name.starts_with(".fractalshark-video-") && entry.path().extension() == ".tmp") {
-            RemoveMovieTemporary(entry.path());
-        }
-    }
-}
 } // namespace
 
-// Only this worker writes timing metadata. Rendering, frame checkpoints and
-// archive commits stay on their existing threads. Finalization joins first,
-// then publishes the exact final duration while the job lock is still owned.
 class MovieJob::Timing {
 public:
     Timing(const std::filesystem::path &directory, const std::string &identity, bool existing)
         : m_Directory(directory), m_Identity(identity), m_Started(std::chrono::steady_clock::now())
     {
-        const auto saved = ReadCheckpoint(directory, TimingNames, identity, UINT64_MAX);
-        m_Sequence = saved.Sequence;
-        m_PreviousMilliseconds = saved.Value;
+        if (const auto saved = Unseal(directory / TimingName)) {
+            std::istringstream input(*saved);
+            std::string savedIdentity;
+            uint64_t sequence = 0, elapsed = 0;
+            if (input >> savedIdentity >> sequence >> elapsed && savedIdentity == identity) {
+                m_Sequence = sequence;
+                m_PreviousMilliseconds = elapsed;
+            }
+        }
         if (existing && m_Sequence == 0) {
-            FractalSharkLog::Write(
-                "Movie timing begins with this session; earlier active time was not recorded",
-                __FILE__,
-                __LINE__);
+            FractalSharkLog::Write("Movie timing resumes without an earlier record", __FILE__, __LINE__);
         }
         Save();
-        if (saved.HasLegacyFiles) {
-            RemoveLegacyCheckpoints(directory, TimingNames);
-        }
         m_Thread = std::jthread([this](std::stop_token stop) {
             // Exceptions cannot escape a worker. The movie event loop observes
             // the saved exception and stops rather than pretending time is saved.
@@ -287,7 +199,7 @@ private:
         ++m_Sequence;
         const auto payload =
             m_Identity + "\n" + std::to_string(m_Sequence) + " " + std::to_string(Elapsed()) + "\n";
-        WriteMovieText(m_Directory / TimingNames.front(), Seal(payload));
+        WriteMovieText(m_Directory / TimingName, Seal(payload));
     }
     std::filesystem::path m_Directory;
     std::string m_Identity;
@@ -345,24 +257,13 @@ MovieConfig::Load(const std::filesystem::path &path)
     MovieConfig config;
     std::istringstream input(ReadMovieText(path));
     std::string line;
-    const std::set<std::string> known{"center-x",
-                                      "center-y",
-                                      "zoom",
-                                      "iterations",
-                                      "zoom-per-frame",
-                                      "width",
-                                      "height",
-                                      "antialiasing",
-                                      "render-algorithm",
-                                      "perturbation-alg",
-                                      "palette-map",
-                                      "palette-depth",
-                                      "wide-iterations",
-                                      "la-slope-ratio",
-                                      "video-chunk-frames",
-                                      "video-fps",
-                                      "render-order",
-                                      "video-encoder-args"};
+    const std::set<std::string> known{"center-x",         "center-y",       "zoom",
+                                      "iterations",       "zoom-per-frame", "width",
+                                      "height",           "antialiasing",   "render-algorithm",
+                                      "perturbation-alg", "palette-map",    "palette-depth",
+                                      "wide-iterations",  "la-slope-ratio", "video-gop-frames",
+                                      "video-fps",        "render-order",   "video-profile",
+                                      "video-preset",     "video-qp",       "video-cq"};
     while (std::getline(input, line)) {
         if (line.starts_with("\xef\xbb\xbf")) {
             line.erase(0, 3);
@@ -388,89 +289,61 @@ MovieConfig::Load(const std::filesystem::path &path)
         }
         config.WideToDeep = order == "wide-to-deep";
     }
-    const auto encoderText = config.Values.contains("video-encoder-args")
-                                 ? config.Values.at("video-encoder-args")
-                                 : std::string(FractalShark::LosslessMovieEncoderArguments());
-    // Legacy snapshots omit the key and retain RGB lossless. MovieJob writes
-    // the current default explicitly before starting a new job.
-    // Deliberately no shell expansion. Double quotes group option values;
-    // filenames, filter graphs and global/process options are not encoder knobs.
-    bool quoted = false;
-    std::string token;
-    for (const char ch : encoderText) {
-        if (ch == '"') {
-            quoted = !quoted;
-        } else if (!quoted && (ch == ' ' || ch == '\t')) {
-            if (!token.empty()) {
-                config.EncoderArguments.push_back(std::move(token));
-                token.clear();
-            }
-        } else {
-            token += ch;
+    const auto profile = config.Values.try_emplace("video-profile", "hevc-high").first->second;
+    auto &video = config.Video;
+    if (profile == "hevc-low") {
+        video.Quality = 22;
+    } else if (profile == "hevc-rgb-lossless") {
+        video.Codec = FractalShark::MovieCodec::HevcRgbLossless;
+        video.Preset = 4;
+        video.Quality = 0;
+    } else if (profile == "h264-high" || profile == "h264-low") {
+        video.Codec = FractalShark::MovieCodec::H264;
+        video.Preset = profile == "h264-high" ? 5 : 1;
+        video.Quality = profile == "h264-high" ? 18 : 30;
+    } else if (profile == "png-only") {
+        video.Codec = FractalShark::MovieCodec::PngOnly;
+    } else if (profile != "hevc-high") {
+        throw FractalSharkSeriousException("Unknown movie video-profile: " + profile);
+    }
+
+    const auto option = [&](const char *key, uint64_t fallback, uint64_t minimum, uint64_t maximum) {
+        const auto found = config.Values.find(key);
+        if (found == config.Values.end()) {
+            return fallback;
         }
-    }
-    if (quoted) {
-        throw FractalSharkSeriousException("Unterminated movie encoder argument quote");
-    }
-    if (!token.empty()) {
-        config.EncoderArguments.push_back(std::move(token));
-    }
-    const std::set<std::string> encoderOptions{
-        "-c:v",        "-preset",      "-tune",        "-profile:v",  "-pix_fmt",     "-rc",
-        "-qp",         "-cq",          "-b:v",         "-maxrate:v",  "-bufsize:v",   "-multipass",
-        "-spatial-aq", "-temporal-aq", "-aq-strength", "-colorspace", "-color_range", "-color_primaries",
-        "-color_trc",  "-level:v"};
-    std::map<std::string, std::string> selected;
-    if (config.EncoderArguments.size() % 2 != 0) {
-        throw FractalSharkSeriousException("Movie encoder arguments require option/value pairs");
-    }
-    for (size_t i = 0; i < config.EncoderArguments.size(); i += 2) {
-        const auto &option = config.EncoderArguments[i];
-        if (!encoderOptions.contains(option) ||
-            !selected.emplace(option, config.EncoderArguments[i + 1]).second) {
-            throw FractalSharkSeriousException("Unsupported or duplicate movie encoder option: " +
-                                               option);
+        uint64_t value = 0;
+        const auto &text = found->second;
+        const auto parsed = std::from_chars(text.data(), text.data() + text.size(), value);
+        if (parsed.ec != std::errc{} || parsed.ptr != text.data() + text.size() || value < minimum ||
+            value > maximum) {
+            throw FractalSharkSeriousException(std::string("Invalid movie option: ") + key);
         }
+        return value;
+    };
+    video.Fps = static_cast<unsigned>(option("video-fps", video.Fps, 1, 1000));
+    video.GopFrames = static_cast<uint32_t>(option("video-gop-frames", video.GopFrames, 1, INT32_MAX));
+    if (video.Codec != FractalShark::MovieCodec::PngOnly) {
+        video.Preset = static_cast<unsigned>(option("video-preset", video.Preset, 1, 7));
+        config.Values["video-preset"] = std::to_string(video.Preset);
+    } else if (config.Values.contains("video-preset")) {
+        throw FractalSharkSeriousException("PNG-only movies do not have an encoder preset");
     }
-    if (!selected.contains("-c:v") ||
-        (selected.at("-c:v") != "hevc_nvenc" && selected.at("-c:v") != "h264_nvenc")) {
-        throw FractalSharkSeriousException("Movie encoder must be hevc_nvenc or h264_nvenc");
+    if (video.Codec == FractalShark::MovieCodec::Hevc && !config.Values.contains("video-cq")) {
+        video.Quality = static_cast<unsigned>(option("video-qp", video.Quality, 0, 51));
+        config.Values["video-qp"] = std::to_string(video.Quality);
+    } else if (video.Codec == FractalShark::MovieCodec::H264 && !config.Values.contains("video-qp")) {
+        video.Quality = static_cast<unsigned>(option("video-cq", video.Quality, 1, 51));
+        config.Values["video-cq"] = std::to_string(video.Quality);
+    } else if (config.Values.contains("video-qp") || config.Values.contains("video-cq")) {
+        throw FractalSharkSeriousException("Movie quality override does not match its video profile");
     }
-    if (!selected.contains("-pix_fmt") ||
-        (selected.at("-pix_fmt") != "gbrp" && selected.at("-pix_fmt") != "nv12" &&
-         selected.at("-pix_fmt") != "yuv420p")) {
-        throw FractalSharkSeriousException("Movie pixel format must be gbrp, nv12 or yuv420p");
-    }
-    config.PixelFormat = selected.at("-pix_fmt");
-    const bool rgb = config.PixelFormat == "gbrp";
-    for (const auto &[name, value] : std::map<std::string, std::string>{
-             {"-colorspace", rgb ? "rgb" : "bt709"}, {"-color_range", rgb ? "pc" : "tv"}}) {
-        if (selected.contains(name) && selected.at(name) != value) {
-            throw FractalSharkSeriousException("Movie color settings disagree with its pixel format");
-        }
-        if (!selected.contains(name)) {
-            config.EncoderArguments.push_back(name);
-            config.EncoderArguments.push_back(value);
-        }
-    }
-    for (const auto key : {"center-x", "center-y", "zoom", "iterations", "zoom-per-frame"}) {
+    config.Values.try_emplace("render-order", "wide-to-deep");
+    const std::array required{"center-x", "center-y", "zoom", "iterations", "zoom-per-frame"};
+    for (const auto *key : required) {
         if (!config.Values.contains(key)) {
             throw FractalSharkSeriousException(std::string("Missing movie option: ") + key);
         }
-    }
-    if (config.Values.contains("video-chunk-frames")) {
-        config.ChunkFrames = ParseUnsigned(config.Values.at("video-chunk-frames"), "video-chunk-frames");
-    }
-    if (config.Values.contains("video-fps")) {
-        const auto fps = ParseUnsigned(config.Values.at("video-fps"), "video-fps");
-        if (fps > 1000) {
-            throw FractalSharkSeriousException("Movie video-fps exceeds 1000");
-        }
-        config.Fps = static_cast<unsigned>(fps);
-    }
-    if (config.ChunkFrames > INT32_MAX) {
-        throw FractalSharkSeriousException(
-            "Movie chunk length exceeds FFmpeg's keyframe interval limit");
     }
     const auto targetIterations = ParseUnsigned(config.Values.at("iterations"), "iterations");
     if (targetIterations > static_cast<uint64_t>(INT64_MAX - 1)) {
@@ -493,8 +366,8 @@ MovieConfig::Load(const std::filesystem::path &path)
     }
     // Materialize movie defaults in the immutable snapshot. A resumed job must
     // not inherit different defaults from a later executable.
-    config.Values["video-chunk-frames"] = std::to_string(config.ChunkFrames);
-    config.Values["video-fps"] = std::to_string(config.Fps);
+    config.Values["video-gop-frames"] = std::to_string(video.GopFrames);
+    config.Values["video-fps"] = std::to_string(video.Fps);
     config.Values["wide-iterations"] = std::to_string(config.WideIterations);
     std::ostringstream ratio;
     ratio << std::setprecision(std::numeric_limits<double>::max_digits10) << config.SlopeRatio;
@@ -517,8 +390,7 @@ MovieConfig::RenderArguments() const
     std::vector<std::string> arguments;
     for (const auto &[key, value] : Values) {
         if (key == "zoom-per-frame" || key == "wide-iterations" || key == "la-slope-ratio" ||
-            key == "video-chunk-frames" || key == "video-fps" || key == "render-order" ||
-            key == "video-encoder-args") {
+            key.starts_with("video-") || key == "render-order") {
             continue;
         }
         arguments.push_back("--" + key);
@@ -583,8 +455,7 @@ MovieSchedule::MovieSchedule(const HighPrecision &targetZoom,
         throw FractalSharkSeriousException("Movie zoom-per-frame exceeds supported scale precision");
     }
     const auto intervals = std::ceil(m_Depth / m_StepDepth);
-    // FFmpeg image2 accepts a signed-int starting index. Excessive frame counts
-    // are configuration errors, rather than requiring another input protocol.
+    // Keep movie indexing within the supported render schedule range.
     if (!std::isfinite(intervals) || intervals > std::numeric_limits<int>::max() || m_StepDepth <= 0) {
         throw FractalSharkSeriousException("Movie frame count exceeds INT_MAX");
     }
@@ -679,67 +550,52 @@ MovieSchedule::IterationsAt(uint64_t index) const
 MovieJob::MovieJob(const std::filesystem::path &directory, const std::filesystem::path &configuration)
     : m_Directory(PrepareDirectory(directory)), m_Lock(m_Directory / "movie.lock")
 {
-    // Recognize only the current layout and its immediately preceding HEVC
-    // metadata. Incompatible playback-indexed jobs are rejected before cleanup.
     const auto profilePath = m_Directory / "profile.txt";
-    std::optional<std::string> savedProfile;
-    bool upgrade = false;
-    if (std::filesystem::exists(profilePath)) {
-        savedProfile = Unseal(profilePath, true);
-        std::string format;
-        std::istringstream input(savedProfile ? *savedProfile : std::string{});
-        input >> m_Identity >> format;
-        if (!input || (format != MovieFormat && format != PreviousMovieFormat) ||
-            (format == MovieFormat && !Unseal(profilePath, false))) {
-            throw FractalSharkSeriousException("Incompatible movie job format; create a new job folder");
-        }
-        upgrade = format == PreviousMovieFormat;
-    } else {
-        const auto hasFiles = [&](const char *name) {
-            const auto path = m_Directory / name;
-            return std::filesystem::exists(path) && !std::filesystem::is_empty(path);
-        };
-        const bool hasProgress = std::any_of(ProgressNames.begin(), ProgressNames.end(), [&](auto name) {
-            return std::filesystem::exists(m_Directory / name);
-        });
-        if (hasProgress || std::filesystem::exists(m_Directory / "assembly.txt") || hasFiles("frames") ||
-            hasFiles("chunks")) {
+    const bool existing = std::filesystem::exists(profilePath);
+    const auto savedProfile = Unseal(profilePath);
+    if (existing) {
+        std::string format, identity;
+        std::istringstream profile(savedProfile.value_or(""));
+        profile >> identity >> format;
+        if (!profile || format != MovieFormat) {
             throw FractalSharkSeriousException(
-                "Movie state has no current profile; create a new job folder");
+                "Incompatible movie job format; create a new native movie folder");
+        }
+    } else {
+        for (const auto *name : {"ffmpeg.txt",
+                                 "assembly.txt",
+                                 "chunks",
+                                 "frames",
+                                 "movie.ts",
+                                 "movie.ts.partial",
+                                 ProgressName}) {
+            if (std::filesystem::exists(m_Directory / name)) {
+                throw FractalSharkSeriousException(
+                    "Movie state has no native profile; create a new native movie folder");
+            }
         }
     }
+
     const auto snapshot = m_Directory / "movie.ini";
-    std::filesystem::create_directories(m_Directory / "frames");
-    std::filesystem::create_directories(m_Directory / "chunks");
-    const bool snapshotExists = std::filesystem::exists(snapshot);
-    if (snapshotExists) {
+    if (std::filesystem::exists(snapshot)) {
         m_Config = MovieConfig::Load(snapshot);
         if (!configuration.empty()) {
             auto candidate = MovieConfig::Load(configuration);
-            if (candidate.Values.contains("palette-map")) {
+            if (candidate.Values.contains("palette-map") && m_Config.Values.contains("palette-map")) {
                 if (ReadMovieText(candidate.Values.at("palette-map")) !=
                     ReadMovieText(m_Config.Values.at("palette-map"))) {
                     throw FractalSharkSeriousException("Movie palette differs from the job snapshot");
                 }
                 candidate.Values["palette-map"] = m_Config.Values.at("palette-map");
             }
-            // Older external INIs may omit the new-job defaults materialized in
-            // this snapshot. Normalize only those keys the snapshot already has;
-            // legacy snapshots remain byte-for-byte identical for fingerprinting.
-            if (m_Config.Values.contains("render-order")) {
-                candidate.Values.try_emplace("render-order", "wide-to-deep");
-            }
-            if (m_Config.Values.contains("video-encoder-args")) {
-                candidate.Values.try_emplace("video-encoder-args",
-                                             m_Config.Values.at("video-encoder-args"));
-            }
             if (candidate.Serialize() != m_Config.Serialize()) {
                 throw FractalSharkSeriousException("Movie settings differ from the existing job");
             }
         }
     } else {
-        if (configuration.empty()) {
-            throw FractalSharkSeriousException("New movie job requires --movie-config");
+        if (existing || configuration.empty()) {
+            throw FractalSharkSeriousException(
+                "Movie has no configuration; supply --movie-config for a new job");
         }
         m_Config = MovieConfig::Load(configuration);
         if (m_Config.Values.contains("palette-map")) {
@@ -747,12 +603,6 @@ MovieJob::MovieJob(const std::filesystem::path &directory, const std::filesystem
                            ReadMovieText(m_Config.Values.at("palette-map")));
             m_Config.Values["palette-map"] = "palette.map";
         }
-    }
-    if (!snapshotExists || (!savedProfile && (!m_Config.Values.contains("render-order") ||
-                                              !m_Config.Values.contains("video-encoder-args")))) {
-        m_Config.Values.try_emplace("render-order", "wide-to-deep");
-        m_Config.Values.try_emplace("video-encoder-args",
-                                    std::string(FractalShark::DefaultMovieEncoderArguments()));
         WriteMovieText(snapshot, m_Config.Serialize() + FractalShark::MovieEncoderExamples());
         m_Config = MovieConfig::Load(snapshot);
     }
@@ -764,36 +614,19 @@ MovieJob::MovieJob(const std::filesystem::path &directory, const std::filesystem
     if (m_Config.Values.contains("palette-map")) {
         configurationText += ReadMovieText(m_Config.Values.at("palette-map"));
     }
-    m_ConfigChecksum = MovieMetadataChecksum(configurationText);
-    if (!savedProfile) {
-        m_Identity = m_ConfigChecksum;
-    } else if (upgrade) {
-        UpgradeMetadata(*savedProfile);
-    } else {
+    m_Identity = m_ConfigChecksum = MovieMetadataChecksum(configurationText);
+    if (savedProfile) {
         std::string identity, format, configurationChecksum;
         std::istringstream input(*savedProfile);
         input >> identity >> format >> m_FrameCount >> m_GpuBypassed >> m_LaDepth >>
             configurationChecksum;
-        if (!input || configurationChecksum != m_ConfigChecksum || m_FrameCount == 0 ||
-            m_FrameCount > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
-            !std::isfinite(m_LaDepth) || m_LaDepth < 0) {
+        if (!input || identity != m_Identity || configurationChecksum != m_ConfigChecksum ||
+            m_FrameCount == 0 || m_FrameCount > INT_MAX || !std::isfinite(m_LaDepth) || m_LaDepth < 0) {
             throw FractalSharkSeriousException("Movie settings differ from the job profile");
         }
-    }
-    if (savedProfile) {
         RestoreProgress();
     }
-    // The job lock is held and no new workers exist. Only reserved temporary
-    // names are removed; directory enumeration retains no frame-path list.
-    RemoveUnfinishedMovies(m_Directory);
-    RemoveUnfinishedMovies(m_Directory / "chunks");
-    for (const auto &entry : std::filesystem::recursive_directory_iterator(m_Directory / "frames")) {
-        const auto name = entry.path().filename().string();
-        if (name.starts_with(".fractalshark-save-") && entry.path().extension() == ".tmp") {
-            RemoveMovieTemporary(entry.path());
-        }
-    }
-    m_Timing = std::make_unique<Timing>(m_Directory, m_Identity, savedProfile.has_value());
+    m_Timing = std::make_unique<Timing>(m_Directory, m_Identity, existing);
 }
 MovieJob::~MovieJob() = default;
 bool
@@ -814,82 +647,6 @@ MovieJob::ElapsedMilliseconds() const
     return m_Timing ? m_Timing->Elapsed() : 0;
 }
 
-void
-MovieJob::UpgradeMetadata(const std::string &profile)
-{
-    std::string identity, format;
-    std::istringstream input(profile);
-    input >> identity >> format >> m_FrameCount >> m_GpuBypassed >> m_LaDepth;
-    if (!input || identity != m_Identity || format != PreviousMovieFormat || m_FrameCount == 0 ||
-        m_FrameCount > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
-        !std::isfinite(m_LaDepth) || m_LaDepth < 0) {
-        throw FractalSharkSeriousException("Cannot upgrade invalid movie profile");
-    }
-    // Validate every record before changing any. Keep the identifier unchanged,
-    // so CRC records written before an interruption remain readable on retry.
-    std::vector<std::pair<std::filesystem::path, std::string>> records;
-    for (const auto name : {"progress-0.txt", "progress-1.txt"}) {
-        const auto path = m_Directory / name;
-        if (const auto payload = Unseal(path, true)) {
-            std::istringstream progress(*payload);
-            uint64_t sequence = 0, nextFrame = 0;
-            progress >> identity >> sequence >> nextFrame;
-            if (progress && identity == m_Identity && sequence > 0 && nextFrame <= m_FrameCount) {
-                progress >> std::ws;
-                if (progress.eof()) {
-                    records.emplace_back(path, *payload);
-                }
-            }
-        }
-    }
-    for (const auto &entry : std::filesystem::directory_iterator(m_Directory / "chunks")) {
-        if (entry.path().extension() != ".complete") {
-            continue;
-        }
-        const auto payload = Unseal(entry.path(), true);
-        std::istringstream record(payload ? *payload : std::string{});
-        MovieChunk chunk{};
-        record >> identity >> chunk.First >> chunk.Count >> chunk.PngBytes >> chunk.VideoBytes;
-        auto completionPath = VideoPath(chunk.First);
-        completionPath += ".complete";
-        if (!record || identity != m_Identity || chunk.First >= m_FrameCount ||
-            chunk.First % m_Config.ChunkFrames != 0 ||
-            chunk.Count != std::min(m_Config.ChunkFrames, m_FrameCount - chunk.First) ||
-            chunk.VideoBytes == 0 || !std::filesystem::is_regular_file(VideoPath(chunk.First)) ||
-            std::filesystem::file_size(VideoPath(chunk.First)) != chunk.VideoBytes ||
-            entry.path() != completionPath) {
-            throw FractalSharkSeriousException("Cannot upgrade invalid movie completion record");
-        }
-        record >> std::ws;
-        if (!record.eof()) {
-            // An already-converted record has no trailing pixel digest. Older
-            // records may have exactly one obsolete 64-digit field to discard.
-            std::string obsolete;
-            record >> obsolete;
-            if (obsolete.size() != 64 ||
-                obsolete.find_first_not_of("0123456789abcdef") != std::string::npos) {
-                throw FractalSharkSeriousException("Invalid obsolete movie digest field");
-            }
-            record >> std::ws;
-            if (!record.eof()) {
-                throw FractalSharkSeriousException("Unexpected movie completion fields");
-            }
-        }
-        std::ostringstream converted;
-        converted << m_Identity << '\n'
-                  << chunk.First << ' ' << chunk.Count << ' ' << chunk.PngBytes << ' '
-                  << chunk.VideoBytes << '\n';
-        records.emplace_back(entry.path(), converted.str());
-    }
-    for (const auto &[path, payload] : records) {
-        WriteMovieText(path, Seal(payload));
-    }
-    // Publishing this marker LAST commits the upgrade. A crash beforehand leaves
-    // the old profile and a mix of old/CRC records, accepted by this method only.
-    SaveProfile();
-    FractalSharkLog::Write(
-        "Movie metadata upgraded; saved frames and movies retained", __FILE__, __LINE__);
-}
 void
 MovieJob::SaveProfile()
 {
@@ -956,21 +713,30 @@ MovieJob::InitializeProgress(uint64_t frameCount, bool gpuBypassed, long double 
 void
 MovieJob::RestoreProgress()
 {
-    const auto saved = ReadCheckpoint(m_Directory, ProgressNames, m_Identity, m_FrameCount);
-    m_NextFrame = saved.Value;
-    m_Sequence = saved.Sequence;
-    if (saved.HasLegacyFiles) {
-        SaveProgress();
-        RemoveLegacyCheckpoints(m_Directory, ProgressNames);
+    const auto path = m_Directory / ProgressName;
+    if (!std::filesystem::exists(path)) {
+        return;
+    }
+    const auto saved = Unseal(path);
+    std::istringstream input(saved.value_or(""));
+    std::string identity;
+    input >> identity >> m_Sequence >> m_NextFrame >> m_VideoBytes;
+    if (!input || identity != m_Identity || m_Sequence == 0 || m_NextFrame > m_FrameCount) {
+        throw FractalSharkSeriousException("Invalid native movie checkpoint");
+    }
+    input >> std::ws;
+    if (!input.eof() ||
+        (m_Config.Video.Codec == FractalShark::MovieCodec::PngOnly && m_VideoBytes != 0)) {
+        throw FractalSharkSeriousException("Invalid native movie checkpoint");
     }
 }
 void
 MovieJob::SaveProgress()
 {
     ++m_Sequence;
-    const auto payload =
-        m_Identity + "\n" + std::to_string(m_Sequence) + " " + std::to_string(m_NextFrame) + "\n";
-    WriteMovieText(m_Directory / ProgressNames.front(), Seal(payload));
+    const auto payload = m_Identity + "\n" + std::to_string(m_Sequence) + " " +
+                         std::to_string(m_NextFrame) + " " + std::to_string(m_VideoBytes) + "\n";
+    WriteMovieText(m_Directory / ProgressName, Seal(payload));
 }
 void
 MovieJob::CompleteFrame(uint64_t index)
@@ -990,194 +756,27 @@ MovieJob::Rewind(uint64_t nextFrame)
     m_NextFrame = nextFrame;
     SaveProgress();
 }
-void
-MovieJob::SkipArchivedChunk(const MovieChunk &chunk)
+uint64_t
+MovieJob::VideoBytes() const
 {
-    if (m_NextFrame >= chunk.First && m_NextFrame < chunk.First + chunk.Count) {
-        m_NextFrame = chunk.First + chunk.Count;
-        SaveProgress();
-    }
+    return m_VideoBytes;
 }
+void
+MovieJob::CommitVideo(uint64_t nextFrame, uint64_t bytes)
+{
+    if (nextFrame <= m_NextFrame || nextFrame > m_FrameCount || bytes <= m_VideoBytes) {
+        throw FractalSharkSeriousException("Invalid movie video checkpoint");
+    }
+    m_NextFrame = nextFrame;
+    m_VideoBytes = bytes;
+    SaveProgress();
+}
+
 std::filesystem::path
 MovieJob::FramePath(uint64_t index) const
 {
-    return m_Directory / "frames" / ("chunk_" + Padded(index / m_Config.ChunkFrames)) /
+    return m_Directory / "frames" / ("chunk_" + Padded(index / m_Config.Video.GopFrames)) /
            ("frame_" + Padded(index) + ".png");
-}
-std::filesystem::path
-MovieJob::VideoPath(uint64_t first) const
-{
-    return m_Directory / "chunks" / ("chunk_" + Padded(first / m_Config.ChunkFrames) + ".mkv");
-}
-std::optional<MovieChunk>
-MovieJob::FindChunk(uint64_t first) const
-{
-    if (first >= m_FrameCount || first % m_Config.ChunkFrames != 0) {
-        throw FractalSharkSeriousException("Invalid movie chunk start");
-    }
-    auto path = VideoPath(first);
-    path += ".complete";
-    if (!std::filesystem::exists(path)) {
-        return std::nullopt;
-    }
-    const auto record = Unseal(path, false);
-    if (!record) {
-        throw FractalSharkSeriousException("Movie chunk registry checksum failed");
-    }
-    std::istringstream input(*record);
-    std::string identity;
-    MovieChunk chunk{};
-    input >> identity >> chunk.First >> chunk.Count >> chunk.PngBytes >> chunk.VideoBytes;
-    const auto expectedCount = std::min(m_Config.ChunkFrames, m_FrameCount - first);
-    if (!input || identity != m_Identity || chunk.First != first || chunk.Count != expectedCount ||
-        chunk.VideoBytes == 0 || !std::filesystem::is_regular_file(VideoPath(first)) ||
-        std::filesystem::file_size(VideoPath(first)) != chunk.VideoBytes) {
-        throw FractalSharkSeriousException("Movie chunk registry or movie file is invalid");
-    }
-    return chunk;
-}
-void
-MovieJob::CommitChunk(const MovieChunk &chunk)
-{
-    std::ostringstream record;
-    record << m_Identity << '\n'
-           << chunk.First << ' ' << chunk.Count << ' ' << chunk.PngBytes << ' ' << chunk.VideoBytes
-           << '\n';
-    auto path = VideoPath(chunk.First);
-    path += ".complete";
-    WriteMovieText(path, Seal(record.str()));
-}
-void
-MovieJob::DeleteChunkPngs(const MovieChunk &chunk)
-{
-    // Each folder belongs to exactly one immutable chunk. Only a durable,
-    // validated completion record permits deleting that entire folder.
-    const auto registered = FindChunk(chunk.First);
-    if (!registered || registered->Count != chunk.Count) {
-        throw FractalSharkSeriousException("Cannot delete uncommitted movie PNGs");
-    }
-    if (std::filesystem::remove_all(FramePath(chunk.First).parent_path()) != 0) {
-        FractalSharkLog::LogLine(__FILE__, __LINE__)
-            << "Movie removed frame folder chunk=" << chunk.First / m_Config.ChunkFrames
-            << " frames=" << chunk.Count;
-    }
-}
-uint64_t
-MovieJob::ChunkCount() const
-{
-    return m_FrameCount == 0 ? 0 : 1 + (m_FrameCount - 1) / m_Config.ChunkFrames;
-}
-uint64_t
-MovieJob::PlaybackChunkStart(uint64_t ordinal) const
-{
-    const auto chunks = ChunkCount();
-    if (ordinal >= chunks) {
-        throw FractalSharkSeriousException("Invalid movie playback chunk");
-    }
-    // Legacy chunks are internally in playback order already, but their file
-    // ordinals run from the deep end towards the wide end.
-    return (m_Config.WideToDeep ? ordinal : chunks - 1 - ordinal) * m_Config.ChunkFrames;
-}
-bool
-MovieJob::HasAllChunks() const
-{
-    const auto chunks = ChunkCount();
-    for (uint64_t ordinal = 0; ordinal < chunks; ++ordinal) {
-        if (!FindChunk(PlaybackChunkStart(ordinal))) {
-            return false;
-        }
-    }
-    return chunks != 0;
-}
-std::optional<MovieAssemblyProgress>
-MovieJob::ReadAssembly() const
-{
-    const auto path = m_Directory / "assembly.txt";
-    if (!std::filesystem::exists(path)) {
-        return std::nullopt;
-    }
-    const auto record = Unseal(path, false);
-    std::istringstream input(record ? *record : std::string{});
-    std::string identity, format;
-    uint64_t frameCount = 0;
-    MovieAssemblyProgress progress{};
-    input >> identity >> format >> frameCount >> progress.NextChunk >> progress.Bytes;
-    if (!input || identity != m_Identity || format != AssemblyFormat || frameCount != m_FrameCount ||
-        frameCount == 0 || progress.NextChunk > ChunkCount() ||
-        ((progress.NextChunk == 0) != (progress.Bytes == 0))) {
-        throw FractalSharkSeriousException("Movie assembly checkpoint is invalid");
-    }
-    input >> std::ws;
-    if (!input.eof()) {
-        throw FractalSharkSeriousException("Unexpected movie assembly checkpoint fields");
-    }
-    return progress;
-}
-void
-MovieJob::SaveAssembly(const MovieAssemblyProgress &progress)
-{
-    // Every source chunk has already been registered at assembly entry, even
-    // if a previous shutdown left the render frontier behind those records.
-    if (m_NextFrame != m_FrameCount) {
-        m_NextFrame = m_FrameCount;
-        SaveProgress();
-    }
-    std::ostringstream record;
-    record << m_Identity << '\n'
-           << AssemblyFormat << '\n'
-           << m_FrameCount << ' ' << progress.NextChunk << ' ' << progress.Bytes << '\n';
-    WriteMovieText(m_Directory / "assembly.txt", Seal(record.str()));
-}
-void
-MovieJob::DeleteAssembledChunk(uint64_t ordinal)
-{
-    // Caller holds the job lock and has verified the durable output prefix
-    // before retiring any source name. Each unlink may be repeated on resume.
-    auto path = VideoPath(PlaybackChunkStart(ordinal));
-    std::filesystem::remove(path);
-    path += ".complete";
-    std::filesystem::remove(path);
-}
-void
-MovieJob::WriteConcatManifest()
-{
-    std::ostringstream output;
-    output << "ffconcat version 1.0\n";
-    // Forward jobs already match playback order. Legacy jobs reverse both the
-    // frames inside their movies and the order of their completed chunks.
-    const auto chunks = ChunkCount();
-    for (uint64_t ordinal = 0; ordinal < chunks; ++ordinal) {
-        const auto first = PlaybackChunkStart(ordinal);
-        if (const auto chunk = FindChunk(first)) {
-            output << "file 'chunks/" << VideoPath(first).filename().string() << "'\n";
-            // Explicit duration avoids accumulating Matroska's millisecond
-            // timestamp rounding over thousands of concatenated chunks.
-            output << "duration " << std::fixed << std::setprecision(9)
-                   << static_cast<long double>(chunk->Count) / m_Config.Fps << '\n';
-        }
-    }
-    WriteMovieText(m_Directory / "movie.ffconcat", output.str());
-}
-std::filesystem::path
-MovieJob::Encoder(const std::filesystem::path &overridePath)
-{
-    const auto hint = m_Directory / "ffmpeg.txt";
-    if (!overridePath.empty()) {
-        const auto absolute = std::filesystem::absolute(overridePath).lexically_normal();
-        if (!std::filesystem::is_regular_file(absolute)) {
-            throw FractalSharkSeriousException("FFmpeg executable does not exist");
-        }
-        WriteMovieText(hint, Environment::WideToUtf8(Environment::FromFsPath(absolute)));
-        return absolute;
-    }
-    if (std::filesystem::exists(hint)) {
-        const auto saved = Environment::ToFsPath(Environment::Utf8ToWide(ReadMovieText(hint)));
-        if (!std::filesystem::is_regular_file(saved)) {
-            throw FractalSharkSeriousException("Saved FFmpeg path is unavailable; supply --ffmpeg PATH");
-        }
-        return saved;
-    }
-    return {};
 }
 
 std::vector<unsigned char>

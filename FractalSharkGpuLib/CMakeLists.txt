@@ -7,6 +7,8 @@ target_sources(FractalSharkGpuLib PRIVATE
     PngDeflate.cu
     PngChunks.cu
     GpuSaveEncoder.cu
+    NvencMovieEncoder.cu
+    NvencMovieEncoder.h
     PngCudaSupport.cuh
     PngStages.cuh
     PngFormat.cuh

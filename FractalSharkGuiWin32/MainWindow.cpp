@@ -177,15 +177,6 @@ MainWindow::OnExportZoomMovie()
     if (filename.empty()) {
         return;
     }
-    const auto ffmpeg = OpenFileDialog(OpenBoxType::Open,
-                                       kExecutableFileFilter,
-                                       L"exe",
-                                       0,
-                                       L"Select FFmpeg (requires hevc_nvenc)",
-                                       L"ffmpeg.exe");
-    if (ffmpeg.empty()) {
-        return;
-    }
     auto cli = FindMovieCliExecutable(Environment::ExecutablePath(), MovieCommandShell::PowerShell);
     if (!cli) {
         const auto selected = OpenFileDialog(OpenBoxType::Open,
@@ -200,7 +191,7 @@ MainWindow::OnExportZoomMovie()
         cli = std::filesystem::path(selected);
     }
     const auto output = BuildMovieCommandExport(
-        AppendExtensionIfMissing(filename, L".ini"), *cli, ffmpeg, MovieCommandShell::PowerShell);
+        AppendExtensionIfMissing(filename, L".ini"), *cli, MovieCommandShell::PowerShell);
     SaveMovieConfiguration(output, configuration);
     const bool copied = CopyMovieCommandToClipboard(output);
     const auto message = Environment::Utf8ToWide(DescribeMovieCommandExport(output, copied));

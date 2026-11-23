@@ -69,6 +69,7 @@
     <CudaCompile Include="PngDeflate.cu" />
     <CudaCompile Include="PngChunks.cu" />
     <CudaCompile Include="GpuSaveEncoder.cu" />
+    <CudaCompile Include="NvencMovieEncoder.cu" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Main.cpp" />
@@ -80,6 +81,8 @@
     <ClInclude Include="PngStages.cuh" />
     <ClInclude Include="PngFormat.cuh" />
     <ClInclude Include="GpuSaveEncoder.h" />
+    <ClInclude Include="NvencMovieEncoder.h" />
+    <ClInclude Include="ThirdParty\nvEncodeAPI.h" />
     <ClInclude Include="PngHuffman.cuh" />
     <ClInclude Include="BLA.cuh" />
     <ClInclude Include="BLAKernels.cuh" />

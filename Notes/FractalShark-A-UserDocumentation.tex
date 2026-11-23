@@ -560,69 +560,26 @@ choice and triggers any necessary reconfiguration.
   \item \emph{Save} (submenu): Output and benchmarking commands.
     \begin{itemize}
       \item \emph{Save Location...} (command): Saves the current location/view parameters.
-      \item \emph{Export Zoom Movie Command...} (command): Creates a movie job folder
-      for the current center and target zoom, prompts for FFmpeg, and copies a
-      CLI command. The export preserves full coordinate precision, dimensions,
-      antialiasing, and the final iteration limit. Auto algorithms and the CLI's
-      default palette settings are used. The editable defaults are a zoom
-      multiplier of \code{1.01}, \code{60} frames per second, and \code{1000}
-      frames per chunk. Choosing \code{name.ini} creates
-      \code{name.movie/movie.ini}, with the encoder path saved in
-      \code{ffmpeg.txt} inside the same folder. No separate INI is written.
-      Edit \code{movie.ini} before the first run to change defaults. Existing
-      job folders cannot be overwritten by export. The command requires only
-      \code{--movie JOBDIR} for both starting and resuming. Execute it in
-      PowerShell on Windows or a POSIX shell on Linux.
-      FFmpeg must include the selected NVENC encoder, with a supported NVIDIA GPU
-      and driver. Per-frame progress appears in the CLI log. FFmpeg reads numbered
-      PNG chunks and rounds each RGB channel to eight bits before conversion.
-      Completed movies are not hashed or decoded again. Successful encoding, matching frame counts,
-      and durable movie registration precede PNG deletion. Temporary hard-link directories isolate each input sequence
-      without copying image data, preventing FFmpeg prefetch from reading a
-      neighboring chunk during its deletion. The job filesystem must support
-      hard links for legacy deep-first jobs. New forward jobs read their frame
-      folders directly. Up to four archive workers run concurrently. Their shared
-      decoder budget leaves one logical processor available when possible;
-      video encoding runs on NVENC hardware, while PNG decoding and color
-      conversion run on the CPU.
-      The INI exposes \code{video-encoder-args}. The default HEVC preset uses
-      BT.709 limited-range NV12 with fixed quantization at QP~16. The smaller
-      file preset uses QP~22. NV12 encoding may round odd dimensions up to even
-      values. The RGB lossless HEVC preset preserves odd dimensions. H.264
-      presets are also available. Settings remain fixed for the job to permit
-      stream-copy concatenation. H.264 dimensions are checked
-      before rendering; 3840 by 2160 is supported on the tested RTX 5090.
-      Movie rendering uses four renderer slots with up to eight outstanding
-      render/save requests. Each PNG save owns its completed frame and coloring
-      settings, and checkpoints commit in frame order. Active wall time includes
-      setup, encoding, assembly, and cleanup, and excludes downtime between runs.
-      The writer atomically replaces \code{time.txt} every second and at orderly
-      exit. Saved frame progress uses the same protocol in \code{progress.txt}.
-      Existing numbered checkpoints are migrated on resume.
-      FFmpeg runs at low scheduling priority. On Windows a job
-      object also terminates FFmpeg if the renderer is forcibly terminated.
-      Resumption renders the next missing frame while saved PNG chunks are
-      archived. Rendering may wait for archive capacity after one new chunk
-      fills; any completed archive can free capacity, and the CLI identifies
-      that wait explicitly. Press \code{Ctrl+C} or hold \code{Ctrl+Alt} for
-      three seconds on Windows or X11 to request an orderly pause.
-      Interruption cancels and joins all archive workers
-      before releasing the job lock; retained PNGs support the next resumption.
-      Movies prepare each required reference type at its deepest remaining view,
-      in descending depth order. New movies then render from zoom one inward
-      using the normal reference cache. Frame indices and
-      chunk ordinals increase in playback order. Older deep-first jobs retain
-      their saved direction and resume without remapping files. One numbered
-      frame folder belongs to each chunk. A successfully encoded, durably registered movie replaces its entire PNG
-      folder. The \code{chunks/} directory holds the MKV sources until assembly.
-      Once all chunks are ready, FFmpeg stream copies them in playback order to
-      \code{movie.ts.partial}. The application flushes each append and updates
-      \code{assembly.txt} before deleting its source chunk. Resumption truncates
-      any uncommitted bytes and continues at the first unfinished chunk. An atomic
-      publication makes \code{movie.ts} available after the last append. The job
-      format automatically upgrades the preceding HEVC metadata with CRC32
-      checksums while retaining saved frame progress and completed movies.
-      Old AV1 jobs remain unsupported.
+      \item \emph{Export Zoom Movie Command} (command): Creates a movie folder
+      with an INI for the current center and target zoom. The GUI copies the
+      folder-only CLI command for PowerShell or a POSIX shell. The default
+      profile uses HEVC at QP~16 with BT.709 limited-range NV12. The INI also
+      offers QP~22, H.264, RGB8 lossless HEVC, and PNG-only profiles. Lossless
+      encoding preserves the RGB8 values obtained by rounding the original
+      RGB16 samples.
+
+      Movie startup prepares each needed reference representation at its
+      deepest remaining view. The renderer then submits up to four frames
+      concurrently to a native NVENC session. A video-only MPEG transport
+      stream records frames in playback order. The encoder places IDRs at
+      startup, at the configured interval, and at the first resumed frame.
+
+      The CLI checkpoints the completed frame count and durable stream length
+      in \code{progress.txt}. On restart, it truncates any uncommitted suffix
+      and continues from that frame. Press \code{Ctrl+C} or hold \code{Ctrl+Alt}
+      for three seconds to save the completed prefix and pause. Active wall
+      time is persisted in \code{time.txt} and excludes downtime. The final
+      \code{movie.ts} is published when the last frame is durable.
       \item \emph{Save High Res Bitmap} (command): Saves a high-resolution
       bitmap render.  The output resolution matches the current window
       dimensions (or a scaled multiple thereof).  A file-save dialog is

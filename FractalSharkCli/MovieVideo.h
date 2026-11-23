@@ -1,62 +1,47 @@
 #pragma once
 
-#include "MovieJob.h"
-
+#include <array>
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
-#include <functional>
-#include <vector>
+#include <fstream>
+#include <optional>
+#include <span>
 
 namespace FractalSharkCli {
+class MovieJob;
 
-// A distinct recoverable outcome lets the movie boundary report an orderly
-// pause after all worker/resource owners have unwound normally.
-struct MovieInterrupted : FractalSharkSeriousException {
-    MovieInterrupted() : FractalSharkSeriousException("Movie interrupted; saved work retained") {}
-};
-
-// Runtime policy only: these values never participate in job identity or
-// checkpoints. Each slot reserves PNG decode capacity during encoding.
-struct MovieExecutionSettings {
-    unsigned Slot;
-    unsigned DecoderThreads;
-    unsigned FilterThreads;
-};
-
-std::vector<MovieExecutionSettings> PlanMovieExecution(unsigned logicalProcessors);
-
-// The job lock covers the whole append transaction and retirement of sources.
-void AssembleMovie(MovieJob &job,
-                   const std::filesystem::path &ffmpeg,
-                   const std::function<bool()> &stop);
-
-// Encoder instances never own renderer state. FFmpeg owns PNG decoding,
-// conversion, and encoding; only small progress/diagnostic messages cross pipes.
+// Writes one video program in 188-byte MPEG-TS packets. Each append ends
+// at an access-unit boundary suitable for a durable resume checkpoint.
 class MovieVideo {
 public:
-    MovieVideo(const std::filesystem::path &ffmpeg,
-               unsigned width,
-               unsigned height,
-               const MovieConfig &config,
-               const MovieExecutionSettings &execution,
-               const std::function<bool()> &stop);
-    void Preflight(const std::filesystem::path &directory) const;
-    MovieChunk Archive(const MovieJob &job, uint64_t first, uint64_t count) const;
+    explicit MovieVideo(MovieJob &job);
+    void Append(uint64_t frame, std::span<const unsigned char> accessUnit, bool keyframe);
+    void CheckpointIfDue();
+    void Finish();
 
 private:
-    void Encode(const std::filesystem::path &path,
-                const std::string &pattern,
-                uint64_t first,
-                uint64_t count) const;
-    void CheckStop() const;
-    std::filesystem::path m_Ffmpeg;
-    unsigned m_Width;
-    unsigned m_Height;
-    unsigned m_Fps;
-    uint64_t m_GopFrames;
-    bool m_WideToDeep;
-    std::string m_PixelFormat;
-    std::vector<std::string> m_EncoderArguments;
-    MovieExecutionSettings m_Execution;
-    std::function<bool()> m_Stop;
+    void WriteProgram(uint64_t clock);
+    void WriteClock(uint64_t clock);
+    void WritePackets(uint16_t pid,
+                      std::span<const unsigned char> payload,
+                      bool randomAccess,
+                      std::optional<uint64_t> clock);
+    void WritePacket(const std::array<unsigned char, 188> &packet);
+    void Checkpoint();
+    size_t PidIndex(uint16_t pid) const;
+
+    MovieJob &m_Job;
+    std::filesystem::path m_Partial;
+    std::filesystem::path m_Target;
+    std::ofstream m_Output;
+    uint64_t m_Next;
+    uint64_t m_Bytes;
+    std::array<uint8_t, 3> m_Continuity{};
+    std::array<bool, 3> m_FirstPacket{true, true, true};
+    std::optional<uint64_t> m_LastProgram;
+    std::optional<uint64_t> m_LastClock;
+    std::chrono::steady_clock::time_point m_LastCommit = std::chrono::steady_clock::now();
+    bool m_Published = false;
 };
 } // namespace FractalSharkCli

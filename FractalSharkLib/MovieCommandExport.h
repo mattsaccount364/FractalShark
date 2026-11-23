@@ -14,13 +14,10 @@ enum class MovieCommandShell { PowerShell, Posix };
 struct MovieCommandExport {
     std::filesystem::path ConfigurationPath;
     std::filesystem::path JobDirectory;
-    std::filesystem::path FfmpegExecutable;
     std::string Command;
 };
 
 // Shared by exported INIs and the CLI. Examples are comments, not job identity.
-std::string_view DefaultMovieEncoderArguments();
-std::string_view LosslessMovieEncoderArguments();
 std::string MovieEncoderExamples();
 
 // Capture runs in the render pool's serialized mutation queue without rendering
@@ -34,13 +31,9 @@ std::optional<std::filesystem::path> FindMovieCliExecutable(const std::filesyste
 
 MovieCommandExport BuildMovieCommandExport(const std::filesystem::path &configuration,
                                            const std::filesystem::path &cliExecutable,
-                                           const std::filesystem::path &ffmpegExecutable,
                                            MovieCommandShell shell);
 
-// The chosen INI name supplies the stem of a new .movie directory; movie.ini
-// and ffmpeg.txt live inside it. Existing jobs are never replaced by an export.
-// All dialogs must finish before publication. The clipboard is updated only
-// after both files have been published successfully.
+// Use the chosen INI name as the stem of a new .movie directory with movie.ini inside.
 void SaveMovieConfiguration(const MovieCommandExport &output, std::string_view configuration);
 bool CopyMovieCommandToClipboard(const MovieCommandExport &output);
 std::string DescribeMovieCommandExport(const MovieCommandExport &output, bool copied);

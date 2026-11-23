@@ -9,8 +9,10 @@
 #include "Exceptions.h"
 #include "Fractal.h"
 #include "FractalPalette.h"
+#include "FractalSharkGpuLib/NvencMovieEncoder.h"
 #include "GPU_Render.h"
 #include "OpenGLContext.h"
+#include "PngParallelSave.h"
 #include "RenderThreadPool.h"
 
 #include <algorithm>
@@ -719,6 +721,28 @@ RenderThreadPool::EnqueueRenderToPng(std::string_view operationName,
     item.Png = std::make_unique<RenderPngWork>();
     item.Png->Filename = std::move(filename);
     item.Png->Overwrite = overwrite;
+    item.Png->Cancelled = std::move(cancelled);
+    auto result = item.Png->Completion->get_future();
+    Enqueue(std::move(item));
+    return result;
+}
+
+std::future<SaveResult>
+RenderThreadPool::EnqueueMovieSurface(std::function<void(Fractal &)> prepare,
+                                      FractalShark::NvencMovieEncoder &encoder,
+                                      size_t surface,
+                                      std::function<bool()> cancelled)
+{
+    RenderWorkItem item{};
+    item.WorkMode = RenderWorkMode::RenderToPng;
+    item.OperationName = "render movie surface";
+    item.Command = std::move(prepare);
+    item.FractalPtr = m_Fractal;
+    item.Supersedable = false;
+    item.ResetStopCalculatingBeforeRender = false;
+    item.Png = std::make_unique<RenderPngWork>();
+    item.Png->Video = &encoder;
+    item.Png->Surface = surface;
     item.Png->Cancelled = std::move(cancelled);
     auto result = item.Png->Completion->get_future();
     Enqueue(std::move(item));
@@ -1777,6 +1801,27 @@ RenderThreadPool::RenderWorkerItem(RenderWorkItem &item,
     if (item.WorkMode == RenderWorkMode::RenderToPng) {
         const auto calculated = RunCalcFractal(fractal, item, rendererIdx, workerIters);
         if (calculated != CalcRenderResult::Rendered || fractal->GetStopCalculating()) {
+            return {true, false};
+        }
+        if (auto *video = item.Png->Video) {
+            const auto &frame = *item.Png;
+            const auto error =
+                frame.CpuEncoder ? video->WriteCpu(frame.Surface,
+                                                   PngParallelSave::ColorCpuFrame(workerIters,
+                                                                                  frame.NumIterations,
+                                                                                  frame.PaletteRotation,
+                                                                                  frame.PaletteDepth,
+                                                                                  frame.MaxIterations,
+                                                                                  frame.Palette))
+                                 : renderer.WriteMovieSurface(*video,
+                                                              frame.Surface,
+                                                              frame.NumIterations,
+                                                              item.IterType == IterTypeEnum::Bits64);
+            if (error) {
+                throw FractalSharkSeriousException("Movie surface conversion failed: " +
+                                                   std::to_string(error));
+            }
+            item.Png->Complete({});
             return {true, false};
         }
         if (!item.Png->CpuEncoder) {

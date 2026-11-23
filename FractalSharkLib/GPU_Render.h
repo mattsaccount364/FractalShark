@@ -18,6 +18,10 @@
 #include <mutex>
 #include <vector>
 
+namespace FractalShark {
+class NvencMovieEncoder;
+}
+
 // This is the main class that does the rendering on the GPU
 class GPURenderer {
 public:
@@ -129,6 +133,10 @@ public:
                                        size_t hostColorCapacity);
 
     uint32_t SyncComputeStream();
+    uint32_t WriteMovieSurface(FractalShark::NvencMovieEncoder &encoder,
+                               size_t surface,
+                               uint64_t iterations,
+                               bool wideIterations);
 
     uint32_t SyncDisplayStream();
     uint32_t QueryComputeStream();

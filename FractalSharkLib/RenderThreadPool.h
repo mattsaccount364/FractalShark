@@ -26,6 +26,9 @@
 
 class Fractal;
 class GPURenderer;
+namespace FractalShark {
+class NvencMovieEncoder;
+}
 
 enum class RenderPresentationMode {
     Immediate,
@@ -53,11 +56,13 @@ struct RenderPngWork {
     uint32_t PaletteDepth = 0;
     bool CpuEncoder = false;
     std::vector<Color16> Palette;
+    FractalShark::NvencMovieEncoder *Video = nullptr;
+    size_t Surface = 0;
     std::optional<std::promise<SaveResult>> Completion{std::in_place};
     ~RenderPngWork()
     {
         if (Completion) {
-            Complete({SaveOutcome::Failed, Filename, 0, "Render cancelled before PNG publication"});
+            Complete({SaveOutcome::Failed, Filename, 0, "Render cancelled before frame delivery"});
         }
     }
     void
@@ -334,6 +339,10 @@ public:
                                                std::function<bool()> cancelled);
 
     // Enqueue a render-only job for the Fractal's current state.
+    std::future<SaveResult> EnqueueMovieSurface(std::function<void(Fractal &)> prepare,
+                                                FractalShark::NvencMovieEncoder &encoder,
+                                                size_t surface,
+                                                std::function<bool()> cancelled);
     RenderJobHandle EnqueueRender(std::string_view operationName);
 
     // Enqueue a command that mutates Fractal state, then renders.

@@ -35,6 +35,12 @@ public:
     PngParallelSave &operator=(const PngParallelSave &) = delete;
     PngParallelSave(PngParallelSave &&) = delete;
     SaveResult Run();
+    static std::vector<Color16> ColorCpuFrame(const ItersMemoryContainer &iterations,
+                                              uint64_t numIterations,
+                                              uint64_t rotation,
+                                              uint32_t depth,
+                                              uint64_t maxIterations,
+                                              const std::vector<Color16> &palette);
 
 private:
     std::wstring ResolveFilename(uint64_t index) const;

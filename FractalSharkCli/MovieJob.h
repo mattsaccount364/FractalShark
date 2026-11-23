@@ -1,5 +1,6 @@
 #pragma once
 
+#include "FractalSharkGpuLib/NvencMovieEncoder.h"
 #include "HighPrecision.h"
 #include "MoviePlatform.h"
 
@@ -16,13 +17,10 @@ namespace FractalSharkCli {
 
 struct MovieConfig {
     std::map<std::string, std::string> Values;
-    uint64_t ChunkFrames = 1000;
+    FractalShark::MovieVideoSettings Video;
     uint64_t WideIterations = 8192;
     double SlopeRatio = 8;
-    unsigned Fps = 60;
-    bool WideToDeep = false;
-    std::vector<std::string> EncoderArguments;
-    std::string PixelFormat;
+    bool WideToDeep = true;
 
     static MovieConfig Load(const std::filesystem::path &path);
     std::vector<std::string> RenderArguments() const;
@@ -60,20 +58,6 @@ private:
     uint64_t m_FrameCount;
 };
 
-struct MovieChunk {
-    // Ascending render indices. New jobs use playback order; legacy jobs reverse
-    // their source frames within each movie.
-    uint64_t First;
-    uint64_t Count;
-    uint64_t PngBytes;
-    uint64_t VideoBytes;
-};
-
-struct MovieAssemblyProgress {
-    uint64_t NextChunk; // Ordinal in playback order, not render order.
-    uint64_t Bytes;     // Durable prefix of the transport stream.
-};
-
 // All tracked paths are relative to this job. The OS lock remains owned until
 // all render/save/encoding workers have stopped, including exceptional exits.
 class MovieJob {
@@ -91,37 +75,25 @@ public:
     uint64_t NextFrame() const;
     void CompleteFrame(uint64_t index);
     void Rewind(uint64_t nextFrame);
-    void SkipArchivedChunk(const MovieChunk &chunk);
+    uint64_t VideoBytes() const;
+    void CommitVideo(uint64_t nextFrame, uint64_t bytes);
     bool GpuBypassed() const;
     long double LaDepth() const;
     std::filesystem::path FramePath(uint64_t index) const;
-    std::filesystem::path VideoPath(uint64_t first) const;
-    std::optional<MovieChunk> FindChunk(uint64_t first) const;
-    void CommitChunk(const MovieChunk &chunk);
-    void DeleteChunkPngs(const MovieChunk &chunk);
-    uint64_t ChunkCount() const;
-    uint64_t PlaybackChunkStart(uint64_t ordinal) const;
-    bool HasAllChunks() const;
-    std::optional<MovieAssemblyProgress> ReadAssembly() const;
-    void SaveAssembly(const MovieAssemblyProgress &progress);
-    void DeleteAssembledChunk(uint64_t ordinal);
-    void WriteConcatManifest();
-    std::filesystem::path Encoder(const std::filesystem::path &overridePath);
 
 private:
-    void UpgradeMetadata(const std::string &profile);
     void SaveProfile();
     void RestoreProgress();
     void SaveProgress();
     std::filesystem::path m_Directory;
     Environment::MovieJobLock m_Lock;
     MovieConfig m_Config;
-    // Upgraded jobs retain their old identifier as opaque text, never as a hash
-    // to recompute. The separate CRC detects accidental configuration changes.
+    // The checksum identifies the frozen render and encoder settings.
     std::string m_Identity;
     std::string m_ConfigChecksum;
     uint64_t m_FrameCount = 0;
     uint64_t m_NextFrame = 0;
+    uint64_t m_VideoBytes = 0;
     uint64_t m_Sequence = 0;
     bool m_GpuBypassed = false;
     long double m_LaDepth = 0;
@@ -130,9 +102,7 @@ private:
     std::unique_ptr<Timing> m_Timing;
 };
 
-// Validate an orphan PNG before adopting it during recovery. Normal chunk
-// encoding happens entirely in FFmpeg. RGB16 conversion is nearest
-// rounding without gamma changes or dithering.
+// Validate a PNG left between publication and its PNG-only checkpoint.
 std::vector<unsigned char> ReadMovieRgb8(const std::filesystem::path &path,
                                          unsigned width,
                                          unsigned height);

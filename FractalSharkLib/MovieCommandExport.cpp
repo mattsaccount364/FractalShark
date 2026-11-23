@@ -72,48 +72,26 @@ SerializeMovieConfiguration(Fractal &fractal)
            << "\nantialiasing=" << fractal.GetGpuAntialiasing()
            << "\nrender-algorithm=AutoSelect\nperturbation-alg=Auto\nwide-iterations="
            << std::min<uint64_t>(MovieWideIterations, iterations)
-           << "\nla-slope-ratio=8\nvideo-chunk-frames=1000\nvideo-fps=60\n"
-           << "render-order=wide-to-deep\nvideo-encoder-args=" << DefaultMovieEncoderArguments() << '\n'
+           << "\nla-slope-ratio=8\nvideo-gop-frames=1000\nvideo-fps=60\n"
+           << "render-order=wide-to-deep\nvideo-profile=hevc-high\n"
            << MovieEncoderExamples();
     return output.str();
 }
 
 } // namespace
 
-std::string_view
-DefaultMovieEncoderArguments()
-{
-    return "-c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 16 -profile:v main -pix_fmt nv12 "
-           "-colorspace bt709 -color_range tv";
-}
-
-std::string_view
-LosslessMovieEncoderArguments()
-{
-    return "-c:v hevc_nvenc -preset p4 -tune lossless -profile:v rext -pix_fmt gbrp "
-           "-colorspace rgb -color_range pc";
-}
-
 std::string
 MovieEncoderExamples()
 {
-    return "\n# Choose one video-encoder-args line before starting a new job.\n"
-           "# Lossless HEVC (RGB8 after deliberate RGB16 rounding):\n"
-           "# video-encoder-args=" +
-           std::string(LosslessMovieEncoderArguments()) +
-           "\n# HEVC high quality (default, QP 16):\n"
-           "# video-encoder-args=" +
-           std::string(DefaultMovieEncoderArguments()) +
-           "\n# HEVC low quality (smaller files, QP 22):\n"
-           "# video-encoder-args=-c:v hevc_nvenc -preset p5 -tune hq -rc constqp -qp 22 -profile:v "
-           "main -pix_fmt nv12 -colorspace bt709 -color_range tv\n"
-           "# H.264 high quality (3840x2160 works; check your encoder's size limits):\n"
-           "# video-encoder-args=-c:v h264_nvenc -preset p5 -tune hq -rc vbr -cq 18 -b:v 0 -profile:v "
-           "high -pix_fmt nv12\n"
-           "# H.264 low quality / faster:\n"
-           "# video-encoder-args=-c:v h264_nvenc -preset p1 -tune hq -rc vbr -cq 30 -b:v 0 -profile:v "
-           "high -pix_fmt nv12\n"
-           "# NV12/yuv420p output uses BT.709 limited range. RGB uses full range.\n";
+    return "\n# Select a video profile before starting the job.\n"
+           "# hevc-high     P5, constant QP 16, NV12 (default)\n"
+           "# hevc-low      P5, constant QP 22, NV12\n"
+           "# hevc-rgb-lossless  P4, full-range RGB8 after RGB16 rounding\n"
+           "# h264-high     P5, VBR quality 18, NV12\n"
+           "# h264-low      P1, VBR quality 30, NV12\n"
+           "# png-only      save frames as PNGs\n"
+           "# Optional overrides: video-preset=1..7, video-qp=0..51 for HEVC,\n"
+           "# or video-cq=1..51 for H.264. NV12 uses BT.709 limited range.\n";
 }
 
 std::string
@@ -160,11 +138,10 @@ FindMovieCliExecutable(const std::filesystem::path &guiExecutable, MovieCommandS
 MovieCommandExport
 BuildMovieCommandExport(const std::filesystem::path &configuration,
                         const std::filesystem::path &cliExecutable,
-                        const std::filesystem::path &ffmpegExecutable,
                         MovieCommandShell shell)
 {
-    if (configuration.empty() || cliExecutable.empty() || ffmpegExecutable.empty()) {
-        throw FractalSharkSeriousException("Movie export requires configuration, CLI, and FFmpeg paths");
+    if (configuration.empty() || cliExecutable.empty()) {
+        throw FractalSharkSeriousException("Movie export requires configuration and CLI paths");
     }
     MovieCommandExport output;
     const auto chosen = std::filesystem::absolute(configuration).lexically_normal();
@@ -172,10 +149,6 @@ BuildMovieCommandExport(const std::filesystem::path &configuration,
         chosen.parent_path() / (chosen.stem().native() + std::filesystem::path(".movie").native());
     output.ConfigurationPath = output.JobDirectory / "movie.ini";
     const auto cliPath = std::filesystem::absolute(cliExecutable).lexically_normal();
-    output.FfmpegExecutable = std::filesystem::absolute(ffmpegExecutable).lexically_normal();
-    // The saved encoder path must obey the same single-line contract as command
-    // arguments even though it no longer appears in the generated command.
-    QuoteMovieArgument(output.FfmpegExecutable, shell);
     output.Command = shell == MovieCommandShell::PowerShell ? "& " : "";
     output.Command += QuoteMovieArgument(cliPath, shell) + " --movie " +
                       QuoteMovieArgument(output.JobDirectory, shell);
@@ -193,7 +166,6 @@ SaveMovieConfiguration(const MovieCommandExport &output, std::string_view config
     struct UnfinishedExport {
         const MovieCommandExport &Output;
         bool Complete = false;
-        bool EncoderWritten = false;
         bool ConfigurationWritten = false;
         ~UnfinishedExport()
         {
@@ -203,9 +175,6 @@ SaveMovieConfiguration(const MovieCommandExport &output, std::string_view config
                 std::error_code ignored;
                 if (ConfigurationWritten) {
                     std::filesystem::remove(Output.ConfigurationPath, ignored);
-                }
-                if (EncoderWritten) {
-                    std::filesystem::remove(Output.JobDirectory / "ffmpeg.txt", ignored);
                 }
                 std::filesystem::remove(Output.JobDirectory, ignored);
             }
@@ -219,9 +188,6 @@ SaveMovieConfiguration(const MovieCommandExport &output, std::string_view config
             throw FractalSharkSeriousException("Could not save movie job: " + result.Diagnostic);
         }
     };
-    write(output.JobDirectory / "ffmpeg.txt", PathUtf8(output.FfmpegExecutable));
-    cleanup.EncoderWritten = true;
-    // Publish the config last: a folder-only CLI invocation requires it.
     write(output.ConfigurationPath, configuration);
     cleanup.ConfigurationWritten = true;
     cleanup.Complete = true;
@@ -234,12 +200,11 @@ DescribeMovieCommandExport(const MovieCommandExport &output, bool copied)
                               : "Could not copy to clipboard. Copy this command manually.\n\n") +
            output.Command + "\n\nConfiguration: " + PathUtf8(output.ConfigurationPath) +
            "\nMovie job: " + PathUtf8(output.JobDirectory) +
-           "\nFFmpeg: " + PathUtf8(output.FfmpegExecutable) +
            "\n\nEdit movie.ini inside the job folder before starting to change the defaults:\n"
-           "1.01x zoom per frame; 60 fps; 1000-frame chunks.\n"
+           "1.01x zoom per frame; 60 fps; 1000-frame IDR interval.\n"
            "Current size, antialiasing, and final iteration limit; Auto algorithms; default palette.\n"
            "Run the command to render, or rerun it to resume.\n"
-           "FFmpeg must support the selected NVENC encoder (HEVC by default).";
+           "Video encoding requires a compatible NVIDIA driver and GPU.";
 }
 
 bool

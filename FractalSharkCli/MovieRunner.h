@@ -16,7 +16,6 @@ struct MovieRenderSettings {
 // boundary explicit avoids a second list of render/reference algorithm names.
 int RunMovie(const std::filesystem::path &directory,
              const std::filesystem::path &configuration,
-             const std::filesystem::path &ffmpeg,
              GpuMode gpuMode,
              uint64_t commitCapBytes,
              const std::function<MovieRenderSettings(const MovieConfig &)> &buildSettings);

@@ -1,0 +1,300 @@
+\section{Formal Verification of Reference Orbits}
+\label{sec:reference-orbit-proofs}
+
+Lean proves that ST and MT3 follow the same exact quadratic orbit and bounds
+the error in each backend's observed MPIR iterates. Both use the same error
+propagation rule with different local rounding budgets. A cap on the state
+sizes lets one calculation certify the tolerance for a whole prefix.
+
+\paragraph{Notation.}
+The reference parameter \(c_\star=c_{\star,x}+\mathrm{i}c_{\star,y}\), exact
+reference orbit \(z_n^\star=x_n^\star+\mathrm{i}y_n^\star\), derivative \(d_n\),
+and reduced-precision shadow \(\hat z_n\) follow
+\cref{tab:notation-general,tab:notation-components,tab:notation-reference-orbit}.
+The index \(n\) counts mathematical iterates from \(z_0^\star=0\), and \(j\)
+counts loop bodies from zero. The fixed-precision proofs use the following
+notation for the internal orbit and its errors.
+
+\begin{center}
+\begin{tabularx}{\linewidth}{@{}l>{\raggedright\arraybackslash}X@{}}
+\(z_n^{\mathrm{MPIR}},\ \widetilde c_\star\) & Internal MPIR iterate and working
+parameter. At a selected sample, \(z_n^{\mathrm{MPIR}}\) supplies the
+high-precision value \(z_n^{\mathrm{HP}}\) before conversion to \(\hat z_n\). \\
+\(\lVert z\rVert_1,\ s_n\) & Componentwise norm
+\(\lVert z\rVert_1=|\Re z|+|\Im z|\) and state size
+\(s_n=\lVert z_n^{\mathrm{MPIR}}\rVert_1\). \\
+\(P,\ u\) & Effective MPIR precision in bits and error unit \(u=2^{-P}\).
+The symbol \(p\) denotes the period. \\
+\(\varepsilon_n,\ \delta\) & State error
+\(\varepsilon_n=z_n^{\mathrm{MPIR}}-z_n^\star\) and parameter discrepancy
+\(\delta=\lVert\widetilde c_\star-c_\star\rVert_1\). \\
+\(\rho_n,\ \tau_n\) & Local arithmetic residual
+\(\rho_n=z_{n+1}^{\mathrm{MPIR}}-((z_n^{\mathrm{MPIR}})^2+\widetilde c_\star)\)
+and its bound in the componentwise norm. \\
+\(E_n^{\mathrm{orb}}\) & Bound on \(\lVert\varepsilon_n\rVert_1\). The
+MT9 radius \(E_n\) in \cref{subsec:ref-orbit-dynamic-enclosure} compares
+two computed orbits in the Euclidean norm. \\
+\end{tabularx}
+\end{center}
+
+The symbols \(\varepsilon_n\), \(\rho_n\), and \(\tau_n\) serve the same roles
+in the MT9 analysis. The replay error \(e_n\) concerns reconstruction from
+stored orbit samples, and the pixel offset \(\Delta c=c-c_\star\) concerns
+the position of a pixel relative to the reference parameter.
+
+The standalone library is in \code{FractalSharkLean}. With Elan installed,
+run \code{lake build} from that directory. The toolchain file and Lake manifest pin
+Lean and Mathlib. A first build needs network access to resolve dependencies.
+\code{lake exe cache get} downloads precompiled Mathlib artifacts. Lake keeps
+build products in the package's \code{.lake} directory. The default build
+checks the examples and reports the axiom dependencies of the main theorems.
+The umbrella import is \code{FractalSharkProofs}. The limb model is also
+available through \code{FractalSharkProofs.MPIR}.
+
+\subsection{MPIR arithmetic assumptions}
+\label{subsec:reference-orbit-proof-mpir}
+
+The Lean model describes the
+\href{https://github.com/BrianGladman/mpir/tree/dc82b0475dea84d5338356e49176c40be03a5bdf}{MPIR revision pinned by the Windows x64 build}.
+For signed mantissa $m$, used limb count $\ell$, and MPIR exponent $e$, the
+represented value is $mB^{e-\ell}$ with limb radix $B=2^{64}$. If
+$t=\code{\_mp\_prec}$, then the object has room for $t+1$ limbs, reports
+$P=64(t-1)$ bits, and yields the error unit $u=2^{-P}$.
+The correspondence to C is established by source inspection. It assumes valid
+initialized objects, supported aliasing, exact low-level limb arithmetic, and
+exponent and size calculations within range. The working parameter, live
+coordinates, and scratch objects use a common default precision.
+
+\begin{itemize}
+\item Initialization yields zero. Assignment and non-aliased negation retain
+      up to $t+1$ limbs. In-place negation changes the sign. Swap exchanges
+      the values and their precision metadata.
+\item Whole-limb shifts retain up to $t+1$ input limbs. Other power-of-two
+      shifts retain $t$ input limbs and reserve space for a carry.
+      Multiplication retains up to $t$ limbs from each input and $t+1$
+      limbs of the normalized product.
+\item Same-sign addition aligns both operands at a shared exponent, discards
+      low limbs, and retains the carry. Subtraction accounts for common
+      leading limbs, borrow chains through zero and maximal limbs, and
+      normalization of a surviving tail. The theorem quantifies over the
+      limb boundary selected by the source branch.
+\end{itemize}
+
+The assignment error is bounded by $u|a|$, and equal-precision assignment
+preserves the value. The sum and difference errors are bounded by
+$2u\max(|a|,|b|)$, the product error by $3u|ab|$, and the error of a
+power-of-two shift by $u|2^k a|$. The Lean routine contracts are reusable
+independently of the orbit proofs.
+
+\subsection{Single-threaded exact orbit}
+\label{subsec:reference-orbit-proof-st-exact}
+
+The serial update in \cref{subsec:ref-orbit-st} evaluates the real component
+as $(x_n^\star+y_n^\star)(x_n^\star-y_n^\star)+c_{\star,x}$ and the imaginary
+component as $(2x_n^\star)y_n^\star+c_{\star,y}$. The theorem
+\code{SingleThreaded.exactStep\_eq} establishes
+that both expressions read the same old state and give
+\eqref{eq:mandelbrot-recurrence} in exact arithmetic.
+\code{SingleThreaded.exactPrefix\_eq} identifies the synthetic zero entry
+with $z_0^\star$, the initial loop state with $z_1^\star=c_\star$, and
+sample $j+1$ with the state observed before the update in loop body $j$.
+
+\subsection{How rounding errors accumulate}
+\label{subsec:reference-orbit-proof-propagation}
+
+Both precision proofs track the same quantity at a mathematical index \(n\).
+Subtracting the exact recurrence from the computed update gives
+\begin{equation}
+  \varepsilon_{n+1}
+  = (z_n^{\mathrm{MPIR}}+z_n^\star)\varepsilon_n
+      +(\widetilde c_\star-c_\star)+\rho_n.
+  \label{eq:reference-orbit-proof-error-identity}
+\end{equation}
+The product is the effect of squaring a state that already contains error.
+Its factor follows from the difference of the squares of
+\(z_n^{\mathrm{MPIR}}\) and \(z_n^\star\).
+The parameter discrepancy enters every step because both maps add their own
+parameter. The local residual accounts for the new rounding in the update
+from \(z_n^{\mathrm{MPIR}}\).
+
+If \(\lVert\varepsilon_n\rVert_1\le E_n^{\mathrm{orb}}\), then \(z_n^\star\)
+lies within \(E_n^{\mathrm{orb}}\) of \(z_n^{\mathrm{MPIR}}\) and
+\(\lVert z_n^{\mathrm{MPIR}}+z_n^\star\rVert_1\le 2s_n+E_n^{\mathrm{orb}}\).
+The componentwise norm bounds the magnitude of a product by the product of
+the two norms. Together with \eqref{eq:reference-orbit-proof-error-identity},
+this gives the recurrence checked by \code{prefixBound\_correct}.
+\begin{equation}
+\begin{aligned}
+  E_0^{\mathrm{orb}} &= 0, \qquad E_1^{\mathrm{orb}} = \delta, \\
+  E_{n+1}^{\mathrm{orb}} &=
+    (2s_n+E_n^{\mathrm{orb}})E_n^{\mathrm{orb}}+\delta+\tau_n,
+    \qquad n\ge1.
+\end{aligned}
+\label{eq:reference-orbit-proof-orbit-bound}
+\end{equation}
+The initial zero is exact and the first live state is \(\widetilde c_\star\).
+The theorem \code{parameterCopy\_error} bounds the error from copying an
+already represented parameter by \(u\) times its norm. If the input parameter
+approximates \(c_\star\), its existing discrepancy also contributes to \(\delta\).
+
+The bound controls the sum of the absolute coordinate errors of the internal
+state. At fixed state magnitudes, each additional bit of \(P\) halves the
+local rounding allowance. The parameter discrepancy \(\delta\) has its
+own contribution. When \(2s_n+E_n^{\mathrm{orb}}\) exceeds one, existing error
+can be amplified. The estimate allows all contributions to reinforce one
+another, which makes it conservative.
+
+At matched precision, parameter discrepancy, working-parameter norm, and
+state magnitudes, MT3 has the smaller local allowance.
+\begin{equation}
+\begin{aligned}
+  \tau_n^{\mathrm{ST}}
+    &=u\bigl(32s_n^2+2\lVert\widetilde c_\star\rVert_1\bigr),\\
+  \tau_n^{\mathrm{MT3}}
+    &=u\bigl(9s_n^2+2\lVert\widetilde c_\star\rVert_1\bigr).
+\end{aligned}
+\label{eq:reference-orbit-proof-step-budgets}
+\end{equation}
+For fixed \(s_n\), the shared recurrence increases with its current
+nonnegative bound and local allowance. It therefore gives
+\(E_n^{\mathrm{orb}}\) for MT3 no larger than for ST under those matched
+conditions. The difference comes from the \(s_n^2\) term. Each computed
+run has its own rounded states and actual residuals.
+
+\subsection{Single-threaded finite-precision orbit}
+\label{subsec:reference-orbit-proof-st-precision}
+
+The serial real update rounds the sum and difference before multiplying them.
+The error of each factor therefore propagates into the product. The imaginary
+update rounds the scaled operand before evaluating its product. The scratch
+swap preserves the resulting value. Composing the primitive bounds for both
+coordinates gives the ST allowance in \eqref{eq:reference-orbit-proof-step-budgets}.
+\code{SingleThreaded.prefix\_error\_le} applies the shared propagation rule
+to every index of the modeled prefix, and
+\code{SingleThreaded.error\_at\_observed} specializes it to the observed samples.
+
+\subsection{MT3 exact orbit and worker schedule}
+\label{subsec:reference-orbit-proof-mt3-exact}
+
+\code{MT3.exactStep\_eq} proves that the two square workers and the caller
+implement \eqref{eq:mandelbrot-recurrence} in exact arithmetic. The workers
+form $(x_n^\star)^2$ and $(y_n^\star)^2$ from stable snapshots, and the caller forms the
+cross product and assembles the components. The worker model associates
+each square with its input snapshot and iteration index. Either worker may
+finish first. The caller saves the square of the current imaginary component
+before giving the Y worker the next imaginary component. The next dispatch
+retains that lookahead job's index and operand. An already claimed job may
+finish through a pending stop request before the caller joins the worker.
+
+MT3 has no delayed sample to publish in body zero. Body $j\ge1$
+publishes the sample associated with index $j$, while the workers operate on the
+current snapshots. The serial schedule instead observes the sample at index $j+1$
+in body $j$. The observation theorems cover the synthetic zero entry and
+both sample sequences. On MT3 early exit, the terminal calculation may
+write scratch derived from an earlier Y square. The proved prefix ends
+at the last coherent sampled state.
+
+\paragraph{Mailbox synchronization.}
+The mailbox model relates the successful claims to the publications they
+read. In the original ordering, the first Y input store and the worker's
+result publication were relaxed, while the caller consumed the result with
+release ordering. The model exhibits conflicting payload accesses without a
+happens-before relation on those paths. In the authoritative X and Y square
+workers, an input publication is release and the worker claims it with
+acquire. The worker publishes the completed square and shadow with release,
+and the caller consumes them with acquire. The paired operations order the
+ordinary payload accesses. They also order the caller's reads and next
+input writes before the worker reuses the buffer for the next job.
+The source correspondence assumes that each successful claim reads the
+matching publication. The logical model treats scheduling progress as a
+condition for completion.
+
+\subsection{MT3 finite-precision orbit}
+\label{subsec:reference-orbit-proof-mt3-precision}
+
+The MT3 caller multiplies the two coordinates first and then doubles the
+rounded product with \code{mpf\_mul\_ui}. In the Windows MPIR multiply-by-two
+branch, the top bit of the highest discarded limb can contribute a carry
+to the retained product. The primitive theorem accounts for that carry
+and bounds the doubling error by $u|2a|$ for input $a$. The square
+snapshots and the saved Y-square use equal-precision assignment. The
+independently rounded squares feed a subtraction, so their rounding errors are
+bounded directly by the two square magnitudes. Combining those bounds with the
+cross-product and addition errors gives the MT3 allowance in
+\eqref{eq:reference-orbit-proof-step-budgets}. The Lean theorem
+\code{MT3.error\_at\_observed} uses that allowance for each coherent
+transition in \eqref{eq:reference-orbit-proof-orbit-bound}.
+
+\subsection{A single tolerance check for a finite prefix}
+\label{subsec:reference-orbit-proof-tolerance}
+
+Let \(n_{\max}\) be the last observed orbit index to certify and \(T\) the
+required absolute tolerance in the componentwise norm. Given an upper bound
+\(S\) on \(s_n\) for \(1\le n<n_{\max}\), define a fixed amplification
+\(A=2S+T\) and a per-step budget
+\[
+  q=\delta+u\bigl(KS^2+2\lVert\widetilde c_\star\rVert_1\bigr),
+  \qquad K_{\mathrm{ST}}=32,\quad K_{\mathrm{MT3}}=9 .
+\]
+Here \(S\) bounds the internal orbit states. The view radius \(R_{\max}\)
+used by the periodicity check describes the view geometry.
+
+As long as the current error radius is at most \(T\), its amplification is
+bounded by \(A\), and the parameter and local arithmetic terms sum to at
+most \(q\). The Lean corollary \code{prefix\_error\_le\_of\_tolerance}
+uses that fact to compare the true error to an affine bound \(F_n\).
+\begin{equation}
+\begin{aligned}
+  F_0&=0, \qquad F_1=\delta, \qquad F_{n+1}=A F_n+q
+       &&\text{for } n\ge1,\\
+  F_{n_{\max}}
+     &= A^{n_{\max}-1}\delta+
+        q\sum_{k=0}^{n_{\max}-2} A^k
+       &&\text{for } n_{\max}\ge1 .
+\end{aligned}
+\label{eq:reference-orbit-proof-tolerance}
+\end{equation}
+The sum has \(n_{\max}-1\) terms and is empty at \(n_{\max}=1\).
+For \(A>1\), it grows geometrically with the prefix length. At \(A=1\),
+it grows linearly as \(n_{\max}-1\). For \(0\le A<1\), it is bounded by
+\(1/(1-A)\). For any \(A\ne1\), it equals \((A^{n_{\max}-1}-1)/(A-1)\).
+
+Since \(A\ge0\) and \(q\ge\delta\ge0\), \(F_n\) is nondecreasing. A single check
+\(F_{n_{\max}}\le T\) therefore bounds every earlier radius by \(T\)
+and justifies the error induction. The two
+\code{error\_at\_observed\_of\_tolerance} theorems apply this result to ST and
+MT3 with their respective coefficients and prove
+\(\lVert\varepsilon_n\rVert_1\le T\) for every \(n\le n_{\max}\).
+A result above tolerance leaves the requested accuracy undecided. The size
+cap may follow from a separate orbit
+bound or from the computed prefix. Numerical application requires exact
+arithmetic or outward bounds for the inputs and the terminal calculation.
+
+\paragraph{Worked comparison.}
+Suppose \(S=1\) bounds both prefixes, with \(P=64\),
+\(\lVert\widetilde c_\star\rVert_1=1\), \(\delta=0\), \(n_{\max}=40\), and
+\(T=2^{-20}\approx9.54\times10^{-7}\). Then \(A=2+T\), and
+\(q_{\mathrm{ST}}=34u\) while \(q_{\mathrm{MT3}}=11u\).
+The MT3 bound is approximately \(3.28\times10^{-7}\), which meets
+the tolerance for the whole prefix. The ST bound is approximately
+\(1.01\times10^{-6}\), so the ST tolerance check is inconclusive.
+
+\subsection{Periodicity and finite prefixes}
+\label{subsec:reference-orbit-proof-periodicity}
+
+The exact derivative satisfies $d_{n+1}=2z_n^\star d_n+1$, with $d_0=0$
+and $d_1=1$. The theorem \code{derivativeStep\_eq} proves that the real and
+imaginary component updates satisfy this recurrence in exact arithmetic.
+The Lean schedules model the comparison in
+\cref{subsec:ref-orbit-periodicity} through the shadow inputs and the
+comparison result for the observed index. In serial execution, a positive
+near-return test stops after the current sample and before publishing a new
+MPIR pair. In MT3, the caller evaluates the delayed shadow and honors the
+stop as it collects the worker results, after publishing the delayed sample.
+With periodicity disabled, the derivative is unchanged and the near-return
+test cannot terminate the loop. Benchmark mode continues after a positive
+test and retains the derivative for that body. Both backends' exact and
+finite-precision observation theorems hold in each of these modes.
+The theorems concern the internal MPIR values associated with the observed
+indices. The reduced-precision conversions and comparison outcomes are
+inputs to the model, which applies the stopping rule for the selected mode.

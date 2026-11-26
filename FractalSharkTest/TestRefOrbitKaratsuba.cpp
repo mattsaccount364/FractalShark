@@ -4788,6 +4788,58 @@ TEST(RefOrbitDynamicPrecision_WarningThenCancellation)
     checkCancellation.template operator()<HDRFloat<double>>();
 }
 
+TEST(RefOrbit_MT3AuthoritativePrefix)
+{
+    constexpr uint64_t bits = 768;
+    constexpr uint64_t iterationLimit = 7;
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    HighPrecision::defaultPrecisionInBits(bits);
+    const auto generate = [&](RefOrbitCalc &calculator,
+                              RefOrbitCalc::PerturbationAlg algorithm,
+                              const HighPrecision &cx,
+                              const HighPrecision &cy) {
+        const auto view = ViewAtPrecision(bits).Recentered(cx, cy);
+        ASSERT_TRUE(fractal.RecenterViewCalc(view));
+        HighPrecision::defaultPrecisionInBits(bits);
+        fractal.SetNumIterations<uint64_t>(iterationLimit);
+        calculator.SetPerturbationAlg(algorithm);
+        calculator.ResetGuess(cx, cy);
+        calculator.AddPerturbationReferencePoint<uint64_t,
+                                                 double,
+                                                 double,
+                                                 PerturbExtras::Disable,
+                                                 RefOrbitCalc::BenchmarkMode::Disable>(fractal.GetPtz());
+        return calculator.GetLast<uint64_t, double, PerturbExtras::Disable>();
+    };
+
+    // The integer orbit at c = i exercises mixed-coordinate samples and Y lookahead.
+    RefOrbitCalc plain(fractal, UINT64_MAX);
+    const auto *plainOrbit =
+        generate(plain, RefOrbitCalc::PerturbationAlg::MT, HighPrecision{0}, HighPrecision{1});
+    ASSERT_EQ(plainOrbit->GetCountOrbitEntries(), iterationLimit);
+    ASSERT_EQ(plainOrbit->GetPeriodMaybeZero(), 0u);
+    const std::array<double, iterationLimit> expectedX{0, 0, -1, 0, -1, 0, -1};
+    const std::array<double, iterationLimit> expectedY{0, 1, 1, -1, 1, -1, 1};
+    for (size_t index = 0; index < expectedX.size(); ++index) {
+        const auto &sample = plainOrbit->GetOrbitData()[index];
+        ASSERT_EQ(static_cast<double>(sample.x), expectedX[index]);
+        ASSERT_EQ(static_cast<double>(sample.y), expectedY[index]);
+    }
+
+    // Native doubles exercise the zero comparison directly. The narrow view
+    // detects the return at z_2, which MT3 emits before stopping.
+    RefOrbitCalc periodic(fractal, UINT64_MAX);
+    const auto *periodicOrbit = generate(
+        periodic, RefOrbitCalc::PerturbationAlg::MTPeriodicity3, HighPrecision{-1}, HighPrecision{0});
+    ASSERT_EQ(periodicOrbit->GetCountOrbitEntries(), 3u);
+    ASSERT_EQ(periodicOrbit->GetPeriodMaybeZero(), 3u);
+    ASSERT_EQ(static_cast<double>(periodicOrbit->GetOrbitData()[1].x), -1.0);
+    ASSERT_EQ(static_cast<double>(periodicOrbit->GetOrbitData()[2].x), 0.0);
+    ASSERT_EQ(static_cast<double>(periodicOrbit->GetOrbitData()[2].y), 0.0);
+}
+
 TEST(RefOrbit_InteractiveZoomRespectsPeriodicReferenceRadius)
 {
     RenderTests::ScopedDirectory directory("RefOrbit_InteractiveZoomRespectsPeriodicReferenceRadius");

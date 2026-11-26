@@ -125,6 +125,22 @@ template <class Type> struct alignas(64) ThreadPtrs {
 };
 static_assert(alignof(ThreadPtrs<int>) == 64);
 
+// Authoritative workers publish with release ordering so the caller's acquire
+// claim makes the square and its low-precision shadow visible.
+template <std::memory_order SuccessOrder, class Job>
+static void
+PublishWorkerResult(ThreadPtrs<Job> *mailbox, Job *job)
+{
+    for (;;) {
+        // A failed CAS updates expected. Each retry must still require an empty slot.
+        Job *expected = nullptr;
+        if (mailbox->Out.compare_exchange_weak(expected, job, SuccessOrder, std::memory_order_relaxed)) {
+            return;
+        }
+        _mm_pause();
+    }
+}
+
 #define ENABLE_PREFETCH(ARG0, ARG1) _mm_prefetch(ARG0, ARG1)
 // #define ENABLE_PREFETCH(ARG0, ARG1)
 
@@ -145,16 +161,6 @@ static_assert(alignof(ThreadPtrs<int>) == 64);
     }                                                                                                   \
     ENABLE_PREFETCH((const char *)expected, _MM_HINT_T0);                                               \
     ok = expected;
-
-#define CheckFinishCriteria                                                                             \
-    expected = nullptr;                                                                                 \
-    for (;;) {                                                                                          \
-        _mm_pause();                                                                                    \
-        bool result = ThreadMemory->Out.compare_exchange_weak(expected, ok, std::memory_order_relaxed); \
-        if (result) {                                                                                   \
-            break;                                                                                      \
-        }                                                                                               \
-    }
 
 static inline void
 prefetch_range(void *addr, std::size_t len)
@@ -1312,8 +1318,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
                 ok->OutZxLow = T{ok->OutZx};
             }
 
-            // Give result back.
-            CheckFinishCriteria;
+            PublishWorkerResult<std::memory_order_relaxed>(ThreadMemory, ok);
         }
 
         mpf_clear(temp_mpf);
@@ -1402,8 +1407,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3Reuse(const PointZoomBBConverter &
                 ok->OutZyLow = T{ok->OutZy};
             }
 
-            // Give result back.
-            CheckFinishCriteria;
+            PublishWorkerResult<std::memory_order_relaxed>(ThreadMemory, ok);
         }
 
         mpf_clear(temp_mpf);
@@ -1814,8 +1818,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
                 mpf_mul(ok->zxSq, ok->zx, ok->zx);
 
-                // Give result back.
-                CheckFinishCriteria;
+                PublishWorkerResult<std::memory_order_release>(ThreadMemory, ok);
             }
 
             ShutdownTls();
@@ -1845,8 +1848,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
                 mpf_mul(ok->zySq, ok->zy, ok->zy);
 
-                // Give result back.
-                CheckFinishCriteria;
+                PublishWorkerResult<std::memory_order_release>(ThreadMemory, ok);
             }
 
             ShutdownTls();
@@ -1897,8 +1899,7 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
 
                         index++;
 
-                        // Give result back.
-                        CheckFinishCriteria;
+                        PublishWorkerResult<std::memory_order_relaxed>(ThreadMemory, ok);
                     }
 
                     if constexpr (Reuse == RefOrbitCalc::ReuseMode::SaveForReuse4) {
@@ -1976,8 +1977,8 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
             ThreadZxMemory->In.store(threadZxdata, std::memory_order_release);
 
             if (!zyStarted) {
-                // Start Zy squaring thread
-                ThreadZyMemory->In.store(threadZydata, std::memory_order_relaxed);
+                // Publish the first snapshot to the worker's acquire claim, as for lookahead.
+                ThreadZyMemory->In.store(threadZydata, std::memory_order_release);
 
                 zyStarted = true;
             }
@@ -2087,8 +2088,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 expectedZy = threadZydata;
 
                 _mm_pause();
-                if (!done2 && ThreadZyMemory->Out.compare_exchange_weak(
-                                  expectedZy, nullptr, std::memory_order_release)) {
+                if (!done2 &&
+                    ThreadZyMemory->Out.compare_exchange_weak(
+                        expectedZy, nullptr, std::memory_order_acquire, std::memory_order_relaxed)) {
                     done2 = true;
 
                     PrefetchHighPrec(threadZydata->zySq);
@@ -2118,8 +2120,9 @@ RefOrbitCalc::AddPerturbationReferencePointMT3(const PointZoomBBConverter &ptz,
                 expectedZx = threadZxdata;
 
                 _mm_pause();
-                if (!done1 && ThreadZxMemory->Out.compare_exchange_weak(
-                                  expectedZx, nullptr, std::memory_order_release)) {
+                if (!done1 &&
+                    ThreadZxMemory->Out.compare_exchange_weak(
+                        expectedZx, nullptr, std::memory_order_acquire, std::memory_order_relaxed)) {
                     done1 = true;
 
                     doubleZxLast = threadZxdata->zxLow;

@@ -12,6 +12,7 @@ FractalShark is a C++23/CUDA Mandelbrot renderer. Keep changes in the owning sub
 - `FractalSharkGuiLinux/`: Linux GUI.
 - `FractalSharkCli/`: CLI entry points.
 - `FractalSharkTest/`, `HpSharkFloatTest/`, `HpSharkFloatTestLib/`: tests.
+- `FractalSharkLean/`: standalone Lean proofs and proof checks.
 - `Notes/`: LaTeX docs and plain-Markdown analysis notes (Reference2 perf studies).
 - `tools/NcuAnalysis/`: NCU profile analysis toolkit; see `tools/NcuAnalysis/README.md`.
 - `Pics/` and `FromImagina/`: sample images and inputs.
@@ -25,6 +26,7 @@ Common commands:
 - `./build_linux.sh`: preferred Linux build; configures and builds Debug and Release with `--parallel`.
 - `cmake --build build-debug --parallel`: incremental Linux Debug build. Use `build-release` for Release.
 - `./build-debug/FractalSharkTest/FractalSharkTest`: portable Linux tests.
+- `lake build` from `FractalSharkLean/`: Lean library and proof checks.
 
 Windows development targets Visual Studio 2026, CUDA Toolkit, MPIR, and bundled YASM tooling. Use
 `.github/workflows/build.yml` as the CI setup reference. Do not pass `/nologo` to MSBuild because this
@@ -191,6 +193,11 @@ Continue updating relevant `.tex` documentation when implementation changes warr
 FractalShark's current algorithms, behavior, rationale, and known limitations. Do not append historical
 debugging narratives, experiment diaries, or temporary investigation results. Document implemented
 behavior rather than presenting proposed or test-only prototypes as production features.
+
+Document each new or substantially changed Lean proof in the relevant `Notes/*.tex` section.
+State the checked theorem, the implementation it models, the trusted assumptions, and the
+scope of the guarantee. Keep shared arithmetic assumptions and Lean build instructions in
+the manual's Formal Verification of Reference Orbits section.
 
 The LaTeX master is `Notes/FractalShark.tex`. Always use `build.ps1` from the `Notes`
 directory for Notes builds; do not run the LaTeX and bibliography passes manually. The script

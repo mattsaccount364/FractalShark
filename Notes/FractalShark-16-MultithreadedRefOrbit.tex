@@ -159,11 +159,12 @@ pointers.  The protocol proceeds as follows:
         buffers may be reused.  A published pointer is a handoff, not permission
         for both threads to mutate the same operands concurrently.
 \end{enumerate}
-The legacy worker claims \code{In} with an acquire compare/exchange after
-relaxed polling. Completion and retrieval use their existing pointer
-compare/exchange operations; some stores are relaxed. This protocol is not
-the per-worker acquire/release state machine used by MT9. Polling loops use
-the processor pause hint described in \cref{subsec:ref-orbit-cpu-principles}.
+The authoritative square workers claim \code{In} with an acquire
+compare/exchange after relaxed polling. The caller publishes each square job
+with release ordering. The worker's release publication to \code{Out} and
+the caller's acquire claim synchronize the result and its shadow
+(\cref{subsec:reference-orbit-proof-mt3-exact}). Polling loops use the
+processor pause hint described in \cref{subsec:ref-orbit-cpu-principles}.
 To reduce cache-miss latency, \code{PrefetchHighPrec} touches MPIR metadata
 and limb data using a fixed 64-byte stride.  In authoritative \code{MT3},
 the main thread prefetches completed square results; the explicit square-worker

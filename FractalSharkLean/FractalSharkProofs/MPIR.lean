@@ -126,7 +126,7 @@ noncomputable def truncate (x unit : ℝ) : ℝ :=
   let magnitude := (⌊|x| / unit⌋ : ℝ) * unit
   if x < 0 then -magnitude else magnitude
 
-private theorem truncate_bounds (x : ℝ) {unit : ℝ} (hu : 0 < unit) :
+theorem truncate_bounds (x : ℝ) {unit : ℝ} (hu : 0 < unit) :
     |truncate x unit| ≤ |x| ∧ |truncate x unit - x| ≤ unit := by
   let magnitude := (⌊|x| / unit⌋ : ℝ) * unit
   have hq : 0 ≤ |x| / unit := div_nonneg (abs_nonneg _) hu.le
@@ -322,7 +322,7 @@ inductive Add (p : Precision) (a b r : Limbs) : Prop where
 
 def Sub (p : Precision) (a b r : Limbs) : Prop := Add p a b.neg r
 
-private theorem truncate_sum_error (a b : ℝ) (e : ℤ) :
+theorem truncate_sum_error (a b : ℝ) (e : ℤ) :
     |(truncate a (grid e) + truncate b (grid e)) - (a + b)| ≤ 2 * grid e := by
   rw [show truncate a (grid e) + truncate b (grid e) - (a + b) =
       (truncate a (grid e) - a) + (truncate b (grid e) - b) by ring]
@@ -332,7 +332,7 @@ private theorem truncate_sum_error (a b : ℝ) (e : ℤ) :
       add_le_add (truncate_bounds _ (grid_pos _)).2 (truncate_bounds _ (grid_pos _)).2
     _ = 2 * grid e := by ring
 
-private theorem retainedSum_error (a b : Limbs) (top cutoff : ℤ) :
+theorem retainedSum_error (a b : Limbs) (top cutoff : ℤ) :
     |retainedSum a b top cutoff - (a.value + b.value)| ≤ 2 * grid cutoff := by
   have he : a.value + b.value = prefixSum a b top + (tail a.value top + tail b.value top) := by
     unfold prefixSum tail

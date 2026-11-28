@@ -1,14 +1,20 @@
 \section{Formal Verification of Reference Orbits}
 \label{sec:reference-orbit-proofs}
 
-Lean proves that ST and MT3 follow the same exact quadratic orbit and bounds
-the error in each backend's observed MPIR iterates. Both use the same error
-propagation rule with different local rounding budgets. A cap on the state
-sizes lets one calculation certify the tolerance for a whole prefix.
+One high-precision reference supplies the orbit samples used across a
+deep-zoom view. Perturbation evolves the offsets from that reference for
+individual pixels, so a misplaced reference sample can affect many pixel
+calculations (\cref{sec:perturbation-concept,subsec:ref-orbit-pipeline}).
+The Lean proofs connect the CPU implementations to the quadratic recurrence,
+then follow the effects of rounding through the samples each implementation
+publishes. For the fixed ST, MT3, and MT9 backends, the resulting bounds
+relate the MPIR limb count to the spacing of the calculation grid.
+For dynamic MT9, a bound on the additional drift shows when a reduced
+working precision still meets the same viewport tolerance.
 
 \paragraph{Notation.}
-The reference parameter \(c_\star=c_{\star,x}+\mathrm{i}c_{\star,y}\), exact
-reference orbit \(z_n^\star=x_n^\star+\mathrm{i}y_n^\star\), derivative \(d_n\),
+The reference parameter \(c_\star=c_{\star,x}+i\,c_{\star,y}\), exact
+reference orbit \(z_n^\star=x_n^\star+i\,y_n^\star\), derivative \(d_n\),
 and reduced-precision shadow \(\hat z_n\) follow
 \cref{tab:notation-general,tab:notation-components,tab:notation-reference-orbit}.
 The index \(n\) counts mathematical iterates from \(z_0^\star=0\), and \(j\)
@@ -31,9 +37,10 @@ The symbol \(p\) denotes the period. \\
 \(\rho_n,\ \tau_n\) & Local arithmetic residual
 \(\rho_n=z_{n+1}^{\mathrm{MPIR}}-((z_n^{\mathrm{MPIR}})^2+\widetilde c_\star)\)
 and its bound in the componentwise norm. \\
-\(E_n^{\mathrm{orb}}\) & Bound on \(\lVert\varepsilon_n\rVert_1\). The
-MT9 radius \(E_n\) in \cref{subsec:ref-orbit-dynamic-enclosure} compares
-two computed orbits in the Euclidean norm. \\
+\(E_n^{\mathrm{orb}}\) & Bound on \(\lVert\varepsilon_n\rVert_1\).
+For MT9, \(F_n\) denotes the calculator's bound for fixed precision and
+\(E_n\) denotes the Euclidean radius enclosing the difference between
+dynamic and fixed precision. \\
 \end{tabularx}
 \end{center}
 
@@ -53,6 +60,11 @@ available through \code{FractalSharkProofs.MPIR}.
 
 \subsection{MPIR arithmetic assumptions}
 \label{subsec:reference-orbit-proof-mpir}
+
+All three CPU backends rely on the same limb representation. The primitive
+contracts establish which operations preserve a value exactly and how much
+rounding an operation can introduce. They supply the starting bounds for
+every CPU precision result in this section.
 
 The Lean model describes the
 \href{https://github.com/BrianGladman/mpir/tree/dc82b0475dea84d5338356e49176c40be03a5bdf}{MPIR revision pinned by the Windows x64 build}.
@@ -85,15 +97,25 @@ preserves the value. The sum and difference errors are bounded by
 $2u\max(|a|,|b|)$, the product error by $3u|ab|$, and the error of a
 power-of-two shift by $u|2^k a|$. The Lean routine contracts are reusable
 independently of the orbit proofs.
+The theorem \code{MPIR.add\_aligned\_bounds} also gives exact addition
+when both represented values are on the retained limb grid, including
+operands stored with trailing zero limbs.
 
 \subsection{Single-threaded exact orbit}
 \label{subsec:reference-orbit-proof-st-exact}
 
-The serial update in \cref{subsec:ref-orbit-st} evaluates the real component
-as $(x_n^\star+y_n^\star)(x_n^\star-y_n^\star)+c_{\star,x}$ and the imaginary
-component as $(2x_n^\star)y_n^\star+c_{\star,y}$. The theorem
-\code{SingleThreaded.exactStep\_eq} establishes
-that both expressions read the same old state and give
+The serial implementation provides a baseline for the optimized backends.
+Identifying its samples by mathematical iteration gives the perturbation
+loop the correct reference term even though the first loop body starts
+with the parameter already loaded.
+
+The serial update in \cref{subsec:ref-orbit-st} evaluates the two components as
+\[
+ (x_n^\star+y_n^\star)(x_n^\star-y_n^\star)+c_{\star,x},
+ \qquad (2x_n^\star)y_n^\star+c_{\star,y}.
+\]
+The theorem \code{SingleThreaded.exactStep\_eq} establishes that both
+expressions read the same old state and give
 \eqref{eq:mandelbrot-recurrence} in exact arithmetic.
 \code{SingleThreaded.exactPrefix\_eq} identifies the synthetic zero entry
 with $z_0^\star$, the initial loop state with $z_1^\star=c_\star$, and
@@ -102,7 +124,11 @@ sample $j+1$ with the state observed before the update in loop body $j$.
 \subsection{How rounding errors accumulate}
 \label{subsec:reference-orbit-proof-propagation}
 
-Both precision proofs track the same quantity at a mathematical index \(n\).
+Deeper views require finer absolute accuracy. A small error introduced by
+a parameter copy or an early arithmetic operation can grow over many
+subsequent iterations, especially when the orbit spends time at states with
+large magnitude. The CPU precision proofs track that accumulated error at
+each mathematical index \(n\).
 Subtracting the exact recurrence from the computed update gives
 \begin{equation}
   \varepsilon_{n+1}
@@ -164,6 +190,10 @@ run has its own rounded states and actual residuals.
 \subsection{Single-threaded finite-precision orbit}
 \label{subsec:reference-orbit-proof-st-precision}
 
+The single-threaded bound makes the rounding cost of the factored formula
+explicit. It lets precision selection use ST's actual operation order when
+the renderer generates a serial reference.
+
 The serial real update rounds the sum and difference before multiplying them.
 The error of each factor therefore propagates into the product. The imaginary
 update rounds the scaled operand before evaluating its product. The scratch
@@ -175,6 +205,11 @@ to every index of the modeled prefix, and
 
 \subsection{MT3 exact orbit and worker schedule}
 \label{subsec:reference-orbit-proof-mt3-exact}
+
+MT3 overlaps the two squares and reuses the imaginary square from its
+lookahead. The proof connects that overlap to the iteration sequence
+consumed by perturbation. In particular, it associates each published
+sample with a coherent pair of coordinates.
 
 \code{MT3.exactStep\_eq} proves that the two square workers and the caller
 implement \eqref{eq:mandelbrot-recurrence} in exact arithmetic. The workers
@@ -195,6 +230,10 @@ write scratch derived from an earlier Y square. The proved prefix ends
 at the last coherent sampled state.
 
 \paragraph{Mailbox synchronization.}
+The square, shadow, and input buffers are ordinary memory shared between
+the caller and workers. The memory-order proof identifies the
+synchronization that makes a worker's data visible before it is read or
+reused on another thread.
 The mailbox model relates the successful claims to the publications they
 read. In the original ordering, the first Y input store and the worker's
 result publication were relaxed, while the caller consumed the result with
@@ -212,6 +251,10 @@ condition for completion.
 \subsection{MT3 finite-precision orbit}
 \label{subsec:reference-orbit-proof-mt3-precision}
 
+MT3's expanded update reaches the same exact recurrence as ST through a
+different sequence of rounded operations. Its own local allowance lets the
+same propagated-error calculation assess both backends in the same units.
+
 The MT3 caller multiplies the two coordinates first and then doubles the
 rounded product with \code{mpf\_mul\_ui}. In the Windows MPIR multiply-by-two
 branch, the top bit of the highest discarded limb can contribute a carry
@@ -225,8 +268,136 @@ cross-product and addition errors gives the MT3 allowance in
 \code{MT3.error\_at\_observed} uses that allowance for each coherent
 transition in \eqref{eq:reference-orbit-proof-orbit-bound}.
 
+\subsection{MT9 split products and worker handoff}
+\label{subsec:reference-orbit-proof-mt9-exact}
+
+The split products allow large multiplications to use several workers.
+Exact reconstruction lets the rounding analysis charge only the final
+stored product, and the buffer and ordering proofs justify assembling it
+from the current batch's partial products before those buffers are reused.
+
+The integer input of a split product is the full occupied MPIR mantissa.
+The theorem \code{MT9.assembled\_product} proves the split and reconstruction
+identity in \eqref{eq:mt9-karatsuba}. The theorem \code{MT9.batch\_fits}
+proves that the low, high, and sum products fit the active buffer widths,
+the shifted middle term fits the destination range, and the full product
+leaves two zero guard limbs. The intermediate subtraction is nonnegative.
+Padding and odd split widths preserve the input integers. These theorems
+assume exact integer operations on their valid operand ranges.
+
+The theorem \code{MT9.follower\_run\_before\_wait} gives the ordering from
+the caller's release of each follower's job to the lead's wait for it.
+With atomic write/read coherence, the lead may consume the current
+completion once it observes an idle slot. The theorem
+\code{MT9.current\_idle} excludes earlier completions under the
+one-outstanding-batch invariant. Release/acquire publication of partial
+products orders assembly, and the lead's completion orders the output
+store. The next batch reuses snapshots and active widths only after
+these stores. The same ordering protects aliased stores and shutdown
+after a completed batch.
+
+\subsection{MT9 exact and fixed-precision orbits}
+\label{subsec:reference-orbit-proof-mt9-precision}
+
+The fixed MT9 recurrence establishes the meaning and accuracy of the
+samples produced by the split-product backend. It also supplies the
+comparison trajectory for the dynamic backend at the same starting
+precision.
+
+The theorem \code{MT9.exact\_at\_observed} proves the exact recurrence at
+all published indices. MT9 peels the initial check and update before
+it publishes a positive index. Each later body checks the current
+state and publishes the preceding state. A terminal body completes
+its update before acting on periodicity or bailout. The theorem
+\code{MT9.checked\_before\_publication} associates each positive
+published index with its earlier check.
+
+For finite arithmetic, \code{MT9.normalize\_product} accounts for
+sign, actual occupied widths, and the exponent adjustment.
+\code{MT9.product\_bounds} trims only the assembled product to the
+output capacity. The same expanded update bound serves MT3 and MT9
+with their respective product allowances. It gives
+\[
+ \lVert\rho_n^{\mathrm{F}}\rVert_1
+ \le u\bigl(7s_n^2+2\lVert\widetilde c_\star\rVert_1\bigr).
+\]
+The theorem \code{MT9.error\_at\_observed} propagates that allowance
+against the exact orbit. \code{MT9.viewportPrefix} supplies the
+reference and ideal perturbation theorems with the fixed-precision
+coefficient \(K_{\mathrm{MT9}}=7\).
+
+\subsection{MT9 dynamic precision and the error disk}
+\label{subsec:reference-orbit-proof-mt9-dynamic}
+
+Using fewer limbs reduces the work in MT9's multiplications.
+The question for rendering is how much that saving can change the
+reference orbit. The comparison uses the orbit that fixed MT9 would
+compute from the same copied center at the original precision.
+MT9 Dynamic tracks a bound on the difference during its own run,
+so a second orbit calculation is unnecessary.
+
+At iteration \(n\), the theorem \code{MT9.disk\_prefix} proves that the
+fixed state \(z_n^{\mathrm F}\) lies within distance \(E_n\) of the
+dynamic state \(z_n^{\mathrm D}\) in the complex plane. The inequality
+\(\lvert z_n^{\mathrm D}-z_n^{\mathrm F}\rvert\le E_n\) describes that disk.
+
+The radius starts at zero because the calculations start from identical
+values and use the same full-precision arithmetic until the first
+reduction. From then on, each update accounts for any low limbs discarded
+when precision drops, the effect of the existing difference on the next
+squaring, and the new rounding in both calculations.
+Returning to full precision carries forward the uncertainty already
+accumulated. The proof applies to every permitted sequence of working
+precisions under the limb and outward-rounding assumptions in
+\cref{subsec:ref-orbit-dynamic-enclosure}.
+
+The radius gives a bound on the extra error due to dynamic precision.
+If the calculator bounds the fixed orbit's error against the exact orbit
+by \(F_n\), then \(F_n+2E_n\) bounds the dynamic orbit's error in the
+componentwise norm. The real and imaginary differences between the two
+MT9 states are each at most \(E_n\). When the sum fits the viewport budget
+at every iteration included in the reference output, MT9 Dynamic meets the
+same tolerance at the original starting precision. A sum above the
+budget leaves accuracy undecided. The worked example in
+\cref{subsec:reference-orbit-proof-mt9-viewport} uses this test to show
+that a run starting at 448 bits can drop to 384 bits and still meet
+the quarter-sample tolerance.
+
+\subsection{MT9 accepted conversion certificates}
+\label{subsec:reference-orbit-proof-mt9-certificate}
+
+Perturbation and compression consume converted samples. Equal conversions
+therefore preserve their reference input even when the internal MPIR states
+differ.
+
+\code{MT9.regular\_gaps} subtracts the gap measurement error from
+the conservative lower bounds used in the regular check.
+\code{MT9.fast\_gaps} uses the leading 32 discarded bits and the
+unread tail interval to lower-bound both gaps. Strict separation
+keeps the fixed and dynamic components in one normalized bin with
+the same sign. The theorem \code{MT9.sample\_equivalence} then gives
+equality of the converted pair under the supported MPIR conversion
+contract. A zero disk gives equality directly, and a real parameter
+gives an independent exact-zero theorem for the imaginary component.
+An unsupported format, an invalid bound, or an ambiguous gap leaves
+the check unaccepted. Failure records the first diagnostic while
+the publication path continues.
+
+\code{MT9.accepted\_prefix\_equivalence} uses the earlier check for
+each delayed sample and includes the shared synthetic zero.
+\code{MT9.same\_exit\_of\_sample\_equivalence} proves that agreeing
+converted samples produce the same exit and period metadata in
+the modeled loop when the center, viewport radius, shadow arithmetic,
+and cancellation decisions agree. The proof covers the samples
+entering storage or compression.
+
 \subsection{A single tolerance check for a finite prefix}
 \label{subsec:reference-orbit-proof-tolerance}
+
+A single upper bound on the state sizes lets a precision decision cover an
+entire finite reference prefix. The accumulated bound explains why a
+precision that suffices for a short reference can become inconclusive for
+the same view at a higher iteration count.
 
 Let \(n_{\max}\) be the last observed orbit index to certify and \(T\) the
 required absolute tolerance in the componentwise norm. Given an upper bound
@@ -234,7 +405,7 @@ required absolute tolerance in the componentwise norm. Given an upper bound
 \(A=2S+T\) and a per-step budget
 \[
   q=\delta+u\bigl(KS^2+2\lVert\widetilde c_\star\rVert_1\bigr),
-  \qquad K_{\mathrm{ST}}=32,\quad K_{\mathrm{MT3}}=9 .
+  \qquad K_{\mathrm{ST}}=32,\quad K_{\mathrm{MT3}}=9,\quad K_{\mathrm{MT9}}=7 .
 \]
 Here \(S\) bounds the internal orbit states. The view radius \(R_{\max}\)
 used by the periodicity check describes the view geometry.
@@ -242,12 +413,13 @@ used by the periodicity check describes the view geometry.
 As long as the current error radius is at most \(T\), its amplification is
 bounded by \(A\), and the parameter and local arithmetic terms sum to at
 most \(q\). The Lean corollary \code{prefix\_error\_le\_of\_tolerance}
-uses that fact to compare the true error to an affine bound \(F_n\).
+uses that fact to compare the true error to an affine bound \(F_n^{\mathrm{aff}}\).
 \begin{equation}
 \begin{aligned}
-  F_0&=0, \qquad F_1=\delta, \qquad F_{n+1}=A F_n+q
+  F_0^{\mathrm{aff}}&=0, \qquad F_1^{\mathrm{aff}}=\delta, \qquad
+  F_{n+1}^{\mathrm{aff}}=A F_n^{\mathrm{aff}}+q
        &&\text{for } n\ge1,\\
-  F_{n_{\max}}
+  F_{n_{\max}}^{\mathrm{aff}}
      &= A^{n_{\max}-1}\delta+
         q\sum_{k=0}^{n_{\max}-2} A^k
        &&\text{for } n_{\max}\ge1 .
@@ -259,15 +431,15 @@ For \(A>1\), it grows geometrically with the prefix length. At \(A=1\),
 it grows linearly as \(n_{\max}-1\). For \(0\le A<1\), it is bounded by
 \(1/(1-A)\). For any \(A\ne1\), it equals \((A^{n_{\max}-1}-1)/(A-1)\).
 
-Since \(A\ge0\) and \(q\ge\delta\ge0\), \(F_n\) is nondecreasing. A single check
-\(F_{n_{\max}}\le T\) therefore bounds every earlier radius by \(T\)
+Since \(A\ge0\) and \(q\ge\delta\ge0\), \(F_n^{\mathrm{aff}}\) is nondecreasing.
+A single check \(F_{n_{\max}}^{\mathrm{aff}}\le T\) therefore bounds every earlier radius by \(T\)
 and justifies the error induction. The two
 \code{error\_at\_observed\_of\_tolerance} theorems apply this result to ST and
 MT3 with their respective coefficients and prove
 \(\lVert\varepsilon_n\rVert_1\le T\) for every \(n\le n_{\max}\).
 A result above tolerance leaves the requested accuracy undecided. The size
-cap may follow from a separate orbit
-bound or from the computed prefix. Numerical application requires exact
+cap may follow from a separate orbit bound or from the computed prefix.
+Numerical application requires exact
 arithmetic or outward bounds for the inputs and the terminal calculation.
 
 \paragraph{Worked comparison.}
@@ -279,8 +451,484 @@ The MT3 bound is approximately \(3.28\times10^{-7}\), which meets
 the tolerance for the whole prefix. The ST bound is approximately
 \(1.01\times10^{-6}\), so the ST tolerance check is inconclusive.
 
+\subsection{Viewport scale and CPU limb count}
+\label{subsec:reference-orbit-proof-viewport}
+
+Expressing error in sample spacings makes the tolerance depend on what
+the renderer is asked to resolve. A deeper zoom, larger output, or denser
+antialiasing grid can require more limbs for the same orbit.
+
+The spacings \(h_x,h_y\) of the calculation grid come from the full
+horizontal and vertical spans divided by \(sW\) and \(sH\), respectively,
+where \(W\times H\) is the output size and \(s\) is the supersampling factor
+per axis. See \cref{sec:mapping,subsec:ref-orbit-view-bounds} and
+\eqref{eq:periodicity-pixel-spacing}. For a chosen fraction \(0<\eta\le1\),
+set \(T=\eta\min(h_x,h_y)\). The theorem \code{Viewport.sampleError\_le}
+shows that an orbit error \(\varepsilon\) with \(\lVert\varepsilon\rVert_1\le T\)
+satisfies
+\begin{equation}
+  \frac{|\Re\varepsilon|}{h_x}+\frac{|\Im\varepsilon|}{h_y}\le\eta .
+  \label{eq:reference-orbit-proof-sample-error}
+\end{equation}
+This comparison uses the parameter grid as a unit of length for the orbit
+error. Image displacement and escape decisions involve additional dynamics.
+
+\paragraph{An error bound for a given precision.}
+Choose a fixed error ceiling \(\overline T\) and let \(C\) cap the states
+whose errors are propagated. For the reference orbit, \(C=S\). Use the
+amplification \(A=2C+\overline T\), and define \(G_m(A)=\sum_{k=0}^{m-1}A^k\)
+for \(m=n_{\max}-1\) when \(n_{\max}\ge1\). Let \(c_{\mathrm{in}}\) be the
+represented reference coordinate supplied to MPIR, \(M\) an upper bound
+on \(\lVert c_{\mathrm{in}}\rVert_1\), and \(\beta\) an upper bound on
+\(\lVert c_{\mathrm{in}}-c_\star\rVert_1\). The working parameter
+\(\widetilde c_\star\) has norm at most \(M\). The coordinate copy contributes
+at most \(uM\), so the discrepancy in \eqref{eq:reference-orbit-proof-orbit-bound}
+is bounded by \(\beta+uM\).
+
+Substituting these bounds into the affine formula gives the split checked
+by \code{mpirViewportBound\_split}.
+\begin{align}
+  V_A &= A^m+G_m(A), \notag\\
+  E_{\mathrm{input}} &= V_A\beta,
+  & J &= V_A M+G_m(A)(KS^2+2M), \notag\\
+  E &= E_{\mathrm{input}}+2^{-P}J.
+  \label{eq:reference-orbit-proof-limb-budget}
+\end{align}
+At \(n_{\max}=0\) the bound is zero, and at \(n_{\max}=1\) only the parameter
+contributes. When \(E\le\overline T\), the amplification used to obtain
+\(E\) is valid throughout the prefix. The additional comparison \(E\le T\)
+certifies \eqref{eq:reference-orbit-proof-sample-error} at each index.
+
+With \(L=\min(\overline T,T)-E_{\mathrm{input}}\), the equivalent
+precision check is \(J\le 2^P L\). For \(J>0\) and \(L>0\), the smallest
+sufficient internal limb count is the first \(t\ge2\) for which
+\(2^{64(t-1)}L\ge J\). If \(L\le0\), a positive \(J\) prevents this check
+from passing at any finite precision. An extra limb divides the MPIR
+contribution by \(2^{64}\) at fixed \(J\). The bound on the original input
+must be established separately.
+
+For a centered square-pixel view with vertical half-height \(R_{\max}\),
+the grid spacing is \(2R_{\max}/(sH)\). The lower radius for the sample
+budget is therefore \(sH E/(2\eta)\) at fixed caps and limb count.
+The proof uses the half-height of the exact viewport, whose geometric role
+corresponds to \code{GetMaxRadius()}.
+
+\paragraph{How the current CPU request spends its guard bits.}
+The heuristic in \cref{par:precision-heuristics} extracts exponents
+\(e_x,e_y\) from the full spans via \code{HDRFloat<double>} and
+\code{mpf\_get\_2exp\_d}. It requests \(b=d+g\), where
+\(d=\max(|e_x|,|e_y|)\) and \(g\) is 120 bits in the standard path or
+800 bits when authoritative reuse is requested. The viewport setter
+installs the default used by \code{mpf\_init} in ST and MT3. In the
+64-bit MPIR model, \(t=1+\lceil\max(53,b)/64\rceil\) is the internal
+\code{\_mp\_prec}, with \(P=64(t-1)\) reported bits. For an overridden
+default, the certificate uses the precision of the initialized buffers.
+
+When the extracted exponents give lower span bounds \(2^{e_x-1}\) and
+\(2^{e_y-1}\), both spans are at least \(2^{-d-1}\). Hence the smaller
+pitch is at least \(2^{-d-1}/(s\max(W,H))\).
+For \(\beta=0\), the theorem \code{Viewport.cpu\_roundoff\_le\_budget}
+proves that the following sufficient guard-bit condition gives \(E\le T\).
+\begin{equation}
+  2s\max(W,H)J \le \eta\,2^{g+r},\qquad r=P-b .
+  \label{eq:reference-orbit-proof-cpu-guard}
+\end{equation}
+The check \(E\le\overline T\) still applies. The guard budget covers grid
+density, the requested fraction of a sample, and orbit amplification.
+The precision-selection routine supplies the request, while the Lean
+criterion uses the extracted exponent bounds and the modeled orbit
+prefix to determine whether that request is sufficient.
+
+\subsection{Viewport-wide ideal perturbation}
+\label{subsec:reference-orbit-proof-ideal-perturbation}
+
+The reference check concerns a single trajectory. The ideal perturbation
+proof explains how arithmetic error in that reference can enter the
+reconstructed trajectories of pixels throughout the view when their
+offsets and updates are exact.
+
+For each pixel parameter \(c\), evaluate the update from
+\cref{sec:perturb-only-update} in exact arithmetic using
+\(z_n^{\mathrm{MPIR}}\) as the reference and \(c-c_{\mathrm{in}}\) as
+the offset. Denote that perturbation by \(\Delta z_n^{\mathrm{ideal}}\)
+and the reconstructed state by
+\(z_n^{\mathrm{rec}}=z_n^{\mathrm{MPIR}}+\Delta z_n^{\mathrm{ideal}}\).
+The algebra checked by \code{idealReconstruction\_residual} yields
+\begin{equation}
+  z_{n+1}^{\mathrm{rec}}=(z_n^{\mathrm{rec}})^2+c+
+    (\widetilde c_\star-c_{\mathrm{in}})+\rho_n .
+  \label{eq:reference-orbit-proof-reconstructed-residual}
+\end{equation}
+The working-parameter copy error enters each step together with the
+original MPIR residual. The comparison orbit uses the pixel parameter
+\(c\) itself, so \(\beta=0\) in its budget.
+
+The bounds \(R_x,R_y\) of \cref{subsec:ref-orbit-view-bounds}, taken relative
+to \(c_{\mathrm{in}}\), give
+\(\lVert c-c_{\mathrm{in}}\rVert_1\le R_x+R_y\) over the rectangle.
+Given a perturbation cap \(D\ge0\), apply the geometric sum to the
+perturbation recurrence. The check
+\begin{equation}
+  (R_x+R_y)\,G_{n_{\max}-1}(2S+D)\le D
+  \label{eq:reference-orbit-proof-perturbation-cap}
+\end{equation}
+bounds every perturbation used as an input to a transition through
+\(n_{\max}\ge1\). The zero prefix is exact. With \(C=S+D\) in
+\eqref{eq:reference-orbit-proof-limb-budget}, the rounding term still
+uses \(KS^2+2M\), since the MPIR operations are on the reference.
+The Lean theorem \code{perturbed\_error\_in\_samples} therefore gives
+\eqref{eq:reference-orbit-proof-sample-error} for every sample in the
+rectangle when both the geometry and error checks pass.
+
+For a centered square-pixel view about \(c_{\mathrm{in}}\),
+\(R_x+R_y=(1+W/H)R_{\max}\). If \(n_{\max}\ge2\), the upper radius is
+\(D/[(1+W/H)G_{n_{\max}-1}(2S+D)]\). The lower radius comes from the
+sample budget. The resulting interval can be empty for the chosen
+caps, precision, and prefix. The theorems use exact affine mapping and
+unre-based perturbation on the observed internal states. Bounding the
+rendered result also requires bounds for reduced samples, rebasing,
+acceleration, and escape decisions.
+
+\paragraph{Worked CPU comparison.}
+Use the \(800\times400\) dimensions and \(s=2\) of \cref{sec:mapping}.
+Take \(\eta=1/4\) and \(R_{\max}=2^{-73}\), so \(T=R_{\max}/1600\).
+Suppose \(S=M=1\), \(\beta=0\), and the observed prefix reaches index 40.
+Use \(D=\overline T=2^{-8}\). Three internal limbs (\(P=128\)) meet the
+reference budget for both backends and the ideal perturbation budget
+for MT3. Four limbs (\(P=192\)) also meet the ideal ST budget.
+
+The full spans \(4R_{\max},2R_{\max}\) have extracted exponents \(-70,-71\).
+The standard CPU request is 191 bits and rounds to four limbs. A reuse
+request for the same spans is 871 bits and rounds to 896 bits, or 15
+internal limbs. For a longer prefix through index 112, the same standard
+request leaves the reference criterion inconclusive even with the same
+size cap. The precision request depends on the spans, and the sufficient
+bound also depends on the number of transitions.
+
+\subsection{Selecting sufficient MPIR precision from a viewport}
+\label{subsec:reference-orbit-proof-precision-estimator}
+
+The calculator turns the error analysis into a precision request that
+can be evaluated for a particular view. Its exact-orbit enclosures include
+the amplification along that reference and give a sufficient working
+precision for the specified prefix.
+
+The standalone calculator selects the MPIR request before running the CPU
+orbit. Run the examples from \code{FractalSharkLean}.
+\begin{lstlisting}
+lake exe orbit-precision examples/viewport-st.json
+lake exe orbit-precision examples/viewport-st-zoom.json
+lake exe orbit-precision examples/viewport-st-delayed-bailout.json
+lake exe orbit-precision examples/viewport-st-periodicity.json
+\end{lstlisting}
+Specify \(c_\star\) with \code{centerX} and \code{centerY}. The viewport
+accepts either \code{minX}, \code{maxX}, \code{minY}, and \code{maxY}, or
+\code{zoomFactor}. These values accept exact decimals, including
+scientific notation. In zoom mode, the three inputs correspond to Real,
+Imaginary, and Zoom in Enter Location.
+
+Enter Location starts with a square of half-height \(2/Z\) for zoom
+\(Z>0\). Fitting the output aspect ratio gives the centered half-extents
+\begin{equation}
+  R_x=\frac{2W}{Z\min(W,H)},\qquad R_y=\frac{2H}{Z\min(W,H)} .
+\end{equation}
+The calculator uses exact rational arithmetic for the fit. The GUI
+rounds its fitted bounds and can shift the reference center.
+
+The calculation grid uses \code{width} and \code{height} for the output
+size and \code{antialiasing} for the number of samples per axis. The
+backend is \code{ST}, \code{MT3}, or fixed \code{MT9}, and \code{lastIndex} counts from
+\(z_0^\star=0\). Optional \code{sampleFraction}, \code{bailoutRadius},
+and \code{maxBits} default to \(1/4\), \(16\), and \(65{,}536\),
+respectively.
+
+The output gives separate settings for the reference and for ideal
+perturbation, and a combined setting. Set MPIR's default precision to
+\code{requestedBits} before initializing the orbit temporaries. Each
+center component is encoded as a signed integer \code{mantissa} times
+\(2^{\text{\code{binaryExponent}}}\). The mantissa fits in the destination
+slot. It can be loaded by \code{mpf\_set\_z} and scaled by a
+whole-limb power-of-two shift. Both assignments from the loaded center
+to the working parameter and the initial state preserve the value.
+The implementation checks that each encoded coordinate has magnitude
+at most that of the requested coordinate and differs by at most
+\(u\) times the requested magnitude, with \(u=2^{-P}\).
+
+\paragraph{Deriving the precision request.}
+The calculator encloses each exact reference state in a rectangle
+using rational arithmetic and rounds the two component intervals
+outward to a dyadic grid after every update. It tightens the grid
+within the configured limit when interval widths exceed one.
+Let \(U_n\) be the resulting bound on \(\lVert z_n^\star\rVert_1\),
+\(M=\lVert c_\star\rVert_1\), and \(T=\eta\min(h_x,h_y)\) as in
+\cref{subsec:reference-orbit-proof-viewport}. As long as the reference
+error is at most \(T\), the computed state has norm at most \(U_n+T\).
+The calculator propagates dimensionless error weights \(J_n\).
+\begin{align}
+  J_0 &= 0,\qquad J_1=M,\notag\\
+  J_{n+1} &= \left\lceil (2U_n+T)J_n+
+    M+K(U_n+T)^2+2M\right\rceil,\qquad n\ge1 .
+  \label{eq:reference-orbit-precision-estimator}
+\end{align}
+The integer ceiling bounds the new weight while keeping the arithmetic
+size manageable. If \(u\max_{0\le n\le n_{\max}}J_n\le T\), induction
+proves the reference tolerance at every observed index. The factors
+come from the supplied coordinate's orbit, and periodicity can shorten
+the prefix covered by the same request.
+
+For ideal perturbation, a second set of weights uses a reference
+error ceiling of one to bound the reference arithmetic. The pixel
+state cap at each step follows from its displacement from the exact
+reference and the configured bailout radius. Ideal perturbation
+uses exact offsets from the returned dyadic center, which is also
+the working parameter. The parameter-copy term then cancels in
+\eqref{eq:reference-orbit-proof-reconstructed-residual}. The resulting
+guarantee covers the exact pixel prefix through its first bailout
+iterate and accounts for the reference's MPIR error under ideal
+perturbation. Quantization of stored samples, acceleration, and
+escape-count equality require separate bounds.
+
+The calculator selects the first supported bit count \(P\) satisfying
+each bound by comparing the weights with \(2^P T\). The ideal setting
+also has to fit its reference error ceiling, and the combined setting
+satisfies both tests. The returned settings have the smallest limb
+counts for these inequalities. The Lean theorems
+\code{Recommendation.reference\_correct} and
+\code{Recommendation.ideal\_correct} give the guarantees under the
+MPIR and CPU prefix contracts already used in this section. A precision
+or enclosure limit can leave a request without a certificate.
+
+\subsubsection{Reference orbits near the left tip}
+\label{subsec:reference-orbit-left-tip}
+
+At \(c_\star=-2\), the exact reference orbit is
+\(0,-2,2,2,\ldots\). All of its states and arithmetic intermediates are
+small integers. The orbit lands on a repelling fixed point at \(2\),
+where the derivative \(2z\) of \(z^2+c_\star\) equals \(4\).
+A small error in the orbit state can therefore grow by about a
+factor of four per step while the state remains close to \(2\).
+That amplification costs roughly two bits of accuracy per step.
+
+For a nearby real center \(c_\star=-2+\Delta c\), take
+\(w_n=z_n^\star-2\), so \(\Delta c\) here measures the displacement of
+the reference center from \(-2\). The first positive state is
+\(z_2^\star=2-3\Delta c+(\Delta c)^2\). The recurrence becomes
+\begin{equation}
+  w_{n+1}=4w_n+w_n^2+\Delta c.
+  \label{eq:reference-orbit-left-tip}
+\end{equation}
+A small \(|\Delta c|\) keeps the exact orbit near \(2\) for many
+iterations. Early arithmetic errors can grow throughout the stay near
+\(2\), and the fine sample spacing of a deep view can make low-order
+terms such as \(w_n^2\) significant while the leading digits of
+\(z_n^\star\) still barely change. The ST examples below exercise the
+first effect. The reduced-precision MT9 example in
+\cref{subsec:reference-orbit-proof-mt9-counterexample} shows how
+discarded bits can exceed the tolerance on a single update.
+
+\paragraph{Why the span-based margin can fall short.}
+The examples distinguish an inconclusive upper bound from an actual
+failure of the span-based precision request. They illustrate how
+reference error can exceed the sample spacing and change the observed
+reference bailout even when the rendered image looks normal.
+
+The first two files specify a \(5120\times2160\) view with \(s=2\),
+zoom \(2^{74}\), and \(c_\star=(-2+2^{-73})+0i\). The explicit
+box rounds the horizontal bounds outward. Both inputs use an ST
+prefix through index 80 with periodicity disabled. The standard
+120-bit margin requests 191 bits from the spans. MPIR uses 192 effective
+bits and four internal limbs. With the input coordinate loaded exactly,
+the Windows x64 MPIR operations in ST order give an absolute error of
+about \(6.606\times10^{-25}\) at index 80, as checked against an outward
+enclosure of the exact orbit. The quarter-sample tolerance is
+\(1.225\times10^{-26}\), so the error is about 54 times the tolerance.
+
+The span-based request depends on the viewport size. The required
+precision also depends on the time the orbit spends in the
+amplifying region described by \eqref{eq:reference-orbit-left-tip}. The
+calculator certifies the ST reference prefix at 256 bits, or five
+internal limbs. The combined setting is 448 bits with the default
+bailout radius.
+
+\paragraph{A delayed reference bailout.}
+The third file keeps the same viewport scale and sets
+\(c_\star=(-2-5\cdot 2^{-193})+0i\). At index 99, the exact orbit
+is about \(174.8643\). Four-limb Windows x64 MPIR with the entered
+center loaded exactly gives about \(54.6165\), an error of \(120.25\).
+The calculator recommends 320 bits for the reference prefix and
+576 bits for the combined guarantee.
+
+To reproduce either case in the GUI, use the HDRx64 GPU renderer
+with LA~v2, a \(5120\times2160\) render area, and 4x antialiasing
+(\(s=2\)). Select \emph{Single Thread (ST)} under \emph{Perturbation},
+then use \emph{Clear Perturbation References - All}. Copy the center
+and zoom from the JSON file into Enter Location and use an iteration
+limit of 8192. Enter Location preserves the selected reference mode.
+Check for \code{PerturbationAlg = ST} and \code{ActualPeriodIfAny = 0}
+in the render details.
+
+In the delayed-bailout case, the fitted center
+is \(-2-3\cdot 2^{-193}\) on Windows x64. At index 99, its exact orbit
+is about \(54.6165\), while the four-limb orbit reaches \(10.1677\).
+The resulting error is 44.45, about \(3.63\times10^{27}\) times the
+quarter-sample tolerance. The exact orbit crosses the ST reference
+bailout threshold \(\lVert z_n+c\rVert_2>16\) at index 99. The computed
+orbit crosses it at index 100. These measurements concern the internal
+reference orbit. The rendered image can still look normal.
+
+Auto selects \code{STPeriodicity} at the 191-bit coordinate request.
+For this view, \(R_y=2^{-73}\) and \(z_n\) stays close to \(2\) in the
+early iterations. The derivative grows until \(2R_y\lVert d_n\rVert_\infty\)
+rises from about \(2/3\) at index 37 to \(8/3\) at index 38, triggering
+the near-return test of \cref{subsec:ref-orbit-periodicity}. The orbit
+contains only the 38 computed entries and the initial \(z_0=0\) entry.
+The stop is a heuristic for a nearby critical return, and the exact
+orbit at the fitted center escapes.
+
+\paragraph{A precision failure with periodicity enabled.}
+The witness checks whether an early return would hide the error from the
+renderer. Lean verifies that the over-budget index remains in the sampled
+prefix under the modeled HDRx64 shadow arithmetic.
+
+The fourth file uses \(c_\star=(-2+2^{-200})+0i\) at zoom \(2^{200}\)
+and keeps the same output dimensions and sample density. The full
+vertical span gives the standard request of 317 bits, which MPIR
+rounds to 320 effective bits. At index 80, an ST replay with the
+entered center loaded exactly has error about \(2.634\times10^{-62}\).
+The quarter-sample tolerance is \(1.441\times10^{-64}\).
+The calculator recommends 384 bits through that index.
+
+For the GUI reproduction, keep the previous renderer and display
+settings and select \emph{ST + Periodicity}. Clear the cached
+references and enter the coordinates from the fourth file.
+The file's \code{backend} selects the calculator's ST arithmetic.
+The GUI's aspect fit increases the real center by \(2^{-321}\).
+With respect to the exact orbit of that fitted center, the error at
+index 80 is about \(1.140\times10^{-49}\). The Windows renderer
+reports \code{ActualPeriodIfAny = 101}, so its reference includes
+the sample at index 80.
+
+The Lean search checks a finite family of real centers near \(-2\).
+In its verified range, the real inputs and their square have MPIR
+limb exponent one. The ST replay uses exact copies for the operations
+with zero, trims the square's inputs and product at their respective
+limb boundaries, and adds the negative parameter exactly.
+The lower endpoint of the outward enclosure of the exact orbit
+lies more than \(T\) above the replayed state at the witness index.
+The theorem \code{PeriodicityWitness.checked\_failure} combines
+the MPIR step model with bounds for the finite HDRx64 shadow operations.
+For this prefix the reference shadow has magnitude between one and
+two, and the derivative can grow by at most a factor \(11/2\) per step
+relative to the larger of its previous magnitude and one.
+With \(R_y=2^{-199}\), the near-return threshold stays below one
+through index 80, and the reference bailout test also stays inactive.
+The enabled schedule therefore retains a sample whose error exceeds
+the budget. The kernel checks the numerical certificate for both
+centers.
+
+\subsection{MT9 Dynamic at the fixed viewport precision}
+\label{subsec:reference-orbit-proof-mt9-viewport}
+
+Dynamic MT9 can meet the viewport tolerance even if its internal state
+differs from fixed MT9. With the same copied parameter
+\(\widetilde c_\star\) and starting precision \(P\), the theorem
+\code{Recommendation.reference\_error\_at} gives the fixed-orbit bound
+\(F_n=2^{-P}J_n\) from \eqref{eq:reference-orbit-precision-estimator}.
+The peak of the weights justifies the fixed-error induction, and the
+weight at each index gives the budget used by the combined check.
+By \code{MT9.disk\_prefix}, \(E_n\) bounds the dynamic-to-fixed
+difference in the Euclidean norm, so each component difference is at most
+\(E_n\). Consequently,
+\begin{equation}
+  \lVert z_n^{\mathrm D}-z_n^\star\rVert_1
+  \le F_n+2E_n
+  \le T,\qquad T=\eta\min(h_x,h_y).
+  \label{eq:reference-orbit-proof-mt9-viewport}
+\end{equation}
+The theorem \code{MT9.viewport\_of\_recommendation} proves the sample
+tolerance in \eqref{eq:reference-orbit-proof-sample-error} for the
+published prefix when the combined budget holds at every positive
+published index. The synthetic zero is exact. The numerical check uses
+the calculator's weights and MT9's propagated enclosure, which can be
+obtained without evaluating the fixed MPIR orbit. The theorem assumes the
+MPIR and outward-arithmetic contracts and a fixed comparison prefix
+covering the requested dynamic samples.
+
+\code{MT9.fixed\_sufficiency\_alone} shows geometrically that a fixed
+error at the boundary of the viewport budget can be pushed outside it by
+an arbitrarily small positive drift. A bound above \(T\) leaves the
+viewport tolerance undecided. The conversion tests in
+\cref{subsec:reference-orbit-proof-mt9-certificate} concern renderer
+inputs. The viewport budget can hold when conversion equivalence is
+uncertain. Production MT9 logs conversion warnings and continues.
+
+\begin{samepage}
+\paragraph{Worked same-precision example.}
+Use \((-2+2^{-200})+0i\) at zoom \(2^{200}\) with a \(5120\times2160\)
+output, \(s=2\) (4x antialiasing), and \(\eta=1/4\). The calculator
+returns 448 bits for fixed MT9 through index 99 and encodes the center
+exactly. With the same center and MPIR precision, the native MT9 Dynamic
+run with periodicity enabled lowers working precision to 384 bits.
+The native check bounds the drift by \(2^{-216}\) at every positive
+published index.
+Lean checks that the peak fixed error plus twice that dyadic cap fits
+within the quarter-sample budget. The result certifies the internal dynamic
+prefix through index 99 at the starting precision selected for fixed MT9.
+
+\end{samepage}
+
+\subsubsection{MT9 Dynamic counterexample at 448 bits}
+\label{subsec:reference-orbit-proof-mt9-counterexample}
+
+Use the real center \(c_\star=-2+2^{-400}\), whose orbit stays near
+the repelling point in \cref{subsec:reference-orbit-left-tip}.
+Set zoom \(2^{450}\) on a \(1024\times1024\) output with \(s=1\)
+and \(\eta=1/4\).
+The quarter-sample tolerance is \(T=2^{-460}\).
+Both MT9 runs start at a specified 448 bits with the same exactly
+represented center. Both include iterations \(0\) through \(91\)
+in the reference output with periodicity enabled. The first reduction
+in the dynamic calculation occurs on the update from \(z_{90}\)
+to \(z_{91}\), at 384 bits.
+
+The proof in \code{MT9.RadiusWitness.counterexample} bounds the
+fixed orbit's internal error by less than \(2^{-478}\) throughout
+that prefix. At index 91, it bounds the dynamic orbit's error from
+below by \(2^{-447}\), more than \(8192\) times the permitted error.
+Both comparisons are against the exact mathematical orbit. The result
+establishes that the actual accuracy of fixed MT9 at a given precision
+can be sufficient for a radius that dynamic MT9 at the same starting
+precision fails to meet. The theorem
+\code{MT9.RadiusWitness.same\_radius\_failure} expresses the result
+in sample spacings.
+
+The Lean proof checks the real-axis update at the relevant limb
+exponent. The MPIR copy can remove low limbs at a precision change,
+and Karatsuba squares all remaining input limbs before trimming the
+result. The aligned addition of the negative center then preserves
+the exact sum on that grid. Lean replays the fixed and dynamic
+arithmetic with exact dyadic operations and encloses the mathematical
+orbit by rounding the interval endpoints outward. The native test
+verifies the precision change, the number of samples in the
+reference output, and agreement of the internal MPIR states with
+the dyadic replay. The runtime conversion certificate accepts every
+sample in the tested prefix. Those checks establish that the
+references supplied for rendering agree at the stored precision.
+The tighter viewport tolerance concerns bits of the internal MPIR
+states that the stored samples do not retain.
+
+For the same view, the calculator recommends 704 starting bits.
+Both orbits meet the quarter-sample tolerance through index 91 at
+that setting, as proved by
+\code{MT9.RadiusWitness.\allowbreak meets\_at\_recommendation}.
+
 \subsection{Periodicity and finite prefixes}
 \label{subsec:reference-orbit-proof-periodicity}
+
+Early termination controls how much reference data is generated and when
+that reference can cover a later view. The schedule proofs identify
+the last valid sample that precision and perturbation proofs can use,
+including cases where the workers have already begun another update.
 
 The exact derivative satisfies $d_{n+1}=2z_n^\star d_n+1$, with $d_0=0$
 and $d_1=1$. The theorem \code{derivativeStep\_eq} proves that the real and
@@ -291,9 +939,11 @@ comparison result for the observed index. In serial execution, a positive
 near-return test stops after the current sample and before publishing a new
 MPIR pair. In MT3, the caller evaluates the delayed shadow and honors the
 stop as it collects the worker results, after publishing the delayed sample.
+MT9 also publishes the delayed sample and completes its terminal
+pipeline update before honoring a near return or bailout.
 With periodicity disabled, the derivative is unchanged and the near-return
 test cannot terminate the loop. Benchmark mode continues after a positive
-test and retains the derivative for that body. Both backends' exact and
+test and retains the derivative for that body. The CPU exact and
 finite-precision observation theorems hold in each of these modes.
 The theorems concern the internal MPIR values associated with the observed
 indices. The reduced-precision conversions and comparison outcomes are

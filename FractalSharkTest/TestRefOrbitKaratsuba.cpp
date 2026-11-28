@@ -3766,6 +3766,219 @@ private:
 
 } // namespace
 
+TEST(RefOrbitDynamicPrecision_FixedViewportBudget)
+{
+    constexpr mp_bitcnt_t fullBits = 448;
+    constexpr mp_bitcnt_t zoomBits = 200;
+    constexpr uint64_t lastIndex = 99;
+    constexpr int64_t driftCapExponent = -216;
+    constexpr size_t width = 5120;
+    constexpr size_t height = 2160;
+
+    // The matching Lean check uses 4x antialiasing and verifies that this
+    // exact dyadic cap fits the calculator's remaining budget through Z99.
+    class DriftObserver final : public FractalShark::RefOrbitMT9DiagnosticObserver {
+    public:
+        explicit DriftObserver(const HighPrecision &center) : m_Center(center) {}
+
+        void
+        OnState(const FractalShark::RefOrbitMT9StateView &state) override
+        {
+            // MT9 checks one state ahead of publication. Ignore the last
+            // checked state if it lies beyond the requested reference prefix.
+            if (state.StateIteration > lastIndex) {
+                return;
+            }
+            ++m_Count;
+            ASSERT_EQ(state.StateIteration, m_Count);
+            ASSERT_EQ(mpf_cmp(state.Cx, m_Center.backend()), 0);
+            ASSERT_EQ(mpf_sgn(state.Cy), 0);
+            ASSERT_TRUE(state.Step != nullptr);
+            const auto drift = state.Step->OutputError;
+            const auto cap = FractalShark::RefOrbitErrorBound::PowerOfTwo(driftCapExponent);
+            ASSERT_TRUE(FractalShark::RefOrbitErrorBound::Less(drift, cap));
+            m_SawReduced = m_SawReduced || state.WorkingBits < fullBits;
+            m_SawNonzeroDrift = m_SawNonzeroDrift || !drift.IsZero();
+        }
+        void
+        OnStepInput(uint64_t, mpf_srcptr, mpf_srcptr) override
+        {
+        }
+
+        uint64_t m_Count{};
+        bool m_SawReduced{};
+        bool m_SawNonzeroDrift{};
+
+    private:
+        const HighPrecision &m_Center;
+    };
+
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    fractal.SetNumIterations<uint64_t>(lastIndex + 1);
+    HighPrecision::defaultPrecisionInBits(fullBits);
+    HighPrecision centerX{-2}, centerY{0}, offset{1}, zoom{1};
+    mpf_div_2exp(offset.backend(), offset.backend(), zoomBits);
+    mpf_add(centerX.backend(), centerX.backend(), offset.backend());
+    mpf_mul_2exp(zoom.backend(), zoom.backend(), zoomBits);
+
+    // Pass the fixture geometry directly to orbit generation. The small
+    // Fractal instance supplies the iteration limit without rendering at that size.
+    PointZoomBBConverter view(centerX, centerY, zoom, PointZoomBBConverter::TestMode::Disabled);
+    view.SquareAspectRatio(width, height);
+    RefOrbitCalc calculator(fractal, UINT64_MAX);
+    calculator.SetPerturbationAlg(
+        RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision);
+    calculator.ResetGuess(centerX, centerY);
+    DriftObserver observer(centerX);
+    ScopedMT9DiagnosticObserver scopedObserver(calculator, observer);
+    calculator.AddPerturbationReferencePoint<uint64_t,
+                                             HDRFloat<double>,
+                                             double,
+                                             PerturbExtras::Disable,
+                                             RefOrbitCalc::BenchmarkMode::Disable>(view);
+
+    const auto *result = calculator.GetLast<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
+    ASSERT_TRUE(result != nullptr);
+    ASSERT_EQ(result->GetCountOrbitEntries(), lastIndex + 1);
+    ASSERT_EQ(observer.m_Count, lastIndex);
+    ASSERT_TRUE(observer.m_SawReduced);
+    ASSERT_TRUE(observer.m_SawNonzeroDrift);
+    const auto stats = calculator.GetLastDynamicPrecisionStats();
+    ASSERT_TRUE(stats.has_value());
+    ASSERT_EQ(stats->FullBits, fullBits);
+    FractalSharkLog::LogLine(__FILE__, __LINE__)
+        << "Viewport fixture: full_bits=" << stats->FullBits << " min_bits=" << stats->MinimumBits
+        << " reduced_steps=" << stats->ReducedSteps << " drift_below=2^" << driftCapExponent;
+}
+
+TEST(RefOrbitDynamicPrecision_RadiusCounterexample)
+{
+    constexpr mp_bitcnt_t centerOffsetBits = 400;
+    constexpr mp_bitcnt_t zoomBits = 450;
+    constexpr mp_bitcnt_t coordinateBits = 832;
+    constexpr uint64_t firstReducedInput = 90;
+    constexpr uint64_t lastIndex = firstReducedInput + 1;
+    constexpr size_t dimension = 1024;
+    constexpr mp_bitcnt_t limbBits = GMP_NUMB_BITS;
+
+    // Lean checks the same integer replay against an outward enclosure of
+    // the exact orbit. Compare the MPIR states before conversion to HDRx64.
+    class ReplayObserver final : public FractalShark::RefOrbitMT9DiagnosticObserver {
+    public:
+        ReplayObserver(const HighPrecision &center,
+                       const std::vector<HighPrecision> &expected,
+                       mp_bitcnt_t bits,
+                       bool dynamic)
+            : m_Center(center), m_Expected(expected), m_Bits(bits), m_Dynamic(dynamic)
+        {
+        }
+
+        void
+        OnState(const FractalShark::RefOrbitMT9StateView &state) override
+        {
+            if (state.StateIteration > lastIndex) {
+                return;
+            }
+            ++m_Checked;
+            ASSERT_EQ(state.StateIteration, m_Checked);
+            const auto expectedBits =
+                m_Dynamic && state.StateIteration > firstReducedInput ? m_Bits - limbBits : m_Bits;
+            ASSERT_EQ(state.WorkingBits, expectedBits);
+            ASSERT_EQ(mpf_cmp(state.Cx, m_Center.backend()), 0);
+            ASSERT_EQ(mpf_sgn(state.Cy), 0);
+            ASSERT_EQ(mpf_sgn(state.Y), 0);
+            ASSERT_EQ(mpf_cmp(state.X, m_Expected[m_Checked - 1].backend()), 0);
+            // The renderer's conversion can agree with fixed MT9 even when
+            // the tighter test of the internal orbit's absolute error fails.
+            ASSERT_TRUE(state.Certified);
+        }
+
+        void
+        OnStepInput(uint64_t, mpf_srcptr, mpf_srcptr) override
+        {
+        }
+
+        uint64_t m_Checked{};
+
+    private:
+        const HighPrecision &m_Center;
+        const std::vector<HighPrecision> &m_Expected;
+        mp_bitcnt_t m_Bits;
+        bool m_Dynamic;
+    };
+
+    MPIRPrecision restore(HighPrecision::defaultPrecisionInBits());
+    Fractal fractal(8, 8, nullptr, false, UINT64_MAX, true, GpuMode::Disabled);
+    fractal.GetRenderPool()->Drain();
+    fractal.SetNumIterations<uint64_t>(lastIndex + 1);
+
+    // Represent both ends of the viewport before switching to the smaller
+    // precision used for the recurrence.
+    HighPrecision::defaultPrecisionInBits(coordinateBits);
+    HighPrecision centerX{-2}, centerY{0}, offset{1}, zoom{1};
+    mpf_div_2exp(offset.backend(), offset.backend(), centerOffsetBits);
+    mpf_add(centerX.backend(), centerX.backend(), offset.backend());
+    mpf_mul_2exp(zoom.backend(), zoom.backend(), zoomBits);
+    PointZoomBBConverter view(centerX, centerY, zoom, PointZoomBBConverter::TestMode::Disabled);
+    view.SquareAspectRatio(dimension, dimension);
+
+    for (const auto bits : {mp_bitcnt_t{448}, mp_bitcnt_t{704}}) {
+        for (const bool dynamic : {false, true}) {
+            // Values near 2 have limb exponent one. The guard limb gives
+            // the full square a grid of 2^-(bits + limbBits). The first lower
+            // tier clips the state and the square an additional limb.
+            HighPrecision::defaultPrecisionInBits(coordinateBits);
+            const auto gridBits = bits + limbBits;
+            MpzValue center, lowPart, state;
+            mpz_set_si(center.Get(), -2);
+            mpz_mul_2exp(center.Get(), center.Get(), gridBits);
+            mpz_set_ui(lowPart.Get(), 1);
+            mpz_mul_2exp(lowPart.Get(), lowPart.Get(), gridBits - centerOffsetBits);
+            mpz_add(center.Get(), center.Get(), lowPart.Get());
+            mpz_set(state.Get(), center.Get());
+            std::vector<HighPrecision> expected;
+            expected.reserve(lastIndex);
+            for (uint64_t n = 1; n <= lastIndex; ++n) {
+                auto &sample = expected.emplace_back();
+                mpf_set_z(sample.backend(), state.Get());
+                mpf_div_2exp(sample.backend(), sample.backend(), gridBits);
+                if (n == lastIndex) {
+                    break;
+                }
+                const auto trim = dynamic && n == firstReducedInput ? limbBits : mp_bitcnt_t{0};
+                mpz_tdiv_q_2exp(state.Get(), state.Get(), trim);
+                mpz_mul_2exp(state.Get(), state.Get(), trim);
+                mpz_mul(state.Get(), state.Get(), state.Get());
+                mpz_tdiv_q_2exp(state.Get(), state.Get(), gridBits + trim);
+                mpz_mul_2exp(state.Get(), state.Get(), trim);
+                mpz_add(state.Get(), state.Get(), center.Get());
+            }
+
+            HighPrecision::defaultPrecisionInBits(bits);
+            RefOrbitCalc calculator(fractal, UINT64_MAX);
+            calculator.SetPerturbationAlg(
+                dynamic ? RefOrbitCalc::PerturbationAlg::MTPeriodicity9KaratsubaDynamicPrecision
+                        : RefOrbitCalc::PerturbationAlg::MTPeriodicity9Karatsuba);
+            calculator.ResetGuess(centerX, centerY);
+            ReplayObserver observer(centerX, expected, bits, dynamic);
+            ScopedMT9DiagnosticObserver scopedObserver(calculator, observer);
+            calculator.AddPerturbationReferencePoint<uint64_t,
+                                                     HDRFloat<double>,
+                                                     double,
+                                                     PerturbExtras::Disable,
+                                                     RefOrbitCalc::BenchmarkMode::Disable>(view);
+
+            const auto *result =
+                calculator.GetLast<uint64_t, HDRFloat<double>, PerturbExtras::Disable>();
+            ASSERT_TRUE(result != nullptr);
+            ASSERT_EQ(result->GetCountOrbitEntries(), lastIndex + 1);
+            ASSERT_EQ(observer.m_Checked, lastIndex);
+        }
+    }
+}
+
 TEST(RefOrbitDynamicPrecision_FractadynePeriod410594Diagnostics)
 {
     // MIT/Apache-2.0 Fractadyne bench-kit scene 60-mini-p410594-1e30000.

@@ -12,6 +12,7 @@ namespace FractalSharkProofs.ReferenceOrbit
 inductive Backend where
   | singleThreaded
   | mt3
+  | mt9
   deriving DecidableEq
 
 inductive PeriodicityMode where
@@ -84,6 +85,8 @@ def Backend.observation (b : Backend) (i : ℕ) : Option ℕ :=
   | .singleThreaded, i => some (i + 1)
   | .mt3, 0 => none
   | .mt3, i + 1 => some (i + 1)
+  | .mt9, 0 => none
+  | .mt9, i + 1 => some (i + 1)
 
 structure LoopExit where
   entered : ℕ
@@ -92,9 +95,11 @@ structure LoopExit where
 
 /-- A terminal near return leaves no new coherent pair. An MT3 bailout also
 discards the final candidate pair because the caller skips saving the Y-square.
-ST bailout follows the completed serial update. -/
+ST bailout follows the completed serial update. MT9 completes both terminal
+updates, although the newly advanced state will not be sampled. -/
 def LoopExit.coherentThrough (e : LoopExit) (b : Backend) : ℕ :=
-  if e.reason = .nearReturn ∨ (b = .mt3 ∧ e.reason = .bailout) then e.entered
+  if b = .mt9 ∧ e.entered = 0 ∧ e.reason = .limit then 0
+  else if b ≠ .mt9 ∧ (e.reason = .nearReturn ∨ (b = .mt3 ∧ e.reason = .bailout)) then e.entered
   else e.entered + 1
 
 /-- Model which samples are emitted, without imposing arithmetic on their shadows. -/
@@ -129,6 +134,16 @@ theorem delayed_samples (e : LoopExit) : e.samples .mt3 = List.range (max 1 e.en
   cases e.entered with
   | zero => rfl
   | succ n => simpa [max_eq_right (Nat.succ_le_succ (Nat.zero_le n))] using delayedIndices n
+
+theorem mt9_samples (e : LoopExit) : e.samples .mt9 = List.range (max 1 e.entered) := by
+  have h : Backend.mt9.observation = Backend.mt3.observation := by
+    funext i
+    cases i <;> rfl
+  simpa only [LoopExit.samples, h] using delayed_samples e
+
+@[simp] theorem mt9_coherent (e : LoopExit) :
+    e.coherentThrough .mt9 = if e.entered = 0 ∧ e.reason = .limit then 0 else e.entered + 1 := by
+  simp [LoopExit.coherentThrough]
 
 def runFrom (b : Backend) (mode : PeriodicityMode) (checks : ShadowChecks) :
     ℕ → ℕ → ℂ → LoopExit
@@ -167,6 +182,54 @@ theorem runFrom_entered_bounds (b : Backend) (mode : PeriodicityMode) (checks : 
           · have h := ih (i + 1) (checkPeriodicity mode checks n d).2
             omega
 
+/-- Identical control inputs on the observed prefix give the same exit. There
+is no requirement on terminal scratch states or observations beyond that exit. -/
+private theorem runFrom_eq_on_samples (b : Backend) (mode : PeriodicityMode)
+    (left right : ShadowChecks) (remaining i : ℕ) (d : ℂ)
+    (habort : ∀ j, left.abortBefore j = right.abortBefore j)
+    (hagree : ∀ n ∈ (runFrom b mode left remaining i d).samples b, ∀ deriv,
+      checkPeriodicity mode left n deriv = checkPeriodicity mode right n deriv ∧
+      left.bailout n = right.bailout n) :
+    runFrom b mode left remaining i d = runFrom b mode right remaining i d := by
+  induction remaining generalizing i d with
+  | zero => rfl
+  | succ remaining ih =>
+    by_cases ha : left.abortBefore i = true
+    · simp [runFrom, ha, ← habort i]
+    simp only [runFrom, ← habort i, ha, Bool.false_eq_true, ite_false]
+    cases hobs : b.observation i with
+    | none =>
+      exact ih (i + 1) d (by simpa only [runFrom, ha, Bool.false_eq_true, ite_false, hobs] using hagree)
+    | some n =>
+      have hentered : i < (runFrom b mode left (remaining + 1) i d).entered := by
+        simp only [runFrom, ha, Bool.false_eq_true, ite_false, hobs]
+        split
+        · exact Nat.lt_succ_self _
+        · split
+          · exact Nat.lt_succ_self _
+          · exact Nat.lt_of_succ_le (runFrom_entered_bounds b mode left remaining _ _).1
+      have hsample : n ∈ (runFrom b mode left (remaining + 1) i d).samples b := by
+        apply List.mem_cons_of_mem
+        exact List.mem_filterMap.mpr ⟨i, List.mem_range.mpr hentered, hobs⟩
+      obtain ⟨hperiod, hbail⟩ := hagree n hsample d
+      dsimp only
+      rw [← hperiod, ← hbail]
+      split
+      · rfl
+      · rename_i hstop
+        split
+        · rfl
+        · rename_i hescape
+          exact ih _ _ (by simpa [runFrom, ha, hobs, hstop, hescape] using hagree)
+
+theorem run_eq_on_samples (b : Backend) (mode : PeriodicityMode) (left right : ShadowChecks)
+    (limit : ℕ) (habort : ∀ j, left.abortBefore j = right.abortBefore j)
+    (hagree : ∀ n ∈ (run b mode left limit).samples b, ∀ deriv,
+      checkPeriodicity mode left n deriv = checkPeriodicity mode right n deriv ∧
+      left.bailout n = right.bailout n) :
+    run b mode left limit = run b mode right limit :=
+  runFrom_eq_on_samples b mode left right limit 0 1 habort hagree
+
 theorem disabled_reason (b : Backend) (checks : ShadowChecks) (remaining i : ℕ) (d : ℂ) :
     (runFrom b .disabled checks remaining i d).reason ≠ .nearReturn := by
   induction remaining generalizing i d with
@@ -192,14 +255,16 @@ theorem sample_le_coherent (b : Backend) (e : LoopExit) {n : ℕ} (h : n ∈ e.s
     | singleThreaded =>
       simp [Backend.observation] at hobs
       omega
-    | mt3 =>
+    | mt3 | mt9 =>
       cases i with
       | zero => simp [Backend.observation] at hobs
       | succ i =>
         simp [Backend.observation] at hobs
         omega
   unfold LoopExit.coherentThrough
-  split <;> omega
+  split
+  · omega
+  · split <;> omega
 
 theorem exact_at_sample (b : Backend) (e : LoopExit) (c : ℂ) (states : ℕ → ℂ)
     (hzero : states 0 = 0) (hfirst : states 1 = c)

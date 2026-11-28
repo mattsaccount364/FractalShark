@@ -6,9 +6,11 @@ deep-zoom Mandelbrot rendering.  Perturbation theory
 (\cref{sec:perturbation-concept}) allows every pixel to be rendered at
 low precision, but it requires one orbit---the \emph{reference
 orbit}---whose accuracy resolves the zoom depth. The usual fixed backends
-compute that orbit at the full configured precision. MT9 first attempts dynamic
-working precision when independently certified sample
-conversions permit it (\cref{subsec:ref-orbit-dynamic-precision}). At
+compute that orbit at the full configured precision. Dynamic MT9 varies
+the working precision and checks sample conversions against fixed MT9
+as a diagnostic (\cref{subsec:ref-orbit-dynamic-precision}). The Lean
+proofs relate the CPU recurrence, published samples, and MPIR precision
+to the viewport's sample spacing (\cref{sec:reference-orbit-proofs}). At
 extreme magnifications this requirement means iterating
 \begin{equation}
   z_{n+1} = z_n^2 + c,\qquad z,c\in\mathbb{C},
@@ -154,6 +156,10 @@ MPIR/GMP~\cite{MPIR_Library} \code{mpf\_t} for the recurrence, while
 simultaneously emitting a low-precision shadow copy
 \((\hat{x}_n,\hat{y}_n)\in T^2\) for downstream work (compression,
 bailout checks, periodicity tests).
+The exact and finite-precision proofs in
+\cref{subsec:reference-orbit-proof-st-exact,subsec:reference-orbit-proof-st-precision}
+identify the reference state behind each shadow and bound the accumulated
+MPIR error.
 
 \paragraph{State and initialization.}
 

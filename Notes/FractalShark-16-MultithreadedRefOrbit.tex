@@ -315,6 +315,9 @@ stored inputs; it does not bound propagated orbit-state error or certify periodi
 Ordinary \code{mpf\_mul} can clip inputs differently, so exact split assembly
 need not be bitwise identical to MT3. Fixed split buffers accommodate zero and
 one-limb inputs, including values produced by cancellation during the orbit.
+The Lean proofs bound the split buffers, justify the worker handoff, and
+propagate the final product rounding through the orbit
+(\cref{subsec:reference-orbit-proof-mt9-exact,subsec:reference-orbit-proof-mt9-precision}).
 The caller therefore uses the split backend unconditionally. A zero product
 is stored in canonical MPIR form with both \code{\_mp\_size} and
 \code{\_mp\_exp} equal to zero. Periodicity termination is compiled out in
@@ -402,6 +405,14 @@ The precision proposal is heuristic; the acceptance condition has a proof under
 the arithmetic assumptions stated below. In particular, the proof applies to
 any permitted sequence of working precisions, including one selected with an
 inaccurate derivative.
+
+The formal results in \cref{subsec:reference-orbit-proof-mt9-viewport}
+relate dynamic working precision to the accuracy the viewport requires.
+The calculator bounds the fixed orbit's error against the mathematical
+orbit. Combining that bound with the propagated difference enclosure
+gives a sufficient accuracy test for the internal dynamic orbit at the
+same configured precision. The runtime conversion diagnostic answers
+whether the renderer receives the same samples as fixed MT9.
 
 \subsubsection{Why derivative growth can permit fewer bits}
 \label{subsec:ref-orbit-dynamic-sensitivity}
@@ -771,6 +782,10 @@ deterministic casts to the renderer's sample types. This theorem holds for
 any allowed precision schedule. An approximate derivative can affect the
 amount of work or the likelihood of rejection, but cannot invalidate an
 accepted sample when the theorem's hypotheses hold.
+
+When all published conversions agree, the prefix theorem also gives the
+same modeled near-return or bailout result under common shadow arithmetic
+and cancellation decisions (\cref{subsec:reference-orbit-proof-mt9-certificate}).
 
 Each sampled state is checked before it supplies input to the existing
 publication, periodicity, or escape pipeline. An ambiguous conversion, unsupported

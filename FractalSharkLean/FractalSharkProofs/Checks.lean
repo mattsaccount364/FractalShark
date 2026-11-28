@@ -2,6 +2,8 @@ module
 
 import FractalSharkProofs
 import FractalSharkProofs.ReferenceOrbit.Checks
+import FractalSharkProofs.ReferenceOrbit.MT9.Checks
+import FractalSharkProofs.ReferenceOrbit.PrecisionEstimate.Checks
 import Mathlib.Data.Rat.Floor
 import Mathlib.Tactic.NormNum
 

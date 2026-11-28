@@ -207,7 +207,7 @@ Source builds require Git LFS.  Some checked-in assets are LFS-backed, including
 8. From `mpir\msvc\vs22`, build the static Skylake AVX libraries:
    `msbuild.bat skylake_avx LIB x64 Debug`
    `msbuild.bat skylake_avx LIB x64 Release`
-9. The distributed version of FractalShark uses the static `lib_mpir_skylake_avx` incarnation of MPIR. Install the NVIDIA CUDA Toolkit; the CI build currently uses CUDA 13.3.0.
+9. The distributed version of FractalShark uses the static `lib_mpir_skylake_avx` incarnation of MPIR. Install the NVIDIA CUDA Toolkit with Visual Studio Integration. CI and release builds use CUDA 13.5.0.
 10. From the repository root, build the Visual Studio solution, for example:
     `msbuild FractalShark\FractalShark.sln /m /v:m /p:Configuration=Release /p:Platform=x64`
     Use `Configuration=Debug` for a Debug build.
@@ -215,15 +215,17 @@ Source builds require Git LFS.  Some checked-in assets are LFS-backed, including
 
 Local source builds default to `sm_120`. To target another GPU, pass `-DCMAKE_CUDA_ARCHITECTURES=86` while configuring CMake, or use `tools\build_windows.ps1 -CudaCodeGeneration 'compute_86,sm_86'` for a Windows build. GitHub release builds override the local default and include all officially supported architectures.
 
+Windows selects the newest detected toolkit with matching Visual Studio build customizations. For a side-by-side installation, add `/p:CudaBuildCustomizationVersion=13.3` to the MSBuild command to select CUDA 13.3, or set `CudaBuildCustomizationVersion` in the environment before running the PowerShell build script. For a custom install path, set the corresponding versioned environment variable such as `CUDA_PATH_V13_3`. Toolkits older than 12.8 require a supported host compiler and an explicit GPU target such as `sm_86`.
+
 For Linux:
 
 Linux is a fully supported platform and uses the same renderer and portable command implementation as Windows.
 
 1. Use an x86_64 Ubuntu or Ubuntu-compatible environment.
-2. Install Git LFS, CMake 3.20 or newer, Clang, a GCC/G++ CUDA host compiler, `make`, `binutils` (for `objcopy`), the NVIDIA CUDA Toolkit, `libgmp-dev`, `libgl-dev`, `libglx-dev`, `libglu1-mesa-dev`, and `libx11-dev`. The CI build uses Clang 18, G++ 13, and CUDA 13.3.
+2. Install Git LFS, CMake 3.20 or newer, Clang, a GCC/G++ CUDA host compiler, `make`, `binutils` (for `objcopy`), the NVIDIA CUDA Toolkit, `libgmp-dev`, `libgl-dev`, `libglx-dev`, `libglu1-mesa-dev`, and `libx11-dev`. The CI build uses Clang 18, G++ 13, and CUDA 13.5.0.
    The GUI configure step fetches Dear ImGui v1.91.5 from GitHub, so network access is required unless the dependency is already available to CMake.
 3. Run `git lfs pull` after cloning if Git LFS did not materialize the assets automatically.
-4. Run `./build_linux.sh`.
+4. Run `./build_linux.sh`. The script prefers `/usr/local/cuda-13.5/bin/nvcc` when installed. To select a different toolkit, run `CUDACXX=/usr/local/cuda-13.3/bin/nvcc ./build_linux.sh`, for example. When switching toolkits, remove `CMakeCache.txt` and `CMakeFiles/` from each existing build directory before rerunning the script so CMake detects the new compiler.
 5. Build outputs go to `build-debug/` and `build-release/`.
 6. Run the portable tests with `./build-debug/FractalSharkTest/FractalSharkTest`.
 7. The Linux GUI binary is `build-release/FractalSharkGuiLinux/FractalSharkGuiLinux` after a Release build.

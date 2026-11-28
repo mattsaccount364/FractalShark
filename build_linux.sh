@@ -1,6 +1,10 @@
 #!/usr/bin/bash
 set -euo pipefail
 export PATH=/usr/local/cuda/bin:$PATH
+# CMake reads CUDACXX when it configures a build directory for the first time.
+if [[ -z "${CUDACXX:-}" && -x /usr/local/cuda-13.5/bin/nvcc ]]; then
+    export CUDACXX=/usr/local/cuda-13.5/bin/nvcc
+fi
 rm -rf ./build
 for cfg in Debug Release; do
     cmakeArgs=(

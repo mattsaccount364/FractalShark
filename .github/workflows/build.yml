@@ -30,7 +30,7 @@ jobs:
     name: Build FractalShark (Linux CMake)
     runs-on: ubuntu-24.04
     container:
-      image: nvidia/cuda:13.3.0-devel-ubuntu22.04
+      image: nvidia/cuda:13.5.0-devel-ubuntu22.04
 
     defaults:
       run:
@@ -111,21 +111,15 @@ jobs:
 
       - name: Verify CUDA toolkit
         run: |
-          if [ -x /usr/local/cuda-13.3/bin/nvcc ]; then
-            cuda_root=/usr/local/cuda-13.3
-          elif [ -x /usr/local/cuda/bin/nvcc ]; then
-            cuda_root=/usr/local/cuda
-          else
-            echo "nvcc not found in CUDA container" >&2
-            exit 1
-          fi
+          set -euo pipefail
+          cuda_root=/usr/local/cuda-13.5
+          nvcc_version="$("$cuda_root/bin/nvcc" --version)"
+          printf '%s\n' "$nvcc_version"
+          grep -q 'release 13\.5,' <<< "$nvcc_version"
 
           echo "CUDA_PATH=$cuda_root" >> "$GITHUB_ENV"
-          echo "CUDA_PATH_V13_3=$cuda_root" >> "$GITHUB_ENV"
-          echo "CUDA_PATH_VX_Y=CUDA_PATH_V13_3" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$cuda_root/lib64:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
           echo "$cuda_root/bin" >> "$GITHUB_PATH"
-          "$cuda_root/bin/nvcc" --version
 
       - name: Configure CMake (Debug)
         run: |
@@ -133,6 +127,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;100;120" \
             -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_CUDA_COMPILER="$CUDA_PATH/bin/nvcc" \
             -DCMAKE_CUDA_HOST_COMPILER=g++-13 \
             -DCMAKE_CXX_FLAGS_DEBUG="-g3" \
             -DCMAKE_CUDA_FLAGS_DEBUG="-g -G"
@@ -143,6 +138,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_CUDA_ARCHITECTURES="75;80;86;89;90;100;120" \
             -DCMAKE_CXX_COMPILER=clang++-18 \
+            -DCMAKE_CUDA_COMPILER="$CUDA_PATH/bin/nvcc" \
             -DCMAKE_CUDA_HOST_COMPILER=g++-13 \
             -DCMAKE_CXX_FLAGS_RELEASE="-O3 -g3 -DNDEBUG" \
             -DCMAKE_CUDA_FLAGS_RELEASE="-O3 -g -lineinfo -DNDEBUG"
@@ -427,13 +423,14 @@ jobs:
       - name: Install CUDA Toolkit
         shell: pwsh
         run: |
-          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.3"
+          $cudaPath = "C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v13.5"
           $cudaBin = Join-Path $cudaPath "bin"
           $nvcc = Join-Path $cudaBin "nvcc.exe"
-          $installer = Join-Path $env:RUNNER_TEMP "cuda_13.3.0_windows_network.exe"
+          $installerName = "cuda_13.5.0_windows_x86_64_network.exe"
+          $installer = Join-Path $env:RUNNER_TEMP $installerName
 
           Invoke-WebRequest `
-            -Uri "https://developer.download.nvidia.com/compute/cuda/13.3.0/network_installers/cuda_13.3.0_windows_network.exe" `
+            -Uri "https://developer.download.nvidia.com/compute/cuda/13.5.0/network_installers/$installerName" `
             -OutFile $installer
 
           $signature = Get-AuthenticodeSignature $installer
@@ -448,14 +445,36 @@ jobs:
           if (-not (Test-Path $nvcc)) {
             throw "nvcc.exe not found after CUDA installation: $nvcc"
           }
+          $nvccVersion = & $nvcc --version
+          if ($LASTEXITCODE -ne 0 -or ($nvccVersion -join "`n") -notmatch 'release 13\.5,') {
+            throw "Expected CUDA 13.5 nvcc at $nvcc. Got: $nvccVersion"
+          }
+          $nvccVersion
 
           "CUDA_PATH=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CUDA_PATH_V13_3=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "CUDA_PATH_VX_Y=CUDA_PATH_V13_3" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "CUDA_PATH_V13_5=$cudaPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $cudaBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-          & $nvcc --version
 
       # ---- Build FractalShark ----
+      - name: Verify CUDA build customizations
+        shell: pwsh
+        run: |
+          $solutionDir = Join-Path $env:GITHUB_WORKSPACE "FractalShark"
+          $evaluation = msbuild FractalSharkGpuLib\FractalSharkGpuLib.vcxproj `
+            "/p:SolutionDir=$solutionDir/" "/p:Configuration=${{ matrix.configuration }}" /p:Platform=x64 `
+            /getProperty:CudaToolkitVersion,CudaToolkitDir,CudaToolkitNvccPath,CudaBuildCustomizationPropsAvailable
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSBuild could not evaluate the CUDA configuration: $evaluation"
+          }
+          $properties = (($evaluation -join "`n") | ConvertFrom-Json).Properties
+          if ($properties.CudaToolkitVersion -ne "v13.5" -or
+              $properties.CudaBuildCustomizationPropsAvailable -ne "true" -or
+              $properties.CudaToolkitDir.TrimEnd('\') -ne $env:CUDA_PATH -or
+              -not (Test-Path -LiteralPath $properties.CudaToolkitNvccPath -PathType Leaf)) {
+            throw "MSBuild did not select the CUDA 13.5 toolkit and customizations: $evaluation"
+          }
+          $evaluation
+
       - name: Build ${{ matrix.configuration }}
         # /p: splits this list; escaped separators survive into CUDA's CodeGeneration parser.
         env:
